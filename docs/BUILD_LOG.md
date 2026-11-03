@@ -3004,3 +3004,36 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Spend: Device Farm about $0.16. Windows a few minutes, about $0.01. The Mac was already allocated. Model calls about 10 splits, a fraction of a cent.
   - lib/devices 5 of 5. Typecheck clean. Rechecked in light, dark and at 390 px: all four play, no sideways scroll, no page errors.
 
+
+## Nov 2, 2026, 9 PM ET: a Muse Muse product counts with SAM 3.1 on jetson-04 (laptop only)
+
+Hussam's goal included a product that Muse Muse builds and that answers from the Jetsons. The Glimmer route for that is off for now: `jetson-llama` is disabled on jetson-02, 03 and 04, and 02 and 03 are set aside for the Glimmer training work, so neither was touched. SAM 3.1 on jetson-04 is the owner's edge direction (entry above), so the product uses SAM.
+
+- **First build, 47f6ce94** (preview `muse-muse-g59xelwdt`, main at ee493e69, on Contributor). The note asked for a loading-bay counter whose server POSTs `{image_b64, prompt, threshold}` to `SAM_URL`, Meta's SAM 3.1 on jetson-04. It went live as `loading-bay-counter` with 0 fix rounds, for $0.053. **It never reads `SAM_URL`.** It counts with the gateway's cloud `sam-3.1`. When `EDGE_URL` is set, it asks a language model to count through `respondJsonOrEdge` instead. Verify and the judge passed because the sandbox's cloud SAM counted.
+- **Why (read in code):** the platform has no way to say "a Meta model on a board at a URL".
+  - The brief writer's only word for a Jetson is the edge target. That target is a cloud-first fallback to an OpenAI-compatible chat model (`lib/native/targets.ts:44`, `lib/brief/render.ts:79-84`, the muse-edge skill).
+  - The note itself never reaches Muse Code. The build prompt is made from brief fields only, so `SAM_URL` survived as one limit line.
+  - `sam-3.1` means the gateway (the meta-sam skill).
+  - The sandbox can't reach the office network, and smoke tests and drills need the gateway path, so a build that faithfully called `SAM_URL` would fail its own checks.
+- **Follow-up change, 649c9c9d** (`POST /api/builds/{id}/messages`): 6 minutes, $0.008, 0 fix rounds. We spelled the branch out nearly at code level. Muse wrote `lib/sam-board.ts`: one POST to `SAM_URL` and a zod-checked reply. Pixel boxes become fractions, and any error, non-JSON, HTTP failure or 120 s timeout is board-down with no count. Muse also wrote the route branch with the label "Counted on jetson-04 by Meta SAM 3.1", the page label line, and `tests/sam-board.spec.ts`. The cloud and edge-LLM paths are unchanged when `SAM_URL` is unset.
+- **The run (Hussam's laptop, 21:08 ET):**
+  - Setup: source version 2 downloaded from the preview, then `npm ci`, `npm run build` and `next start -p 3100`.
+  - `SAM_URL` pointed at `scripts/edge/sam3/ui.py` on 127.0.0.1:8792. The fleet token sat in the bridge's environment only, never printed or written. GATEWAY_URL, PRODUCT_TOKEN and EDGE_* were unset.
+  - Input: Meta's sample truck photo at 640 x 427.
+  - Results: "wheel" gave 4 (0.93, 0.93, 0.78, 0.87), "truck" gave 1 (0.85), "person" gave 0. Each took about 1.4 s on the board and about 5 s end to end.
+  - The page in the browser pane showed "Board answer", 4, "Counted on jetson-04 by Meta SAM 3.1" and the board's tinted picture.
+- **Proof it was jetson-04 (three independent checks, none refuted):**
+  - Fleet jobs: the ask.py jobs `jb_823ace8edcc2a433`, `jb_8aad8cd73b1c2bd9` and `jb_27be982bed748d34` ran on jetson-04 inside each request's window. There were 15 jobs in that window, all on jetson-04.
+  - Board log: the board's `sam3` journal logged one `POST /segment` inside each of those windows.
+  - Matching output: the overlays the product returned are byte-identical to the board's, and its boxes times 640 x 427 equal the board's pixel boxes.
+- **Failure behaviour (run with fakes):** a dead port, HTTP 500, non-JSON, `{error}`, a partial reply and a 120 s hang each gave HTTP 503 with no count. The product's own spec passed 2 of 2.
+- **Limits to say with it:**
+  - It works on the laptop only, through an admin-token bridge over the ngrok control plane. The hosted product never has `SAM_URL`, so there it counts with cloud SAM 3.1.
+  - The board call came from a follow-up change that we specified. The first build was asked for it and didn't write it.
+  - The label is fixed text: a fake at `SAM_URL` also shows "jetson-04". The count isn't checked against the boxes.
+  - The photo crosses the tunnel, and the fleet's job history keeps it in full as base64 (a Muse Privacy point).
+  - Only 3 prompts were tried, on one sample photo. The weights' hash wasn't matched to a published Meta one.
+  - Two lines on the page are wrong now. "Only the count has a backup model on the office board" is the platform's fixed edge limit. The hint suggests a cloud fallback that doesn't exist when `SAM_URL` is set.
+- **Found, not fixed (read in code, not run):** an edge brief whose only model isn't Muse Wonder (here `sam-3.1`) gives its product token no `muse-wonder-1.0` (`allowedModelsFor`, `lib/pipeline/logic.ts:118-135`). `respondJsonOrEdge` asks Muse Wonder first, gets 404 `model_not_found` (`lib/gateway/handler.ts:215-226`), and treats a 4xx as the cloud saying no (`template/lib/meta/edge.ts:98-100`). So a hosted product shows "turned this request down" and never asks the board. The drills miss it because the blackhole drops connections instead of answering 404, and the build's code-session token skips the allowlist.
+- **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
+- **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
