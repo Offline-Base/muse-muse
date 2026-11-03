@@ -13,6 +13,7 @@ import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { env } from "@/lib/env";
 import { applyTargets, EDGE_SAM_LIMITS, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
 import { briefInstructions } from "@/lib/prompts/brief";
+import { EDGE_BOARD_STATUS_JUDGE_NOTE } from "@/lib/edge/judge";
 import { EDGE_JUDGE_NOTE, JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 
@@ -124,12 +125,12 @@ describe("the edge target", () => {
   it("gives the judge one line about labeled answers, only for an edge product", () => {
     on();
     assert.equal(judgeInstructions({ ...BRIEF, targets: undefined }), JUDGE_INSTRUCTIONS);
-    assert.equal(judgeInstructions(edgeBrief()), `${JUDGE_INSTRUCTIONS}\n\n${EDGE_JUDGE_NOTE}`);
+    assert.equal(judgeInstructions(edgeBrief()), `${JUDGE_INSTRUCTIONS}\n\n${EDGE_JUDGE_NOTE}\n\n${EDGE_BOARD_STATUS_JUDGE_NOTE}`);
   });
 
   it("says nothing a person reads that the messaging rules rule out", () => {
     on();
-    const copy = [TARGET_GUIDE.edge, ...TARGET_LIMITS.edge!.map((l) => l.text), ...EDGE_SAM_LIMITS.map((l) => l.text), EDGE_JUDGE_NOTE, renderBuildPrompt(edgeBrief(), RENDER), renderBuildPrompt(textEdgeBrief(), RENDER)].join("\n");
+    const copy = [TARGET_GUIDE.edge, ...TARGET_LIMITS.edge!.map((l) => l.text), ...EDGE_SAM_LIMITS.map((l) => l.text), EDGE_JUDGE_NOTE, EDGE_BOARD_STATUS_JUDGE_NOTE, renderBuildPrompt(edgeBrief(), RENDER), renderBuildPrompt(textEdgeBrief(), RENDER)].join("\n");
     assert.ok(!copy.includes("\u2014"), "no em dashes");
     assert.ok(!/attack-proof|stops hacks|food.safe/i.test(copy));
     // "works offline", "private" and "on-device" appear only as what never to say.

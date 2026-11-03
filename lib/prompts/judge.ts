@@ -4,6 +4,7 @@ import type { Brief } from "@/lib/brief/schema";
 import { capsJudgeNotes } from "@/lib/caps/judge";
 // ---------- end Wave 3, unit 2 ----------
 import { env } from "@/lib/env";
+import { EDGE_BOARD_STATUS_JUDGE_NOTE } from "@/lib/edge/judge";
 import { fullJudgeNote } from "@/lib/full/prompts";
 import { buildableRequirements } from "@/lib/full/requirements";
 import { targetCheckedRequirements } from "@/lib/full/target-checks";
@@ -145,7 +146,7 @@ export function judgeInstructions(
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
     // Same rule as render.ts addedTargets: a stored or imported edge brief says nothing edge while the flags are off.
-    ...(targets.includes("edge") && env.edgeEnabled ? [EDGE_JUDGE_NOTE] : []),
+    ...(targets.includes("edge") && env.edgeEnabled ? [EDGE_JUDGE_NOTE, EDGE_BOARD_STATUS_JUDGE_NOTE] : []),
     ...(opts.samples ? [SAMPLES_JUDGE_NOTE] : []),
   ];
   const base = direction ? withHouseStyle(JUDGE_INSTRUCTIONS, RANGE_HOUSE_STYLE) : opts.museAppLook ? withHouseStyle(JUDGE_INSTRUCTIONS, BOTH_HOUSE_STYLES) : JUDGE_INSTRUCTIONS;

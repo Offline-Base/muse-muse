@@ -3797,3 +3797,33 @@ The edge target now shows the truth about the board (audit issue 5). Built and t
 - **Judge note, not wired.** `lib/edge/judge.ts` has `EDGE_BOARD_JUDGE_NOTE`, `isBoardRequirement` and `boardBackupDrilled`. They need wiring in `lib/prompts/judge.ts` and the requirement tests (`requirementTestsText`), which this unit doesn't own. Wire the note and the drill-backed requirement test together.
 - **Tests:** template edge-board (new), edge, edge-sam, edge-drill, edge-sam-drill and edge-drill-scenarios; lib edge-build, template-source, models, fleet-status (new), judge (new) and fleet sam; components edge-slot (new) and drills; the edge part of the build-steps scenario. All pass. Root typecheck is clean, and the template typecheck shows no errors in the new files.
 - **Review fixes (same branch).** The Edge slot no longer says "every answer comes from the cloud" when a SAM brief's look may reach the office board; it says the main answer does. Drill 19 also takes a WebP sample, since `resizeImage` makes any photo a JPEG. The skill now tells Muse Code to have the smoke test click "Try the sample", instead of claiming it already does. The judge note is split: `EDGE_BOARD_STATUS_JUDGE_NOTE` is safe to wire alone and should go in with this merge, so the judge doesn't read "Not connected to a board" as error copy. `EDGE_BOARD_REQUIREMENT_JUDGE_NOTE` still waits for the drill-backed requirement test. Tests: edge-slot, judge, edge-sam-drill, template-source, edge-build. Root typecheck clean.
+
+## Nov 3, 2026, 6:30 AM ET: target fixes merged (workflow wf_8db1483a-66c)
+
+Five units, each checked by a second agent, which fixed real problems in all five. Merged together, plus one wiring fix of my own.
+- **Native lane, honest and ready to turn on.** The packager never ran because Production has no `PACKAGER_SNAPSHOT_ID`. The Oct 31 packager snapshot still matches `lib/native/shells.json` and packaged three apps on Nov 1, so no EAS build is needed to turn it on.
+  - Phone and desktop are offered only when the packager is set up. Otherwise the build room gets a "skipped" native event with the reason, and the Get it panel says "Not made for this build".
+  - Product page links use www.musemuse.dev.
+  - New docs/NATIVE_READY.md (the owner's steps) and scripts/backfill-live-urls.ts (dry run by default).
+  - The admin package route takes the automation key.
+- **Target requirements are proven by the target.**
+  - A native package, a board answer, a voice transcription or a headset session is machine-checked, and never marked working from a web screen.
+  - Glasses briefs with a voice question get muse-voice-transcribe-1.0.
+  - Spoken text that contradicts the screen is a defect.
+  - The edge SAM limit line is replaced instead of contradicted.
+- **Samples and the agent loop.**
+  - Samples are served from public/samples/, and verify fails a browser fetch of /fixtures/.
+  - The agent retries its submit turn once, and connected-app tool ids never reach the UI.
+  - The gadget check allows long agent actions or says why it skipped.
+  - Nav items cut off at 390 px are caught.
+- **Edge shows the truth about the board.**
+  - Products show a board status line, "Not connected to a board" when none answers, and board screens never call the cloud.
+  - Door samples are required.
+  - There's a new Get it Edge slot with the drill results.
+  - I wired `EDGE_BOARD_STATUS_JUDGE_NOTE` into the judge's edge notes, so that honest line isn't read as error copy.
+- **Build time and counts.**
+  - The room shows the real wall (full builds 150 minutes, plain builds now stop at 120).
+  - A milestone that passes later no longer shows "failed".
+  - Fix rounds count only fix steps.
+- **Tests:** 34 touched test files plus the pipeline, brief and no-wonder suites, 997 of 997; typecheck clean.
+- **Needs a new builder snapshot** for AGENTS.md, the skills and AgentRun. verify.mjs, smoke-report.mjs, judge-shot.ts and lib/agent refresh on every verify; the rest is live on deploy.
