@@ -3,7 +3,8 @@ import { withWorkflow } from "workflow/next";
 import { trustGeoRewrites } from "./lib/trust/geo-config";
 
 // PGlite (local runs only, lib/db/client.ts) loads its WebAssembly from node_modules, so it must not be bundled. The
-// Composio SDK (lib/tools/composio/client.ts) stays out too: it is imported lazily, only when a live tool runs.
+// Composio SDK (lib/tools/composio/client.ts) stays out too: it is imported lazily, only when a live tool runs. So does
+// Modal's SDK (lib/sandbox/host/modal.ts), imported only when SANDBOX_HOST=modal.
 // The dev indicator is off because it sits on top of the sidebar's account chip.
 // The docs pages, the docs Ask route and the build MCP read Meta's mirrored Markdown from disk at request time
 // (docsMarkdown in lib/docs/pages.ts builds the path from the slug, which file tracing can't follow), so the pages are
@@ -19,7 +20,7 @@ const nextConfig: NextConfig = {
   env: { BUILDS_ON_CONTRIBUTOR: process.env.BUILDS_ON_CONTRIBUTOR ?? "" },
   // The owner's yes to a robot action: a product must not be able to frame it and steer the click.
   headers: async () => [{ source: "/gadgets/confirm", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Frame-Options", value: "DENY" }] }],
-  serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
+  serverExternalPackages: ["@electric-sql/pglite", "@composio/core", "modal"],
   devIndicators: false,
   // Muse Privacy's files never ship with the site. .vercelignore keeps them out on Vercel; this keeps them out of any other
   // build, since a few routes' createReadStream calls make the tracer take in the whole project.

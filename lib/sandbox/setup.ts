@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { Sandbox } from "@vercel/sandbox";
+import type { HostSandbox as Sandbox } from "@/lib/sandbox/host/types";
 import { SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, MUSE_INSTALL_URL, OUT_DIR, PLAYWRIGHT_VERSION, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
