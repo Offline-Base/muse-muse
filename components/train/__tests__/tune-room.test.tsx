@@ -410,7 +410,7 @@ describe("the fine-tune room", { skip: canMock ? false : "needs --experimental-t
             );
             assert.equal(
               render(PlanCard, { brief, art, running }),
-              render(PlanViewCard, { view, art, running, wrap: true, body }),
+              render(PlanViewCard, { view, art, running, say: card.planSays(art, running), wrap: true, body }),
               `${name}, ${art}, running ${running}`,
             );
             const room = render(PlanViewCard, { view: card.planViewFromBrief(brief), art, running });

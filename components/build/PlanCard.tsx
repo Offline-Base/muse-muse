@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { preload } from "react-dom";
 import type { RoomState } from "@/components/build/derive";
 import { BriefBody, VERDICT } from "@/components/build/turns";
@@ -33,6 +33,23 @@ export const PLAN_ART: Record<PlanArt, string> = {
   shield: "/muse/muse-shield.jpg",
 };
 const ART_ORDER: readonly PlanArt[] = ["present", "building", "shield"];
+
+/**
+ * Muse talking (owner, Nov 2), first thing on a new plan: the owner's 10 s clip with its off-white keyed out
+ * (scripts/dev/mascot/talk.sh), which loops on its own (its last frame differs from its first by less than one frame
+ * step). Transparent VP9 WebM for Chrome and Firefox (about 400 KB) and HEVC for Safari (about 760 KB): each draws the
+ * other's alpha wrong, so the file is picked in the browser. The poster is its first frame, transparent too.
+ */
+export const PLAN_TALK = { webm: "/muse/muse-talk.webm", hevc: "/muse/muse-talk-hevc.mov", poster: "/muse/muse-talk.png" };
+/** How long Muse talks before the card fades, slowly, to the picture it shows otherwise (owner, Nov 2). */
+export const TALK_MS = 8000;
+/** That fade, slower than a state swap's. */
+export const TALK_FADE_MS = 1600;
+
+function talkSource(): { src: string; type: string } {
+  const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+  return safari ? { src: PLAN_TALK.hevc, type: 'video/mp4; codecs="hvc1"' } : { src: PLAN_TALK.webm, type: "video/webm" };
+}
 const ART_SIZE = { width: 564, height: 640 };
 
 /**
@@ -136,6 +153,13 @@ export function planViewFromBrief(brief: Brief): PlanView {
   };
 }
 
+/** What Muse says in the bubble beside the plan, by the picture's state, and whether the build can still change. */
+export function planSays(art: PlanArt, running: boolean): string {
+  if (art === "shield") return "It's live! Open it and give it a try.";
+  if (art === "building") return "I'm building it now. Follow along in the steps.";
+  return running ? "Here's my plan! I'm getting set up to build it." : "This one didn't ship, but the plan still stands.";
+}
+
 export function PlanCard({
   brief,
   art,
@@ -154,6 +178,7 @@ export function PlanCard({
       art={art}
       artUrl={artUrl}
       running={running}
+      say={planSays(art, running)}
       wrap
       body={
         <details className="plan-card-full">
@@ -178,8 +203,11 @@ export function PlanViewCard({
   body,
   wrap = false,
   artUrl = null,
+  say,
 }: {
   view: PlanView;
+  /** A short line Muse says in a speech bubble beside the picture, above the plan's name. */
+  say?: string;
   art: PlanArt;
   /**
    * A picture made for this plan, shown instead of the stock mascot for every state. One there from the first render is
@@ -208,16 +236,37 @@ export function PlanViewCard({
     setOwnLoaded(false);
   };
   const tagline = view.tagline?.trim() ?? "";
+  // The build room's card only (it has a bubble), on a plan that's new when the card opens: Muse talks for TALK_MS,
+  // then the card fades slowly to the picture it would show otherwise, the build's own once it's in, else the stock one.
+  const [talks] = useState(Boolean(say) && running && art === "present");
+  const [talkDone, setTalkDone] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const [talkSrc, setTalkSrc] = useState<{ src: string; type: string } | null>(null);
+  useEffect(() => {
+    if (!talks) return;
+    setTalkSrc(talkSource());
+    let fadeEnd: ReturnType<typeof setTimeout> | undefined;
+    const end = setTimeout(() => {
+      setSlow(true);
+      setTalkDone(true);
+      fadeEnd = setTimeout(() => setSlow(false), TALK_FADE_MS + 200);
+    }, TALK_MS);
+    return () => {
+      clearTimeout(end);
+      clearTimeout(fadeEnd);
+    };
+  }, [talks]);
+  const talking = talks && !talkDone && art === "present";
   return (
     <div className={wrap ? "plan-card plan-card-wrap" : "plan-card"} data-art={art}>
       {/* Decorative: the room's own words, the working step above the card or the outcome under it, say the state. */}
       <div className="plan-card-art">
-        <div className="plan-card-stack">
+        <div className="plan-card-stack" style={slow ? ({ "--plan-swap": `${TALK_FADE_MS}ms` } as CSSProperties) : undefined}>
           {arts.map((a) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={a}
-              className={a === art && !own ? "is-on" : undefined}
+              className={a === art && !own && !talking ? "is-on" : undefined}
               src={PLAN_ART[a]}
               alt=""
               width={ART_SIZE.width}
@@ -226,6 +275,30 @@ export function PlanViewCard({
               {...(a === art ? {} : { fetchPriority: "low" as const })}
             />
           ))}
+          {talks ? (
+            <video
+              key="talk"
+              className={talking ? "is-on" : undefined}
+              src={talkSrc?.src}
+              poster={PLAN_TALK.poster}
+              width={ART_SIZE.width}
+              height={ART_SIZE.height}
+              muted
+              loop
+              playsInline
+              autoPlay={talking}
+              preload="auto"
+              aria-hidden
+              // It plays only while it's the one shown, and with reduced motion it stays on its first frame.
+              ref={(v) => {
+                if (!v || typeof window === "undefined") return;
+                const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+                // It keeps moving through the slow fade, then stops.
+                if ((talking || (talks && slow)) && !still) void v.play().catch(() => {});
+                else v.pause();
+              }}
+            />
+          ) : null}
           {ownUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -234,7 +307,7 @@ export function PlanViewCard({
               ref={(img) => {
                 if (img?.complete && img.naturalWidth === 0) broke(ownUrl);
               }}
-              className={own ? "is-on" : undefined}
+              className={own && !talking ? "is-on" : undefined}
               src={ownUrl}
               alt=""
               width={ART_SIZE.width}
@@ -247,6 +320,7 @@ export function PlanViewCard({
         </div>
       </div>
       <div className="plan-card-head">
+        {say ? <p className="plan-card-say">{say}</p> : null}
         <h2 className="plan-card-name">
           <span className="sr-only">The plan: </span>
           {view.name}
