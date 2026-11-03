@@ -8027,10 +8027,124 @@ div.md.md-plain {
   box-shadow: var(--shadow-pop);
 }
 
+/* The first-open intro (components/mascot/Intro.tsx, lib/intro.ts). The walking Muse waits off stage while it plays. */
+:root[data-intro] .mascot,
+:root[data-intro] .mascot-climb {
+  visibility: hidden;
+}
+
+.intro-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #fbfbfb;
+  opacity: 1;
+  transition: opacity 650ms ease;
+}
+
+.intro-curtain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fbfbfb;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 450ms ease;
+}
+
+.intro-curtain.is-white::after {
+  opacity: 1;
+}
+
+.intro-curtain.is-leaving {
+  opacity: 0;
+}
+
+.intro-curtain-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.intro-skip {
+  position: absolute;
+  z-index: 1;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1c2b33;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
+}
+
+.intro-skip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.intro-hello {
+  width: min(440px, calc(100vw - 32px));
+  padding: 8px 28px 28px;
+  border: 0;
+  border-radius: 32px;
+  background: var(--surface);
+  color: var(--fg);
+  text-align: center;
+  box-shadow: var(--shadow-float);
+}
+
+.intro-hello::backdrop {
+  background: var(--scrim);
+  backdrop-filter: blur(12px);
+}
+
+.intro-hello-figure {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* The clip is 458 x 400; shown at 240 px tall, so the card never clips its arms. */
+.intro-hello-video {
+  display: block;
+  height: 240px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.intro-hello h2 {
+  margin: 4px 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.intro-hello p {
+  margin: 0 0 20px;
+  color: var(--muted);
+}
+
+.intro-hello-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-curtain,
+  .intro-curtain::after {
+    transition: none;
+  }
+}
+
 @media print {
   .mascot,
   .mascot-climb,
-  .mascot-note {
+  .mascot-note,
+  .intro-curtain,
+  .intro-hello {
     display: none;
   }
 }

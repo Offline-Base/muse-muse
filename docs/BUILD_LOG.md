@@ -2814,3 +2814,12 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Since the small-base list no longer has a Llama, `judgedProblem` also refuses an adapter whose base name matches another family's word.
   - Old tests that still expected a small Llama for other devices were brought to the ruling: the Modelfile test, the run page test and the pairing test.
   - Typecheck clean. 594 of 594 tests pass in the files the branch touches, and 47 of 47 in the downstream files.
+
+## Nov 2, 2026, about 8:30 PM ET: two candidate intros for opening Muse Muse (tg-sidebar, local preview only)
+
+- **Asked (owner):** review the two newest videos in Downloads as the intro when the product opens, test both, make whatever edits help.
+- **A, "curtain"** (`gemini_generated_video_b55b9744.mp4`, 10 s, 1280x720): Muse waves, opens a blue curtain onto a white stage and walks off right. Full screen on the first visit to `/`, trimmed to 9.4 s, muted, 370 KB WebM and 610 KB MP4 (from 3.1 MB). At 8.5 s it washes out to white (its own ending), then fades into the page, so no ghost of the big Muse shows over the page. When it ends the walking Muse comes in from the right, as if he just walked off that stage. "Skip intro" is focused from the start, and Escape skips too.
+- **B, "hello"** (`generated_video (2).mp4`, 10 s, 960x960): Muse on white, blinking, smiling and gesturing. White keyed out like the walk loop, so it sits on either theme. Shown as a welcome card: "Hi, I'm Muse.", one line, "Start musing" (focused) and "Look around first". It loops while the card is open.
+- **Rules for both:** once per browser (`musemuse-intro-seen`), never with reduced motion, and the walking Muse hides while one plays. `?intro=curtain` or `?intro=hello` on any page shows that one again; `?intro=off` turns it off. The default is A until the owner picks.
+- **Fixes found by looking:** B's first crop cut his arms when he gestured (now full width); B's video overflowed the card and was clipped (now sized to 240 px); A's single fade showed a ghost of the big Muse over the page (now two steps).
+- **Checked in Chromium, light and dark:** A plays, closes itself, marks seen, and the walking Muse enters at x 1165 of 1280; a reload shows no intro; Escape skips; B opens with "Start musing" focused and closes from "Look around first". No page or console errors. Tests: intro 4 of 4, mascot 4 of 4. Typecheck clean. Safari not tried. Spend $0.
