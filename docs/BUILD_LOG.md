@@ -2987,3 +2987,17 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - The phone row first stacked at 390 px (a grid sizes auto-fit columns at their maximum), and was fixed with a wrapping flex row.
   - Tests: lib/devices 5 of 5. Product page, card and clip tests 460 pass, with the one models-page failure main already has. Typecheck clean. Spend $0.
 
+## Nov 2, 2026, about 9:55 PM ET: the Offline Base logo as Muse Muse's logo (tg-sidebar, PR #86)
+
+- Owner: "go to base logos zip in my downloads and use that as the logo". The zip (`BASE LOGOs.zip`, Nov 2) holds two
+  120 px transparent PNGs of the house logo: "LIGHT THEME" (dark strokes) and "DARK THEME" (white strokes).
+- Both were re-encoded (no metadata) into `public/brand/base-logo-light.png` and `base-logo-dark.png`, about 8 KB each.
+- `components/shell/BrandMark` draws both; globals.css shows the one that matches the theme, including the Settings
+  override (`data-theme`), in place of the old two-sparkle mark. The name "Muse Muse" and the Concept tag stay.
+- `app/icon.svg` (the browser-tab icon) now embeds both PNGs and switches with the system theme, in place of the blue
+  sparkle square.
+- docs/BRAND.md's Brand line says so.
+- Checked on the local preview: light and dark at 1280 px and 390 px show the right file at 28 px, a forced dark
+  setting on a light system swaps it, the icon serves as SVG (200), no page errors.
+- Not done: no Apple touch icon (the files are 120 px; a sharp 180 px one needs a bigger source).
+

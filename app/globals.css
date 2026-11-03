@@ -427,7 +427,36 @@ pre {
 
 .brand-mark {
   flex: none;
-  color: var(--fg);
+  display: inline-flex;
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The Offline Base logo has one file per theme (components/shell/Brand.tsx): show the one that matches. */
+.brand-mark-dark {
+  display: none !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand-mark-light {
+    display: none !important;
+  }
+
+  :root:not([data-theme="light"]) .brand-mark-dark {
+    display: block !important;
+  }
+}
+
+:root[data-theme="dark"] .brand-mark-light {
+  display: none !important;
+}
+
+:root[data-theme="dark"] .brand-mark-dark {
+  display: block !important;
 }
 
 .brand-name {

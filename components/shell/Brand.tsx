@@ -1,19 +1,21 @@
 import Link from "next/link";
 
-/** Muse Muse's own mark: two sparkles. Nothing borrowed from Meta's logo. */
+/**
+ * The Offline Base logo (the house), from the owner's logo files (Nov 2). Two files, one per theme: the dark-stroke one on
+ * light pages, the white one on dark pages. CSS shows the one that matches the theme (globals.css, .brand-mark).
+ */
 export function BrandMark({ size = 28 }: { size?: number }) {
   return (
-    <svg className="brand-mark" width={size} height={(size * 24) / 28} viewBox="0 0 28 24" aria-hidden focusable="false">
-      <path
-        fill="currentColor"
-        d="M11 2.5l2.1 6a3 3 0 0 0 1.9 1.9l6 2.1-6 2.1a3 3 0 0 0-1.9 1.9l-2.1 6-2.1-6A3 3 0 0 0 7 14.6l-6-2.1 6-2.1a3 3 0 0 0 1.9-1.9l2.1-6z"
-      />
-      <path fill="currentColor" d="M23 1.5l.95 2.55 2.55.95-2.55.95L23 8.5l-.95-2.55L19.5 5l2.55-.95L23 1.5z" />
-    </svg>
+    <span className="brand-mark" style={{ width: size, height: size }} aria-hidden>
+      {/* eslint-disable-next-line @next/next/no-img-element -- a 120 px PNG drawn at 28 px, nothing to optimize */}
+      <img className="brand-mark-light" src="/brand/base-logo-light.png" alt="" width={size} height={size} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="brand-mark-dark" src="/brand/base-logo-dark.png" alt="" width={size} height={size} />
+    </span>
   );
 }
 
-/** The brand slot: our mark, "Muse Muse" and the Concept pill. No Meta logo or wordmark. */
+/** The brand slot: the logo, "Muse Muse" and the Concept pill. No Meta logo or wordmark. */
 export function Brand({ onClick }: { onClick?: () => void }) {
   return (
     <Link href="/" className="brand" onClick={onClick}>

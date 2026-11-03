@@ -269,8 +269,10 @@ All M unless it says otherwise.
 - **Hover:** `--hover`. **Active:** `--nav-active`, text stays `--fg` (the fill M, the use inferred), weight 500 (O: E's
   600 is heavier than anything else on the page).
 - **Group gaps:** 16 px of space, no rule between groups (O). Today's groups stay.
-- **Brand:** our two-sparkle mark in `--fg`, the name 14 / 500, the Concept tag in a neutral fill. Same 12 px inset as
-  the live logo slot. It never becomes the working icon or anything petal-shaped.
+- **Brand:** the Offline Base logo (the house, owner's files of Nov 2 in `public/brand/`) at 28 px, the name 14 / 500,
+  the Concept tag in a neutral fill. Same 12 px inset as the live logo slot. One file per theme: the dark-stroke file on
+  light pages, the white file on dark pages, following the site's theme setting. The browser-tab icon (`app/icon.svg`)
+  carries both and follows the system theme. It never becomes the working icon or anything petal-shaped.
 - **Foot:** disclaimer 12 / 16 in `--muted`, then the account row: 32 px avatar in `--surface-3` with `--fg` initials,
   name 14 / 400, role 12 / 16 (E, with M's scale). Sign in is a small primary button.
 
