@@ -34,6 +34,7 @@ import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { briefKeepsWonder, compact, connectorActions, plural, relativeTime, servedModelLabel, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
+import { WONDER_DEMO_SLUGS } from "@/lib/gateway/policy";
 import { canEditProduct } from "@/lib/edit-pass";
 import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
@@ -355,7 +356,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <ul className="model-list">
                 {models.map((m) => (
                   <li key={m.id}>
-                    <span className="chip">{servedModelLabel(m.id, { keepsWonder: briefKeepsWonder(brief) })}</span>
+                    <span className="chip">
+                      {/* The owner's Wonder demo products stay on Wonder under the switch too (keepsWonderUnderSwitch). */}
+                      {servedModelLabel(m.id, { keepsWonder: briefKeepsWonder(brief) || WONDER_DEMO_SLUGS.includes(product.slug) })}
+                    </span>
                     <span className="muted">{m.usedFor}</span>
                   </li>
                 ))}
