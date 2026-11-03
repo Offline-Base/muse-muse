@@ -3971,3 +3971,29 @@ The task: find why one-bit Muse Glimmer loops on jetson-02 and fix it per reques
 - **Files:** every candidate is public in OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF (listed with the Hub's free API). Only `iq1s-out-q4` (6.21 GB, 38/40 old facts against 35/40) might fit, and only if about 0.5 GB more RAM is freed. Meta's base IQ1_S is 6.53 GB, scores 1.6% and loops on 57 of 60. No requantize is needed (it would be about $1.75 to $2.60 on an A10).
 - **Phones, found, not new runs:** Device Farm runs from Oct 31 and Nov 1 in ~/muse-muse-devices (read-only): Galaxy S25 12 GB, CPU, r30b IQ1_S 1.94 tokens a second, 3 of 3; IQ2_XXS 1.89, 3 of 3; Pixel 9 Pro 16 GB IQ2_XXS 0.95. adb shell, not an app. They weren't in this log before. A re-measure is about $4.60 expected, $12.75 at most (the exact command is in the doc); no filmed phone chat is possible without an app that has the `muse-glimmer` architecture.
 - **Stale elsewhere:** the Hub model card says Glimmer hasn't run on a Jetson (owner step O3). docs/HANDOFF.md now points to the doc.
+
+## Nov 3, 2026, 11:30 AM ET: the owner's five priorities merged (workflow wf_6b1af43d-78c)
+
+Merged five branches, four of them checked by a second agent, which fixed real problems in each. Nothing billed ran.
+- **Partner evals (tg-p-partner-evals), off by default.** After a tune is judged, an opt-in step (`PARTNER_EVALS=baseten` or `modal`, with `HOST_TUNED`) hosts the adapter on the partner, answers the held-out prompts for base and tuned, tears the endpoint down, judges, and shows "Evaluated on Baseten" in the run room. It is capped at $8 and 60 minutes by default. Fireworks is out: it refuses r30b adapters, and its account answered 412. No partner prize is on the public pages; the event page names Baseten, Modal and Fireworks only as giving $100 credits. Owner steps to try it once on the overnight cold-room tune: docs/BUILD_LOG.md partner entry and HANDOFF to-do 18 (about $3 to $5, at most about $8.10). The job's adapter must be published privately first.
+- **Demos (tg-p-demos).**
+  - Six broken or contradicting products are hidden from the gallery, which now leads with handbook-proof-checker, room-restyle-studio, standup-scribe-notes, parking-policy-reader and paper-lantern-museum.
+  - `npm run drill` passes 11 of 11.
+  - The fleet tunnel address is out of the tree.
+  - /how-it-works reads fix rounds from env.
+  - The product page's model panel names the model that really runs, Wonder demo slugs included.
+- **Simpler UI (tg-p-simplify-ui).**
+  - The build room folds Muse Code's raw round notes under "Muse Code's notes".
+  - /learn folds planned lessons and gates owner-only text to admins.
+  - The product page moves the Claude and ChatGPT tabs behind "More ways to use it"; the Muse gadget stays visible as Meta tooling.
+  - Empty headings are gone, as is the doubled "Musings".
+- **SAM locally (tg-p-sam-local).**
+  - scripts/edge/sam3 has a Meta-or-tuned switch, a before-and-after view and `compare.py`.
+  - SAM can be reached straight on the board (`SAM_URL`) or through the fleet (`FLEET_URL`, no default).
+  - scripts/edge/sam3/LOCAL.md has Hussam's rebind and cable-out steps and the go or no-go check, and tune/README.md has the steps to repeat the tune.
+  - None of it has run against a board from this session (this Mac isn't on the office network).
+- **Glimmer on devices (tg-p-glimmer-devices).** docs/GLIMMER_DEVICES.md:
+  - jetson-02's loop is fixed only by skipping reasoning; answers stay unreliable, and no better file fits.
+  - One-bit Glimmer already ran on a Galaxy S25 in Device Farm on Nov 1 at 1.94 tokens a second (3 of 3 simple questions). That is a measured, dated claim.
+- **Fixed on main:** `components/build/__tests__/plan-art-flag-off.test.tsx` failed since `b80d3bb9` (the round 1 room and plan merge, which computes a plan's total in code). Bisected, then regenerated the golden on the merged code. Both subtests pass, so flag off and on still render the same.
+- **Tests:** the merged branches' tests plus tune and no-wonder suites, 306 of 306; partner, host, product, build and gallery suites pass after the golden; typecheck clean.
