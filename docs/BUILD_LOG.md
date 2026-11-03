@@ -3484,3 +3484,8 @@ and dark: no sideways scroll or widened page on any audited page, nothing under 
 - /gallery's search, filter and size buttons (32 px) and the build room's "Show thinking" (32 px) get 44 px tall tap areas.
 
 After: `docs/log/shots/2026-11-03/phone-after-*.png`.
+
+**After the follow-up deploy (7c8a16bc, dpl_6jXAihCPcC7iw6nhT2wDYR1iD2Vj):** Muse sampled every 0.7 s on Make, both
+product pages, the build room, /learn, /private, /models, /docs/quickstart and /gallery at 390 light and 360 dark: never
+shown over a control or a live preview, and showing over text and open space on most of them. The new tap areas hit
+their buttons.
