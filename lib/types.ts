@@ -386,6 +386,9 @@ export function condenseProveEvents(events: ReadonlyArray<{ type: string; at?: s
   };
 }
 
+/** The device a clip was recorded on, for the frame DeviceStage draws around it (components/product/DeviceStage.tsx). */
+export type DeviceKind = "mac" | "windows" | "android" | "iphone";
+
 /** A clip of a product on a real device that its owner uploaded (products.extra_clips). */
 export interface ProductClip {
   url: string;
@@ -393,6 +396,8 @@ export interface ProductClip {
   /** Says honestly what it shows, such as "Filmed on a Meta Quest 3". */
   caption: string;
   addedAt: string;
+  /** The device it was recorded on, so the product page shows it inside that device. Unset clips show unframed. */
+  device?: DeviceKind;
 }
 
 /** Mirrors template/musemuse.schema.json. */
