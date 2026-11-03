@@ -4261,3 +4261,13 @@ Cost (list prices, the code's estimates, not checked against the bills):
 - components/train/__tests__/fixtures/tune-flag-off.json: the build room render it pins changed with this morning's deliberate room changes (the same render hash the plan-art golden was refreshed to). Regenerated with TUNE_GOLDEN_WRITE=1; flag off and on still render the same.
 - Tests: partner, host, scripts, no-wonder and train component suites pass; typecheck clean; partner and train workflow bundles keep only pure imports.
 - Owner decision, Nov 3 afternoon: $200 Meta API budget for all builds, a final Muse Wonder UI pass at the end of each build, every product fully working and good enough for Meta to feature.
+
+## Nov 3, 2026: one page for every feature flag, and a turn-on script (branch tg-f-flags, not pushed)
+
+- **Why:** the owner asked how to turn on all features. Not every switch should go on, so docs/FLAGS.md sorts each one into turn on now, turn on after its setup, and leave off, with what it does, what it needs and its risk, then the order of the setups with who and cost.
+- **Counts:** 47 turn on now (36 already present in Production, 11 missing), 33 rows after setup, 28 rows (31 names) leave off. Checked against lib/env.ts, lib/caps/ids.ts and the docs. Production names were read with `vercel env ls production`, names only.
+- **The 11 the script adds:** STEER_CHAT, BUILD_ROOM_STEPS, ENGINE_EXACT_LOGIC, ENGINE_FIT_OUTPUT, ENGINE_LIVE_SMOKE, RUNTIME_OUTPUTS, STORY_PAGES, TRUST_REPORTS, TUNE_GENERAL_CHECKS, CODE_BROWSE, HARDWARE_GADGET_OWNER_CHECK. None opens new public spend beyond the guest limits.
+- **Calls made here:** EXPORT_TUNED moved to after setup until DATA_RIGHTS Q1 is settled (the moss and lab repos are public). The wave 3 caps (files, connect, jobs, live, media, runtime, extension, games, data sign-in) go after one Preview test build each, since none has run for real. NATIVE_LAB is present in Production but the lab's instance ids aren't: the page says remove it unless the lab is up. TRUST_REPORTS needs no manual migration, since `npm run build` runs migrations.
+- **scripts/flags-on.sh:** run from ~/mm-wt/overnight. Adds each missing turn-on-now switch with value 1 from stdin (`vercel env add NAME --environment production --yes`, CLI 65.2.0). Leaves present ones alone unless `--rewrite`, which removes and re-adds them. `--dry` prints the plan. Ends by saying to redeploy.
+- **Checks:** `bash -n` clean. With `vercel` stubbed as a bash function: `--dry` made 0 write calls and listed the 11; a stubbed real run made 11 adds; `--rewrite` made 36 removes then 47 adds; an unknown option exits 2; an unlinked folder exits 1.
+- **Not run:** no env change, deploy, build or spend. Spend $0.
