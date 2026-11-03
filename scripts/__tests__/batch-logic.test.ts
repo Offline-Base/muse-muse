@@ -139,12 +139,28 @@ describe("polish answer", () => {
     assert.deepEqual(parsePolishAnswer(201, { buildId: id(5) }, SITE), { kind: "started", refineIds: [id(5)] });
     assert.deepEqual(parsePolishAnswer(201, { passes: [{ buildId: id(5) }, id(6)] }, SITE), { kind: "started", refineIds: [id(5), id(6)] });
     assert.deepEqual(parsePolishAnswer(202, { runId: "r1" }, SITE), { kind: "started", refineIds: [] });
+    assert.deepEqual(parsePolishAnswer(201, { buildId: id(5), maxUsd: 4 }, SITE), { kind: "started", refineIds: [id(5)], maxUsd: 4 });
   });
-  it("tells a route that isn't deployed from an unknown build", () => {
+  it("stops on a route that isn't deployed or is switched off, never marking the build refused", () => {
     const missing = parsePolishAnswer(404, {}, SITE);
     assert.equal(missing.kind, "route_missing");
     assert.match((missing as { message: string }).message, /polish route isn't deployed on https:\/\/www\.example\.com yet/);
-    assert.equal(parsePolishAnswer(404, { error: "not_found" }, SITE).kind, "refused");
+    const off = parsePolishAnswer(404, { error: "not_found" }, SITE);
+    assert.equal(off.kind, "route_missing");
+    assert.match((off as { message: string }).message, /POLISH_ENABLED/);
+  });
+  it("follows a 409 that names the product's polish instead of retrying or polishing again", () => {
+    assert.deepEqual(parsePolishAnswer(409, { error: "already_polished", buildId: id(7), status: "live" }, SITE), { kind: "adopt", refineIds: [id(7)], reason: "already_polished" });
+    assert.deepEqual(parsePolishAnswer(409, { error: "busy", buildId: id(8) }, SITE), { kind: "adopt", refineIds: [id(8)], reason: "busy" });
+    const a = item(1, "ready");
+    assert.deepEqual(applyAnswer(a, { status: 409, json: { error: "already_polished", buildId: id(7) } }, SITE, now), {});
+    assert.equal(a.state, "polishing");
+    assert.deepEqual(a.refineIds, [id(7)]);
+    assert.equal(a.attempts, 0);
+  });
+  it("stops the run when the site has polish spending off", () => {
+    assert.equal(parsePolishAnswer(503, { error: "polish_budget_off", message: "POLISH_MAX_USD is 0" }, SITE).kind, "fatal");
+    assert.equal(applyAnswer(item(1, "ready"), { status: 503, json: { error: "polish_budget_off" } }, SITE, now).stop?.exitCode, 1);
   });
   it("retries busy, rate limits and server errors, and stops on a refused key", () => {
     assert.deepEqual(parsePolishAnswer(409, { error: "busy" }, SITE), { kind: "retry", reason: "409 busy", afterSeconds: 60 });
@@ -214,6 +230,18 @@ describe("polish queue", () => {
     assert.deepEqual(none.start, []);
     assert.equal(none.held, "budget");
     assert.equal(queueDone([item(2, "ready")], none), true, "nothing in flight and the budget used: done");
+  });
+  it("holds a polish's own cap when its answer named one, and that cap for the next start", () => {
+    const items = [item(1, "polishing", { maxUsd: 4 }), item(2, "ready"), item(3, "ready")];
+    // 190 spent + 4 in flight + 4 for the next = 198: one starts; a second would need 202, though a $2 reserve allowed it.
+    const move = planStarts(items, { concurrency: 8, budgetUsd: 200, reserveUsd: 2, spentUsd: 190, now });
+    assert.deepEqual(move.start.map((i) => i.buildId), [id(2)]);
+    assert.equal(move.held, "budget");
+    // Eight at once can never pass the budget by more than they already spent: 8 x $4 held from $168.
+    const eight = Array.from({ length: 10 }, (_, k) => item(10 + k, "ready"));
+    const m8 = planStarts(eight, { concurrency: 8, budgetUsd: 200, reserveUsd: 4, spentUsd: 168, now });
+    assert.equal(m8.start.length, 8);
+    assert.equal(planStarts(eight, { concurrency: 8, budgetUsd: 200, reserveUsd: 4, spentUsd: 168.5, now }).start.length, 7);
   });
   it("waits out a pause and an item's notBefore", () => {
     const items = [item(2, "ready", { notBefore: "2026-11-03T18:05:00Z" }), item(3, "ready")];

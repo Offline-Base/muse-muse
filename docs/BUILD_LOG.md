@@ -4289,3 +4289,12 @@ Cost (list prices, the code's estimates, not checked against the bills):
   - A full browser audit of two local fake products made of static pages with no model: the clean one passed, and the broken one failed on all 7 problem kinds with screenshots.
   - No build, polish, refinement or model call ran.
 - **Tests:** scripts/__tests__/batch-logic.test.ts, audit-logic.test.ts and automation.test.ts, 42 of 42. Typecheck clean. None of the new files has "use step" or "use workflow", so no workflow bundle changed.
+
+## Nov 3, 2026, afternoon: review of the batch tools against the polish route in progress (branch tg-w-batch, not pushed)
+
+- **Why:** an independent review read polish-batch next to the polish route the other unit is writing (w-polish, not merged yet: `startPolish` in lib/polish/start.ts). Four answers from that route would have gone wrong.
+- **POLISH_ENABLED off:** the route answers 404 with the app's own `{"error":"not_found"}`. polish-batch read that as "unknown build" and marked every ready build refused for good, even on `--resume`. A polish only goes to a build the public status route just read as shipped, so any 404 now stops the run (exit 2) with a message that names POLISH_ENABLED, and nothing is marked refused.
+- **409 with a buildId** (`already_polished`, or `busy` with the product's running polish): it was retried 6 times and then given up, and that polish's cost never reached the ledger. polish-batch now follows that refinement as the build's polish, so it counts in the ledger and toward the limit, and nothing is polished twice.
+- **Budget:** the route caps a polish at POLISH_MAX_USD, $4 by default, but the queue held only $2 for each one, so 8 at once could pass $200 by up to $16. The default `--reserve` is now 4, and a polish whose answer names `maxUsd` holds that amount, with the largest cap seen held for the next start. 503 `polish_budget_off` (POLISH_MAX_USD at 0) now stops the run instead of retrying, and after a 429 or 503 pause no more starts go out in the same round.
+- **Focus text:** the route refuses focus over 2000 characters with a 400, which marked the build refused. The cut is now 2000 (it was 3500).
+- **Tests:** batch-logic, audit-logic and automation suites, 45 of 45. Typecheck clean. No "use step" or "use workflow" file touched. No build, polish or model call ran.

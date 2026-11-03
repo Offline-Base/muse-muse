@@ -8,7 +8,8 @@
  *   --dry                 read the statuses and the ledger and print the plan; start nothing (no key needed)
  *   --concurrency=8       polishes in flight at once
  *   --budget=200          Meta dollars for the builds and their polishes together
- *   --reserve=2           dollars held for each polish in flight and for the next one, since a polish's cost lands as it runs
+ *   --reserve=4           dollars held for each polish in flight and for the next one, since a polish's cost lands as it
+ *                         runs (POLISH_MAX_USD's default; a polish whose answer names a larger maxUsd holds that)
  *   --poll=60             seconds between rounds
  *   --focus-file=<path>   an audit file from scripts/audit-batch.ts (or {buildId or slug: text}); each failing product's
  *                         focus text goes with its polish
@@ -103,10 +104,20 @@ export interface StartOutcome {
 export function applyAnswer(item: PolishItem, res: PostResult, site: string, now: Date): StartOutcome {
   const a = parsePolishAnswer(res.status, res.json, site);
   item.attempts += 1;
+  if (a.kind === "adopt") {
+    // The product's polish is already running or done (another run, or a start whose answer was lost): follow it.
+    item.attempts -= 1;
+    item.state = "polishing";
+    item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
+    item.notBefore = undefined;
+    item.note = `${a.reason}: following the product's polish ${a.refineIds[0]}`;
+    return {};
+  }
   if (a.kind === "started") {
     item.state = "polishing";
     item.startedAt = now.toISOString();
     item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
+    if (a.maxUsd !== undefined) item.maxUsd = a.maxUsd;
     item.notBefore = undefined;
     if (!a.refineIds.length) {
       item.untrackedUntil = new Date(now.getTime() + UNTRACKED_MINUTES * 60_000).toISOString();
@@ -158,7 +169,7 @@ async function main(): Promise<void> {
   const site = siteArg();
   const concurrency = Math.floor(num("concurrency", 8, 1));
   const budgetUsd = budgetArg();
-  const reserveUsd = num("reserve", 2);
+  const reserveUsd = num("reserve", 4);
   const pollMs = num("poll", 60, 5) * 1000;
   const deadline = Date.now() + num("max-hours", 8, 0.01) * 3_600_000;
   const focusPath = arg("focus-file");
@@ -209,8 +220,12 @@ async function main(): Promise<void> {
         process.exitCode = out.stop.exitCode;
         return;
       }
-      if (out.pauseUntil) pausedUntil = out.pauseUntil;
       console.log(`  ${item.state === "polishing" ? "polish   " : "not yet  "} ${item.label}${item.refineIds.length ? ` ${site}/b/${item.refineIds.at(-1)}` : ""}${item.note ? `  ${item.note}` : ""}`);
+      if (out.pauseUntil) {
+        // The whole site said wait: leave the rest of this round's starts for after the pause.
+        pausedUntil = out.pauseUntil;
+        break;
+      }
     }
     save();
     console.log(line);

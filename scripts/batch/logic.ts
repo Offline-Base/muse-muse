@@ -180,16 +180,21 @@ export function refineIdsFrom(files: readonly unknown[]): Map<string, string[]> 
 // Polish: the answer, and the queue
 
 export type PolishAnswer =
-  | { kind: "started"; refineIds: string[] }
+  | { kind: "started"; refineIds: string[]; maxUsd?: number }
+  /** A 409 that names the product's polish already running or done: follow that one, start nothing. */
+  | { kind: "adopt"; refineIds: string[]; reason: string }
   | { kind: "route_missing"; message: string }
   | { kind: "retry"; reason: string; afterSeconds: number }
   | { kind: "fatal"; reason: string }
   | { kind: "refused"; reason: string };
 
 /**
- * What POST /api/builds/<id>/polish said. A 404 with the app's own {"error":"not_found"} is an unknown build; any other
- * 404 (Next's HTML page, no JSON) means the route isn't deployed on that site yet. 409 (busy, not shipped yet), 429 and
- * 503 come back later; 401 and 403 mean the key is wrong, which every other build would hit too.
+ * What POST /api/builds/<id>/polish said. A polish only goes to a build the public status route just read as shipped,
+ * so any 404 means the route can't take it on that site: not deployed (Next's HTML page, no JSON) or POLISH_ENABLED off
+ * (the route's own {"error":"not_found"}). Either stops the run rather than marking every build refused. A 409 that
+ * names a buildId (busy with a polish, already_polished) is followed instead of retried, so nothing is polished twice.
+ * Other 409s (busy with another build, not shipped yet), 429 and 503 come back later; 503 polish_budget_off
+ * (POLISH_MAX_USD at 0) and 401 or 403 (a wrong key) stop the run, since every other build would hit them too.
  */
 export function parsePolishAnswer(status: number, json: Record<string, unknown>, site: string): PolishAnswer {
   const reason = String(json.message ?? json.error ?? `status ${status}`);
@@ -200,9 +205,14 @@ export function parsePolishAnswer(status: number, json: Record<string, unknown>,
       const list = json[key];
       if (Array.isArray(list)) for (const x of list) { const id = isUuid(x) ? x : (x as Record<string, unknown> | null)?.buildId; if (isUuid(id)) ids.add(id); }
     }
-    return { kind: "started", refineIds: [...ids] };
+    const maxUsd = typeof json.maxUsd === "number" && Number.isFinite(json.maxUsd) && json.maxUsd > 0 ? json.maxUsd : undefined;
+    return maxUsd === undefined ? { kind: "started", refineIds: [...ids] } : { kind: "started", refineIds: [...ids], maxUsd };
   }
-  if (status === 404 && json.error === "not_found") return { kind: "refused", reason: "not_found: the site doesn't know this build" };
+  if (status === 409 && isUuid(json.buildId)) return { kind: "adopt", refineIds: [json.buildId], reason: String(json.error ?? "busy") };
+  if (status === 404 && json.error === "not_found") {
+    return { kind: "route_missing", message: `POST ${site}/api/builds/<id>/polish answered not_found for a build ${site}'s status route knows: the polish route is off there (POLISH_ENABLED). Turn it on, then run this again with --resume=<this file>.` };
+  }
+  if (status === 503 && json.error === "polish_budget_off") return { kind: "fatal", reason: `503 ${reason}` };
   if (status === 404) return { kind: "route_missing", message: `POST ${site}/api/builds/<id>/polish answered 404 without the app's JSON: the polish route isn't deployed on ${site} yet. Deploy it (or pass --url= a deployment that has it), then run this again with --resume=<this file>.` };
   if (status === 409 || status === 429 || status === 503 || status === 0 || status >= 500) {
     const after = typeof json.retryAfterSeconds === "number" && json.retryAfterSeconds > 0 ? json.retryAfterSeconds : status === 429 || status === 503 ? 300 : 60;
@@ -237,6 +247,8 @@ export interface PolishItem {
   /** The polish answered with no id to follow: counted in flight until this time. */
   untrackedUntil?: string;
   attempts: number;
+  /** The most this polish may spend, from the route's answer (POLISH_MAX_USD); the queue holds this much while it runs. */
+  maxUsd?: number;
   /** Don't try this one again before this time (a 409 or a retry after). */
   notBefore?: string;
   note?: string;
@@ -261,7 +273,10 @@ export function nextState(item: PolishItem, build: BuildView | { error: string }
 export interface QueueLimits {
   concurrency: number;
   budgetUsd: number;
-  /** Held for each polish in flight and for the next one, since a refinement's cost lands only as it runs. */
+  /**
+   * Held for each polish in flight and for the next one, since a refinement's cost lands only as it runs. A polish whose
+   * answer named its cap (maxUsd) holds that instead, and the next one holds the larger of the two.
+   */
   reserveUsd: number;
   spentUsd: number;
   now: Date;
@@ -281,17 +296,22 @@ export interface QueueMove {
  * each polish in flight, plus one more reserve, stays within the budget. Items with a notBefore in the future wait.
  */
 export function planStarts(items: readonly PolishItem[], limits: QueueLimits): QueueMove {
-  const inFlight = items.filter((i) => i.state === "polishing").length;
+  const flyingItems = items.filter((i) => i.state === "polishing");
+  const inFlight = flyingItems.length;
   const ready = items.filter((i) => i.state === "ready" && (!i.notBefore || new Date(i.notBefore) <= limits.now));
   if (!ready.length) return { start: [], inFlight };
   if (limits.pausedUntil && limits.pausedUntil > limits.now) return { start: [], inFlight, held: "paused" };
+  const caps = items.map((i) => i.maxUsd).filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0);
+  const perNext = Math.max(limits.reserveUsd, ...caps);
+  let held = flyingItems.reduce((s, i) => s + (i.maxUsd ?? perNext), 0);
   const start: PolishItem[] = [];
   let flying = inFlight;
   for (const item of ready) {
     if (flying >= limits.concurrency) return { start, inFlight, held: "concurrency" };
-    if (limits.spentUsd + limits.reserveUsd * (flying + 1) > limits.budgetUsd) return { start, inFlight, held: "budget" };
+    if (limits.spentUsd + held + perNext > limits.budgetUsd) return { start, inFlight, held: "budget" };
     start.push(item);
     flying += 1;
+    held += perNext;
   }
   return { start, inFlight };
 }
@@ -332,8 +352,8 @@ export function focusMap(json: unknown): Map<string, string> {
   throw new Error("The focus file must be an audit file ({products: [...]}) or an object of build id or slug to text.");
 }
 
-/** The most focus text sent with one polish (the messages route takes 4000 characters). */
-export const MAX_FOCUS_CHARS = 3500;
+/** The most focus text sent with one polish (the polish route refuses past POLISH_MAX_FOCUS_CHARS, 2000, with a 400). */
+export const MAX_FOCUS_CHARS = 2000;
 
 export function focusFor(map: ReadonlyMap<string, string>, item: Pick<PolishItem, "buildId" | "slug">): string | undefined {
   const text = map.get(item.buildId) ?? (item.slug ? map.get(item.slug) : undefined);
