@@ -16,6 +16,7 @@ import { respondJsonOrEdge } from "../../lib/meta/edge";
 import { startBlackhole } from "../edge-blackhole.mjs";
 import { blockInvalidHosts, DEFAULT_DRILL_IDS, DNS_DRILL_HOST, noDnsImport, runDrills, SetupError } from "../edge-drill.mjs";
 import { INJECT_MARK, injectionText, sampleWithText, startEdgeFake, truncatedText, TRUNCATE_MARK } from "../edge-fake.mjs";
+import { serveBoard } from "./edge-board-kit.mjs";
 
 const Status = z.object({
   status: z.enum(["normal", "warning", "alarm"]),
@@ -193,6 +194,7 @@ describe("runDrills: the six scenarios", () => {
     process.env.EDGE_TIMEOUT_MS = String(LIMITS.edgeLimitMs);
     const serve = (gateway) =>
       createServer(async (req, res) => {
+        if (await serveBoard(req, res)) return;
         const out = await withEnv(gateway ? { GATEWAY_URL: gateway } : {}, () => route());
         res.writeHead(out.status, { "content-type": out.type ?? "application/json" });
         res.end(out.type?.includes("html") ? out.body : JSON.stringify(out.json));
@@ -221,7 +223,7 @@ describe("runDrills: the six scenarios", () => {
     route = skillRoute;
     assert.deepEqual(DEFAULT_DRILL_IDS, [1, 2, 3, 4]);
     const plain = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl });
-    assert.deepEqual(plain.map((r) => r.id), [1, 2, 3, 4]);
+    assert.deepEqual(plain.map((r) => r.id), [1, 2, 3, 4, 17, 18]);
     const results = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, dnsLookups, all: true });
     assert.deepEqual(results.map((r) => [r.id, r.pass, r.why]), [
       [1, true, null],
@@ -234,6 +236,8 @@ describe("runDrills: the six scenarios", () => {
       [8, true, null],
       [9, true, null],
       [11, true, null],
+      [17, true, null],
+      [18, true, null],
       [10, true, null],
     ]);
     for (const r of results.slice(4)) {
@@ -338,6 +342,6 @@ describe("runDrills: the six scenarios", () => {
 
   test("an --only with no known drill is a setup error, not 0 of 0 passed", async () => {
     route = skillRoute;
-    for (const only of [[17], [Number.NaN], []]) await assert.rejects(drill(only), SetupError);
+    for (const only of [[20], [Number.NaN], []]) await assert.rejects(drill(only), SetupError);
   });
 });

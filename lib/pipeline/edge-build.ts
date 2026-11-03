@@ -15,7 +15,7 @@ import { freeProductPortsScript } from "@/lib/sandbox/tasks";
 import { q } from "@/lib/sandbox/shell";
 import type { VerifySummary } from "@/lib/types";
 import { EDGE_DRILL_CAP_MS } from "@/lib/pipeline/steps";
-import { EDGE_DRILL_STEP, EDGE_DRILLS, EDGE_SAM_DRILLS } from "@/lib/edge/drills";
+import { EDGE_BOARD_DRILLS, EDGE_DRILL_STEP, EDGE_DRILLS, EDGE_SAM_DRILLS, EDGE_SAMPLE_DRILL } from "@/lib/edge/drills";
 
 /** True for a brief with the edge target while EDGE_ENABLED is on. */
 export function isEdgeBuild(brief: Parameters<typeof briefTargets>[0]): boolean {
@@ -119,7 +119,13 @@ interface DrillResult {
 function drillsFor(results: DrillResult[] | null): ReadonlyArray<{ id: number; name: string }> {
   const ran = (list: ReadonlyArray<{ id: number }>) => !!results?.some((r) => list.some((d) => d.id === r.id));
   const sam = ran(EDGE_SAM_DRILLS);
-  return [...(ran(EDGE_DRILLS) || !sam ? EDGE_DRILLS : []), ...(sam ? EDGE_SAM_DRILLS : [])];
+  // The board status drills (17, 18) and the sample photo drill (19) came in a later kit: a run is held to them once any ran.
+  return [
+    ...(ran(EDGE_DRILLS) || !sam ? EDGE_DRILLS : []),
+    ...(sam ? EDGE_SAM_DRILLS : []),
+    ...(ran(EDGE_BOARD_DRILLS) ? EDGE_BOARD_DRILLS : []),
+    ...(ran([EDGE_SAMPLE_DRILL]) ? [EDGE_SAMPLE_DRILL] : []),
+  ];
 }
 
 function readResults(json: string | null): DrillResult[] | null {

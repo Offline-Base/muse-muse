@@ -101,6 +101,24 @@ export const BOTH_DOWN_MESSAGE = "Neither the cloud model nor the backup model a
 /** What a page shows when the cloud was reached and turned the request down (a limit, a refusal, a stopped product). */
 export const CLOUD_DECLINED_MESSAGE = "The cloud model turned this request down just now. Try again later, or change what you asked.";
 
+/** What a board-only screen (`boardOnly: true`) shows when this copy has no board set up. Nothing went to the cloud model. */
+export const NO_BOARD_MESSAGE = "Not connected to a board. This screen asks only the board, so the cloud model wasn't asked.";
+
+/** What a board-only screen shows when its board didn't answer. Nothing went to the cloud model. */
+export const BOARD_DOWN_MESSAGE = "The board didn't answer just now. This screen asks only the board, so the cloud model wasn't asked.";
+
+/** The cloud side's reason on a board-only call. */
+const BOARD_ONLY_SKIP: EdgeFailureReason = { kind: "skipped", detail: "boardOnly: this screen asks only the board, so the cloud was not asked." };
+
+/** What respondJsonOrEdge takes: respondJson's options, plus `boardOnly`. */
+export type EdgeOptions<T> = RespondJsonOptions<T> & {
+  /**
+   * Ask only the board, never the cloud: for a screen that says it shows the board's answer (a "Board" tab, an offline
+   * preview). With no board set up it returns NO_BOARD_MESSAGE, and when the board fails, BOARD_DOWN_MESSAGE.
+   */
+  boardOnly?: boolean;
+};
+
 /**
  * True when the cloud was reached and said no with a 4xx (a refused prompt, a visitor's or the product's limit, a token
  * that was turned off). The backup model is for a cloud that can't be reached, never a way around the cloud's own
@@ -141,9 +159,19 @@ export function edgeFirst(): boolean {
  * A reply that doesn't match the schema is never returned, from either side, so a tampered edge reply is rejected.
  * The edge answers only when the cloud can't be reached (refused, timed out, a 5xx, not set) or its JSON didn't match.
  * When the cloud was reached and turned the request down (a 4xx), that is the answer: the edge isn't asked after it.
+ * `boardOnly: true` asks only the edge model, for a screen that says it shows the board's answer.
  */
-export async function respondJsonOrEdge<T>(opts: RespondJsonOptions<T>): Promise<EdgeAnswer<T>> {
+export async function respondJsonOrEdge<T>(opts: EdgeOptions<T>): Promise<EdgeAnswer<T>> {
   const edge = edgeClient();
+  if (opts.boardOnly) {
+    if (!edge) return { ok: false, by: null, message: NO_BOARD_MESSAGE, reasons: { cloud: BOARD_ONLY_SKIP, edge: { kind: "not_set", detail: "EDGE_URL is not set." } } };
+    try {
+      const data = await askEdge(opts, edge);
+      return { ok: true, data, by: "edge", label: edgeLabel(edge), fellBack: null };
+    } catch (err) {
+      return { ok: false, by: null, message: BOARD_DOWN_MESSAGE, reasons: { cloud: BOARD_ONLY_SKIP, edge: reasonOf(err) } };
+    }
+  }
   const order: Array<"cloud" | "edge"> = edgeFirst() ? ["edge", "cloud"] : ["cloud", "edge"];
   const reasons: Partial<Record<"cloud" | "edge", EdgeFailureReason>> = {};
   for (const side of order) {
@@ -433,6 +461,8 @@ export interface SegmentOrEdgeOptions {
   request?: RequestLike | null;
   /** Defaults to metaClient(request), the gateway client. */
   client?: OpenAI;
+  /** Look only on the board, never in the cloud: for a screen that says it shows the board's look (see EdgeOptions). */
+  boardOnly?: boolean;
 }
 
 /**
@@ -445,6 +475,7 @@ export interface SegmentOrEdgeOptions {
  * shape, or doesn't add up (a count that isn't its number of boxes, a box outside the photo, another prompt, a score
  * under the threshold) is the board being down: nothing from it is returned, and the page gets SAM_DOWN_MESSAGE.
  * The cloud gets EDGE_CLOUD_TIMEOUT_MS only when a board waits behind it; with no board it gets its full time.
+ * `boardOnly: true` looks only on the board, for a screen that says it shows the board's look.
  */
 export async function segmentOrEdge(opts: SegmentOrEdgeOptions): Promise<SamAnswer> {
   const prompt = typeof opts.prompt === "string" ? opts.prompt.trim() : "";
@@ -455,6 +486,15 @@ export async function segmentOrEdge(opts: SegmentOrEdgeOptions): Promise<SamAnsw
   }
   const threshold = typeof opts.threshold === "number" && opts.threshold >= 0 && opts.threshold <= 1 ? opts.threshold : DEFAULT_SAM_THRESHOLD;
   const board = samBoard();
+  if (opts.boardOnly) {
+    if (!board) return { ok: false, by: null, message: NO_BOARD_MESSAGE, reasons: { cloud: BOARD_ONLY_SKIP, board: { kind: "not_set", detail: "No board is set up for looks." } } };
+    try {
+      const seen = await seeOnBoard(board, photo, prompt, threshold, opts.overlay === true);
+      return { ok: true, by: "board", label: samBoardLabel(board), prompt, ...seen, fellBack: null };
+    } catch (err) {
+      return { ok: false, by: null, message: BOARD_DOWN_MESSAGE, reasons: { cloud: BOARD_ONLY_SKIP, board: reasonOf(err) } };
+    }
+  }
   const order: Array<"cloud" | "board"> = edgeFirst() ? ["board", "cloud"] : ["cloud", "board"];
   const reasons: Partial<Record<"cloud" | "board", EdgeFailureReason>> = {};
   for (const side of order) {

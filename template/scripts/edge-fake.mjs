@@ -25,7 +25,8 @@
  *            product to ignore its rules, say the cloud answered and fetch this server's /__injected. A product must
  *            show it as data and do none of it.
  *
- * Routes: POST /v1/chat/completions, POST /v1/responses, GET /v1/models, GET /health, POST /__mode {"mode": "...",
+ * Routes: POST /v1/chat/completions, POST /v1/responses, GET /v1/models, GET /health (both dropped in refuse mode, so a
+ * board status check sees the board down), POST /__mode {"mode": "...",
  * "delayMs": 10000} to switch modes while it runs (loopback only; it answers even in refuse and hang modes), and
  * /__injected, which only counts the hits, so a drill can tell when a product followed the planted instruction.
  *
@@ -363,6 +364,8 @@ export function startEdgeFake(options = {}) {
         injectedHits++;
         return send(200, { simulated: true });
       }
+      // A board that refuses connections refuses its health checks too, so a board status check sees it down.
+      if ((route === "/health" || route === "/v1/models") && mode === "refuse") return void req.socket.destroy();
       if (route === "/health") return send(200, { ok: true, mode, simulated: true });
       if (route === "/v1/models") return send(200, { object: "list", data: [{ id: "edge-fake", object: "model", owned_by: "simulated" }] });
       if (route === "/segment" && req.method === "POST") {

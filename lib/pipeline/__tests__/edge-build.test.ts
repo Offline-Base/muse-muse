@@ -133,6 +133,18 @@ describe("the drill as verify steps", () => {
     assert.equal(edgeDrillSteps({ exitCode: 2, timedOut: false, outputTail: "", json: null }).steps.length, 4);
   });
 
+  it("holds a run to the board status drills and the sample photo drill once they ran, by name", () => {
+    const s = edgeDrillSteps({ exitCode: 1, timedOut: false, outputTail: "", json: byId({ 1: true, 2: true, 3: true, 4: true, 12: true, 13: true, 14: true, 15: true, 17: true, 19: false }) });
+    assert.deepEqual(s.steps.slice(8).map((x) => [x.name, x.ok]), [
+      ["Simulated outage drill 17: board status, board up", true],
+      ["Simulated outage drill 18: board status, board down", false],
+      ["Simulated outage drill 19: SAM, sample photo served", false],
+    ]);
+    assert.match(s.failureOutput, /drill 18: board status, board down: this drill didn't run/);
+    // An earlier kit's run, with none of them, is held to what it ran.
+    assert.equal(edgeDrillSteps({ exitCode: 0, timedOut: false, outputTail: "", json: results([true, true, true, true]) }).steps.length, 4);
+  });
+
   it("keeps verify's own failure and never passes a failed verify", () => {
     const s = withEdgeDrill({ ...base, passed: false, failureOutput: "build broke" }, { exitCode: 0, timedOut: false, outputTail: "", json: results([true, true, true, true]) });
     assert.equal(s.passed, false);

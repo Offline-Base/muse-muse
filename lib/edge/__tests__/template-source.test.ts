@@ -61,10 +61,10 @@ describe("edgeExtraFiles", () => {
     for (const brief of [WEB, { targets: [] }, { targets: null }, null, undefined]) assert.deepEqual(edgeExtraFiles(brief), [], JSON.stringify(brief));
   });
 
-  it("is the helper, the skill and the drill kit for an edge build with the flags on", () => {
+  it("is the helper, the board status line, the skill and the drill kit for an edge build with the flags on", () => {
     on();
     const paths = edgeExtraFiles(EDGE).map((f) => f.path);
-    for (const want of ["lib/meta/edge.ts", ".agents/skills/muse-edge/SKILL.md", "scripts/edge-fake.mjs", "scripts/edge-blackhole.mjs", "scripts/edge-drill.mjs"]) {
+    for (const want of ["lib/meta/edge.ts", ".agents/skills/muse-edge/SKILL.md", "scripts/edge-fake.mjs", "scripts/edge-blackhole.mjs", "scripts/edge-drill.mjs", "lib/meta/board-status.ts", "app/api/board-status/route.ts", "components/BoardStatus.tsx"]) {
       assert.ok(paths.includes(want), want);
     }
   });

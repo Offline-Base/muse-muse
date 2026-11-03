@@ -12,6 +12,7 @@ import { respondJsonOrEdge } from "../../lib/meta/edge";
 import { startBlackhole } from "../edge-blackhole.mjs";
 import { drillTarget, runDrills, SetupError } from "../edge-drill.mjs";
 import { sampleFromSchema, startEdgeFake, tamper, TAMPER_MARK } from "../edge-fake.mjs";
+import { serveBoard } from "./edge-board-kit.mjs";
 
 const Status = z.object({
   status: z.enum(["normal", "warning", "alarm"]),
@@ -124,6 +125,7 @@ describe("runDrills against a product", () => {
     process.env.EDGE_CLOUD_TIMEOUT_MS = "500";
     process.env.EDGE_TIMEOUT_MS = "2000";
     product = createServer(async (req, res) => {
+      if (await serveBoard(req, res)) return;
       const out = await route();
       res.writeHead(out.status, { "content-type": "application/json" });
       res.end(JSON.stringify(out.json));
@@ -139,7 +141,7 @@ describe("runDrills against a product", () => {
 
   const target = { path: "/api/actions/status", method: "POST", body: { rows: "Simulated cold room rows" } };
 
-  test("all four drills pass for a product that follows the skill", async () => {
+  test("all four drills and both board status drills pass for a product that follows the skill", async () => {
     route = async () => {
       const a = await respondJsonOrEdge({ schema: Status, schemaName: "status", input: "Simulated cold room rows" });
       return a.ok ? { status: 200, json: { ...a.data, by: a.by, label: a.label } } : { status: 503, json: { message: a.message } };
@@ -150,6 +152,8 @@ describe("runDrills against a product", () => {
       ["cloud hung", true, null],
       ["both down", true, null],
       ["tampered reply rejected", true, null],
+      ["board status, board up", true, null],
+      ["board status, board down", true, null],
     ]);
     assert.ok(results[1].ms >= 450, "the hung drill waited for the cloud deadline");
     assert.ok(hole.connections >= 3, "the product tried the cloud");
@@ -173,9 +177,38 @@ describe("runDrills against a product", () => {
   test("a product that shows no label or crashes fails by name", async () => {
     route = async () => ({ status: 500, json: { error: "TypeError: x is undefined" } });
     const results = await runDrills({ baseUrl, target, fake, hole, hangMaxMs: 4000 });
-    assert.equal(results.every((r) => !r.pass), true);
+    // The board status drills read the board status route, which this product still serves as the template has it.
+    assert.deepEqual(results.map((r) => [r.id, r.pass]), [[1, false], [2, false], [3, false], [4, false], [17, true], [18, true]]);
     assert.match(results[0].why, /status 500/);
     assert.match(results[2].why, /no plain both-down message/);
+  });
+
+  test("the board status drills fail by name: no route, no line on the page, or a route that always says connected", async () => {
+    route = async () => ({ status: 503, json: { message: "Neither the cloud model nor the backup model answered just now." } });
+    const once = async (handler, only) => {
+      const server = createServer(handler);
+      await new Promise((r) => server.listen(0, "127.0.0.1", r));
+      try {
+        return await runDrills({ baseUrl: `http://127.0.0.1:${server.address().port}`, target, fake, hole, only });
+      } finally {
+        await new Promise((r) => server.close(r));
+      }
+    };
+    const missing = await once((req, res) => {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("Not found");
+    }, [17, 18]);
+    for (const r of missing) assert.match(r.why, /answered 404: keep app\/api\/board-status\/route\.ts/);
+    const noLine = await once(async (req, res) => {
+      if (await serveBoard(req, res, { page: "<!doctype html><main>Cold room</main>" })) return;
+      res.writeHead(404).end();
+    }, [17]);
+    assert.match(noLine[0].why, /has no board status line: render <BoardStatus \/>/);
+    const liar = await once((req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ connected: true, line: "Connected to jetson-0X", detail: null }));
+    }, [18]);
+    assert.match(liar[0].why, /with the simulated board down, \/api\/board-status said "Connected to jetson-0X", not "Not connected to a board"/);
   });
 
   test("a product that passes the edge reply through unchecked fails the tamper drill", async () => {

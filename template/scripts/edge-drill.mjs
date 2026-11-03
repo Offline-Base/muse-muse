@@ -13,7 +13,8 @@
  *   4. tampered reply  the gateway drops, the edge sends JSON with wrong types marked TAMPERED: none of it reaches
  *                      the reply, which carries the both-down message instead
  *
- * Those four are the default set, the one builds run. --all adds seven more scenarios (--only picks from all 16):
+ * Those four, with the board status drills (17 and 18 below), are the default set, the one builds run. --all adds seven
+ * more scenarios (--only picks from all 19):
  *
  *   5. cloud slow      the gateway answers at about 8 s, inside the 10 s limit: the product waits for it, shows the
  *                      cloud label and never asks the edge
@@ -49,6 +50,18 @@
  *                           reply, which carries "Can't see right now" instead
  *  16. SAM, cut-off board reply rejected   the board's JSON is cut off part way, marked TRUNCATED: the same
  *
+ * Board status drills, for every product (they join the default set). They ask GET /api/board-status (with ?looks=1 for
+ * a product that names a SAM route), the route components/BoardStatus.tsx reads, and look for that component on the page:
+ *
+ *  17. board status, board up    the fake board answers its health check: the route says connected, "Connected to ...",
+ *                                and the page (edge-drill.json's "page", default /) shows the board status line
+ *  18. board status, board down  the fake board drops every connection: the route says "Not connected to a board"
+ *
+ * And one more photo drill in the default set for a product that names a SAM route:
+ *
+ *  19. SAM, sample photo served  the photo edge-drill.json names under "sam"."sample" (a file in public/samples/, the one
+ *                                the page's "Try the sample" button loads) is served as a JPEG, PNG or WebP
+ *
  * With --all and --start, the product gets EDGE_TIMEOUT_MS and EDGE_CLOUD_TIMEOUT_MS from the two limits below, so
  * drill 7 knows how long the product may take.
  *
@@ -69,6 +82,8 @@
  *   EDGE_DRILL_SAM_BODY     its JSON body. Else "sam"."body". Any string "SIMULATED_PHOTO" in it becomes a small
  *                           Simulated PNG as a data URL.
  *   EDGE_DRILL_SAM_METHOD   default POST, or "sam"."method"
+ *   EDGE_DRILL_SAM_SAMPLE   the sample photo's path (drill 19). Else "sam"."sample", like "/samples/door-open.jpg".
+ *   EDGE_DRILL_PAGE         the page with the board status line (drill 17). Else edge-drill.json's "page", else "/".
  *   EDGE_DRILL_HANG_MAX_MS  default 15000
  *   EDGE_DRILL_CLOUD_LIMIT_MS  the product's cloud limit, default 10000 (drills 5 and 7)
  *   EDGE_DRILL_EDGE_LIMIT_MS   the product's edge limit, default 5000 (drill 7)
@@ -80,8 +95,8 @@
  *                           test-results/caps/edge.json and the blackhole's to test-results/caps/blackhole.json.
  *
  * edge-drill.json, at the product's root, is written by Muse Code (the muse-edge skill):
- *   { "path": "/api/actions/status", "method": "POST", "body": { ...simulated input },
- *     "sam": { "path": "/api/actions/look", "body": { "photo": "SIMULATED_PHOTO", "prompt": "open door" } } }
+ *   { "path": "/api/actions/status", "method": "POST", "body": { ...simulated input }, "page": "/",
+ *     "sam": { "path": "/api/actions/look", "body": { "photo": "SIMULATED_PHOTO", "prompt": "open door" }, "sample": "/samples/door-open.jpg" } }
  * "sam" only for a product that looks at photos. A product that only looks may leave out "path".
  *
  * Exit codes: 0 every drill passed, 1 a drill failed, 2 setup failed (no MUSEMUSE_BASE_URL or route, a port in use,
@@ -114,8 +129,18 @@ export const DEFAULT_SAM_DRILL_IDS = [12, 13, 14, 15];
 /** Drill 10's gateway: a host under .invalid, a name reserved never to resolve (RFC 6761). */
 export const DNS_DRILL_HOST = "muse-gateway.drill.invalid";
 
+/** The board status drills, in the default set for every product. */
+export const BOARD_DRILL_IDS = [17, 18];
+/** The photo drill that checks the sample photo is served, in the default set for a product that names a SAM route. */
+export const SAM_SAMPLE_DRILL_ID = 19;
+/** The route components/BoardStatus.tsx reads, and the mark it puts on the page. */
+export const BOARD_STATUS_PATH = "/api/board-status";
+export const BOARD_STATUS_MARK = "data-board-status";
+/** lib/meta/board-status.ts's NOT_CONNECTED_LINE. */
+export const NOT_CONNECTED_LINE = "Not connected to a board";
+
 /** Every drill id, default set and --all together. --only takes these and nothing else. */
-export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 
 /**
  * Makes every dns.lookup of a .invalid host fail with ENOTFOUND, the error a real resolver gives, without asking one.
@@ -188,7 +213,16 @@ export function samDrillTarget(env = process.env, dir = process.cwd()) {
   const route = env.EDGE_DRILL_SAM_PATH?.trim() || sam.path;
   if (!route) return null;
   const body = env.EDGE_DRILL_SAM_BODY ? JSON.parse(env.EDGE_DRILL_SAM_BODY) : (sam.body ?? { photo: SIMULATED_PHOTO_PLACEHOLDER, prompt: "open door" });
-  return { path: route, method: (env.EDGE_DRILL_SAM_METHOD || sam.method || "POST").toUpperCase(), body: withSimulatedPhoto(body) };
+  const sample = env.EDGE_DRILL_SAM_SAMPLE?.trim() || (typeof sam.sample === "string" ? sam.sample.trim() : "") || null;
+  return { path: route, method: (env.EDGE_DRILL_SAM_METHOD || sam.method || "POST").toUpperCase(), body: withSimulatedPhoto(body), sample };
+}
+
+/** The page that shows the board status line: env first, then edge-drill.json's "page", else "/". */
+export function boardPage(env = process.env, dir = process.cwd()) {
+  const file = path.join(dir, "edge-drill.json");
+  const json = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const page = env.EDGE_DRILL_PAGE?.trim() || (typeof json.page === "string" ? json.page.trim() : "");
+  return page && page.startsWith("/") ? page : "/";
 }
 
 async function ask(baseUrl, target, timeoutMs) {
@@ -201,6 +235,11 @@ async function ask(baseUrl, target, timeoutMs) {
       ...(target.method === "GET" ? {} : { body: JSON.stringify(target.body) }),
       signal: AbortSignal.timeout(timeoutMs),
     });
+    if (target.binary) {
+      // A photo: only its first bytes matter, to tell a JPEG, PNG or WebP from a page that says "not found".
+      const bytes = Buffer.from(await res.arrayBuffer());
+      return { status: res.status, text: "", head: bytes.subarray(0, 12), bytes: bytes.length, ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
+    }
     return { status: res.status, text: await res.text(), ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
   } catch (err) {
     return { status: 0, text: "", ms: Date.now() - started, error: err?.name === "TimeoutError" ? "no reply in time" : String(err?.message ?? err) };
@@ -215,6 +254,7 @@ export async function runDrills({
   baseUrl,
   target,
   samTarget = null,
+  page = "/",
   fake,
   hole,
   product = null,
@@ -300,14 +340,16 @@ export async function runDrills({
     },
     ...moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }),
     ...samDrills({ hangMaxMs }),
+    ...boardDrills(),
   ].filter((d) => {
     if (only) return only.includes(d.id);
-    if (d.sam) return !!samTarget && (all || DEFAULT_SAM_DRILL_IDS.includes(d.id));
+    if (d.board) return !!(target || samTarget);
+    if (d.sam) return !!samTarget && (all || DEFAULT_SAM_DRILL_IDS.includes(d.id) || d.id === SAM_SAMPLE_DRILL_ID);
     return !!target && (all || DEFAULT_DRILL_IDS.includes(d.id));
   });
-  const unasked = drills.filter((d) => (d.sam ? !samTarget : !target)).map((d) => d.id);
+  const unasked = drills.filter((d) => (d.board ? !(target || samTarget) : d.sam ? !samTarget : !target)).map((d) => d.id);
   if (unasked.length) {
-    throw new SetupError(`Drill ${unasked.join(", ")} needs ${drills.find((d) => d.id === unasked[0]).sam ? "a photo route: edge-drill.json's \"sam\" or EDGE_DRILL_SAM_PATH" : "a route: edge-drill.json's \"path\" or EDGE_DRILL_PATH"}.`);
+    throw new SetupError(`Drill ${unasked.join(", ")} needs ${drills.find((d) => d.id === unasked[0]).board ? "a route or a photo route in edge-drill.json" : drills.find((d) => d.id === unasked[0]).sam ? "a photo route: edge-drill.json's \"sam\" or EDGE_DRILL_SAM_PATH" : "a route: edge-drill.json's \"path\" or EDGE_DRILL_PATH"}.`);
   }
   if (!drills.length) throw new SetupError("No drill to run: name a route in edge-drill.json (\"path\", \"sam\" or both).");
   // Drill 10 restarts the product, so it runs last.
@@ -341,7 +383,18 @@ export async function runDrills({
       const hits = fake.injectedHits ?? 0;
       const lookupsBefore = dnsLookups ? dnsLookups() : 0;
       const errorsBefore = product?.errors().length ?? 0;
-      const r = await ask(url, d.sam ? samTarget : target, d.timeoutMs ?? 40_000);
+      const asking = d.board
+        ? { path: `${BOARD_STATUS_PATH}${samTarget ? "?looks=1" : ""}`, method: "GET", body: null }
+        : d.sample
+          ? samTarget?.sample
+            ? { path: samTarget.sample, method: "GET", body: null, binary: true }
+            : null
+          : d.sam
+            ? samTarget
+            : target;
+      const r = asking ? await ask(url, asking, d.timeoutMs ?? 40_000) : { status: 0, text: "", ms: 0, error: "nothing to ask" };
+      // Drill 17 also reads the page, to see the board status line is on it.
+      const pageReply = d.page ? await ask(url, { path: page, method: "GET", body: null }, 30_000) : null;
       // Give the server a moment to print anything it prints after replying.
       await new Promise((res) => setTimeout(res, 200));
       const ctx = {
@@ -353,6 +406,9 @@ export async function runDrills({
         // Lookups of the gateway's .invalid host the product made, when the preload reports them (drill 10), else null.
         gatewayLookups: dnsLookups ? dnsLookups() - lookupsBefore : null,
         errors: product ? product.errors().slice(errorsBefore) : [],
+        page: pageReply,
+        pagePath: page,
+        sample: samTarget?.sample ?? null,
       };
       rounds.push({ r, ctx });
     }
@@ -641,6 +697,90 @@ function samDrills({ hangMaxMs }) {
   ];
 }
 
+/** The board status reply, parsed, or why it isn't one. */
+function boardReply(r) {
+  if (r.status === 0) return { why: `no reply from ${BOARD_STATUS_PATH} (${r.error})` };
+  if (r.status === 404) return { why: `${BOARD_STATUS_PATH} answered 404: keep app/api/board-status/route.ts as the template has it` };
+  if (!ok2xx(r)) return { why: `${BOARD_STATUS_PATH} answered ${r.status}` };
+  try {
+    const json = JSON.parse(r.text);
+    if (!json || typeof json.connected !== "boolean" || typeof json.line !== "string") return { why: `${BOARD_STATUS_PATH} answered without "connected" and "line"` };
+    return { json };
+  } catch {
+    return { why: `${BOARD_STATUS_PATH} didn't answer JSON` };
+  }
+}
+
+// A browser loads any of these, and resizeImage turns each into a JPEG, so a person's own WebP photo is a fine sample.
+const isPhoto = (head) =>
+  !!head &&
+  head.length >= 4 &&
+  ((head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) ||
+    (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) ||
+    (head.length >= 12 && head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP"));
+
+/**
+ * The board status drills (17, 18), for every edge product, and the sample photo drill (19) for one that looks at photos.
+ * The fake edge server is the board in both: its /v1/models and /health answer in ok mode and drop in refuse mode.
+ */
+function boardDrills() {
+  return [
+    {
+      id: 17,
+      name: "board status, board up",
+      board: true,
+      page: true,
+      about: "Simulated: the fake board answers its health check, so the board status line says it is connected.",
+      hole: "refuse",
+      edge: "ok",
+      check: (r, ctx) => {
+        const { json, why } = boardReply(r);
+        if (why) return why;
+        if (json.connected !== true || !json.line.startsWith("Connected to")) return `with the simulated board up, ${BOARD_STATUS_PATH} said "${json.line.slice(0, 120)}", not "Connected to ..."`;
+        if (ctx.cloudRequested) return `${BOARD_STATUS_PATH} asked the cloud gateway: a board status check asks no model`;
+        const p = ctx.page;
+        if (!p || !ok2xx(p)) return `the page ${ctx.pagePath} didn't load (${p ? bad(p) : "not asked"}), so the board status line couldn't be checked`;
+        if (!p.text.includes(BOARD_STATUS_MARK)) return `the page ${ctx.pagePath} has no board status line: render <BoardStatus /> from components/BoardStatus.tsx there, or name its page in edge-drill.json's "page"`;
+        return null;
+      },
+    },
+    {
+      id: 18,
+      name: "board status, board down",
+      board: true,
+      about: "Simulated: the fake board drops every connection, so the board status line says it isn't connected.",
+      hole: "refuse",
+      edge: "refuse",
+      check: (r, ctx) => {
+        const { json, why } = boardReply(r);
+        if (why) return why;
+        if (json.connected !== false || json.line !== NOT_CONNECTED_LINE) return `with the simulated board down, ${BOARD_STATUS_PATH} said "${json.line.slice(0, 120)}", not "${NOT_CONNECTED_LINE}"`;
+        if (ctx.errors.length) return `the server printed an error: ${ctx.errors[0].slice(0, 160)}`;
+        return null;
+      },
+    },
+    {
+      id: SAM_SAMPLE_DRILL_ID,
+      name: "SAM, sample photo served",
+      sam: true,
+      sample: true,
+      about: "The sample photo the page's \"Try the sample\" button loads, from public/samples/.",
+      hole: "refuse",
+      edge: "ok",
+      check: (r, ctx) =>
+        !ctx.sample
+          ? 'edge-drill.json names no sample photo: add "sample": "/samples/<file>.jpg" under "sam", the photo the page\'s "Try the sample" button loads'
+          : !ctx.sample.startsWith("/samples/")
+            ? `the sample ${ctx.sample} isn't in public/samples/, so visitors may not get it`
+            : !ok2xx(r)
+              ? `the sample ${ctx.sample}: ${bad(r)}`
+              : !isPhoto(r.head)
+                ? `the sample ${ctx.sample} isn't a JPEG, PNG or WebP`
+                : null,
+    },
+  ];
+}
+
 /** Starts the product with the drill's env and collects the error lines it prints. */
 function startProduct(command, baseUrl, env) {
   const port = new URL(baseUrl).port || "3000";
@@ -749,7 +889,7 @@ async function main() {
     slowMs: Number(process.env.EDGE_DRILL_SLOW_MS || 8_000),
   };
   // Only a run past the default set changes the product's env, so the default set runs exactly as it always has.
-  const defaults = [...DEFAULT_DRILL_IDS, ...DEFAULT_SAM_DRILL_IDS];
+  const defaults = [...DEFAULT_DRILL_IDS, ...DEFAULT_SAM_DRILL_IDS, ...BOARD_DRILL_IDS, SAM_SAMPLE_DRILL_ID];
   const beyondDefault = flags.only ? flags.only.some((id) => !defaults.includes(id)) : !!flags.all;
   const productEnv = {
     GATEWAY_URL: hole.url,
@@ -798,6 +938,7 @@ async function main() {
       baseUrl,
       target,
       samTarget,
+      page: boardPage(),
       fake,
       hole,
       // A view that follows the product across drill 10's restart.
