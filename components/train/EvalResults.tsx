@@ -34,7 +34,7 @@ export interface EvalResultsProps {
 /** How the copy names the model a job started from: in a sentence, as a column, and before a score. */
 function baseWords(model: string, sparkOpen: boolean) {
   return sparkOpen
-    ? { inLine: "the 2026 Glimmer it started from", column: "2026 Glimmer (r30b)", short: "r30b" }
+    ? { inLine: "the 2026 Glimmer it started from", column: "2026 Glimmer (r30b)", short: "2026 Glimmer" }
     : { inLine: "base", column: `Base ${model}`, short: "Base" };
 }
 
