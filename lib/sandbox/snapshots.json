@@ -116,5 +116,31 @@
       "runtime",
       "trust"
     ]
+  },
+  "snap_Cqia07XnMGqyaCFRgcrjDZDMGohX": {
+    "createdAt": "2026-11-03T04:58:19.335Z",
+    "templateHash": "ba25bacad0d6",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "fleet",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "platform",
+      "runtime",
+      "spark-open",
+      "trust"
+    ]
   }
 }
