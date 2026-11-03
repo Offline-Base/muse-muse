@@ -21,6 +21,18 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 - **Edge track (Nov 2):** a simulated cold-room watcher that is built so it keeps answering on a Jetson when the cloud is cut. The owner wants it as a headline beside frontier: defending infrastructure and being ready for any scenario. On `e4beadc1` (branch tg-edge, not merged to main) M1 to M6, M13 and M14's `MEASURED` half are built and unit-tested; nothing has run in a real build or on a board. The owner answered O1 to O8 (below). Units, Hussam's asks H1 to H5, the clock and when each claim may be said: docs/EDGE_PLAN.md. All flags off.
 - **Modal as a second build host (Nov 2, branch tg-modal):** behind `SANDBOX_HOST=modal`, off by default, so builds stay on Vercel Sandbox. The Modal host passed a live smoke test; no Muse Code build has run on Modal and its builder image isn't made yet. To turn it on, the env names, and the security gaps: docs/MODAL_HOST.md.
 
+## Owner decisions, Nov 2 night (plan-to-win form)
+
+From the owner's answers to the plan-to-win form (rounds 1 and 2). These override older lines below where they disagree.
+- **Story:** "Your own AI, on your own hardware, ready for any scenario." For shops, clinics and schools with equipment online and no engineering team, and anyone with an idea and no team. The video opens with Zuckerberg's line. The script is docs/VIDEO.md (rewritten on tg-video-v2).
+- **The unplug shot:** the cold-room app Muse Muse built keeps running on jetson-04, and SAM 3.1 on the board keeps watching the door (PR tg-edge-vision). Hussam narrates it and picks the prop.
+- **Muse Privacy stays in the video** (about 20 s, "a leak is a bad day too"), after its rerun on Glimmer, showing the real leak count (PR tg-privacy-glimmer). The tuned Glimmer 40 of 40 is shown.
+- **Extras wanted, in this order if time runs short:** Muse Spark Open on Fireworks as a model products can use (PR tg-spark-open), the site hosted on jetson-03, Muse Code driven by Spark Open through a custom endpoint, Muse Code running builds on a Jetson, a one-bit Glimmer chat clip on jetson-02.
+- **Repo:** flip the current repo public (not a fresh rewrite): a private backup copy first, non-Meta model code removed from main's tree (PR tg-public-ready, then tg-meta-only-tree), backup refs and stale branches deleted, Hussam changes the ngrok domain. Personal emails in history are fine. License Apache-2.0. Meta's docs stay at /docs; the owner says a Meta organizer allowed it (who and when still to be written in NOTICE).
+- **Judging week:** judges on Muse Wonder with `DAILY_SPEND_CAP_USD` 100. The 8 gallery products that look like the organizers' "skip these" list are hidden, not deleted. Edge builds on in production after one preview check; Look first on after one test build passes on the new snapshot.
+- **Keys in builds (PR tg-build-keys):** builds by anyone signed in with the builder code get the owner's service keys as real env values, and their products keep them. Built from dedicated `BUILD_SHARED_*` keys the owner creates, with leak checks and a kill switch (docs/BUILD_KEYS.md). Services: Vercel, AWS (limited user), Lambda, Hugging Face, fleet `jik_`, Composio, Fireworks, Baseten, Modal.
+- **Spend cap for this push:** $25. X: a teaser Tuesday night, the 60-second cut Wednesday morning.
+
 ## Open PRs, Nov 2 evening
 
 Nobody but the owner or Hussam merges. Hussam's PRs all say "Don't merge until told". Merged since the morning: #59, #60, #61, #62, #64, #65 (it fixed the unit tests main already failed) and #66 (set up for judging with no spend, 2:09 PM ET).
