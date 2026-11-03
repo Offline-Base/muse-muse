@@ -65,6 +65,7 @@ import { capsLivePaths } from "@/lib/caps/live";
 import { usesSharedGlimmer } from "@/lib/caps/gpu/marker";
 import { GPU_PROOF_FRAME } from "@/lib/caps/gpu/judge";
 import { gpuProofText } from "@/lib/caps/gpu/proof";
+import { TRANSCRIBE_MODEL, targetCheckedRequirements, targetFactsFrom, type TargetFacts } from "@/lib/full/target-checks";
 import { capsProofText } from "@/lib/caps/judge";
 import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
@@ -1279,6 +1280,8 @@ export async function judgeStep(input: {
   const capsProof = agentProof ? [agentProof, proofBefore].filter(Boolean).join("\n") : proofBefore;
   // FULL_BUILDS: every requirement is judged, with what its own test did. Null means no test results reached here.
   const requirementTests = fullBuildOf(brief) ? ((await verifySummaryFor(input.buildId, input.round))?.requirements ?? null) : undefined;
+  // Requirements only a target can prove are decided from what the pipeline saw, never from a screenshot (lib/full/target-checks.ts).
+  const targetFacts = requirementTests !== undefined && targetCheckedRequirements(brief).length ? await targetFactsFor(brief, build, input.round, input.buildId) : null;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
   const result = await judgeBuild({
@@ -1289,6 +1292,7 @@ export async function judgeStep(input: {
     references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,
     ...(capsProof ? { capsProof } : {}),
+    ...(targetFacts ? { targetFacts } : {}),
   }).catch(async (err: unknown) => {
     // A judge call that failed both attempts still cost something.
     if (err instanceof StructuredOutputError) await charge(ctx, err.usage, what);
@@ -1300,6 +1304,21 @@ export async function judgeStep(input: {
   return { pass: result.verdict.pass, blocking: result.verdict.blocking, ...(unmet.length ? { unmet } : {}) };
 }
 judgeStep.maxRetries = 1;
+
+/**
+ * What the pipeline saw of a build's targets on this round: verify's smoke step and outage drills, and the gateway's
+ * record of the models its tests called (none on a local run, whose record says nothing about the product).
+ */
+async function targetFactsFor(brief: Brief, build: { productId: string | null; startedAt: Date | null }, round: number, buildId: string): Promise<TargetFacts> {
+  const summary = await verifySummaryFor(buildId, round);
+  const canRead = publicHost(env.platformUrl) !== null && !!build.productId;
+  const modelsCalled = canRead ? await buildModelsCalledSince(build.productId!, build.startedAt).catch(() => null) : null;
+  return targetFactsFrom(summary, {
+    modelsCalled,
+    transcribeListed: brief.capabilities.some((c) => c.model === TRANSCRIBE_MODEL),
+    packagerReady: !!env.packagerSnapshotId,
+  });
+}
 
 function isVerifyEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "verify" }> {
   return p.type === "verify";

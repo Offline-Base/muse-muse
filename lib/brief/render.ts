@@ -17,6 +17,7 @@ import { JOBS_BUDGET_LINE } from "@/lib/caps/jobs/render";
 import { CHAIN_BUILD_LINES } from "@/lib/chain/plan";
 import { FULL_COST_LINE, FULL_DONE_LINE, FULL_FIX_SHOTS, FULL_FLOW_LINE, FULL_GOAL_LINE, FULL_SCOPE_LINE, fullBuildLines } from "@/lib/full/prompts";
 import { briefRequirements, fullMilestones } from "@/lib/full/requirements";
+import { TARGET_CHECK_HOW, targetCheckedRequirements } from "@/lib/full/target-checks";
 import { fastAgentLines } from "@/lib/fast/fast";
 import { RANGE_AGENT_LINES, RANGE_AGENTS_NOTES, RANGE_COST_LINE, RANGE_DEPTH_LINES, RANGE_FIX_AGENT_LINE, RANGE_FIX_LOOK, RANGE_FIX_SHOTS, RANGE_FLOW_LINE, RANGE_LOOK_LINE, RANGE_READ_FIRST, RANGE_SHOTS_LINE, RANGE_SIMPLER_LINE, rangeDirectionLines } from "@/lib/range/prompts";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
@@ -73,6 +74,8 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
     "The wearer sees nothing in the glasses, so every answer is one to three short sentences to be spoken, and the phone shows the photo and the answer.",
     "Build it from the parts in `components/glasses/` and `useGlasses` in `lib/glasses/client.ts`. Without the Muse Muse app it must still work with the phone's camera or a sample view.",
     "The smoke test uses the fake bridge in `tests/glasses.ts`, as the skill shows.",
+    "When the wearer asks a question, send the recording to `muse-voice-transcribe-1.0` with `transcribeFile` and answer what it says. Never drop the recording for a typed question.",
+    "The spoken answer and the phone's card use the same prices, counts and names as the text the product read from the photo. Build both from one parsed result, never from two model answers.",
   ],
   agent: [
     "One person starts each run and sees its steps and any sources as they arrive, in the parts the skill lists. Never show raw tool output.",
@@ -83,6 +86,7 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
     "When both sides are down, show its `message` on the page and keep the person's input. Never log an expected fallback with console.error.",
     "Write `edge-drill.json` naming that route and a simulated body. After verify, the build runs four simulated outage drills against it (cloud refused, cloud hung, both down, a tampered reply), and a failed drill fails the checks.",
     "Label invented data \"Simulated\". Never say the product works offline, and never call a board answer private or on-device.",
+    "A screen, tab or section named for the board, a board preview, a backup or offline mode shows only an answer labeled from a board, or says plainly that no board is connected. Never put a cloud answer under it.",
   ],
 };
 
@@ -473,7 +477,7 @@ export function renderBuildPrompt(
     ...(direction ? RANGE_DEPTH_LINES : []),
     ...(fastLines ?? (requiredAgents ? RANGE_AGENT_LINES : [])),
   );
-  if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief)), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
+  if (full && brief.verdict !== "no") out.push(...fullBuildLines(briefRequirements(brief), fullMilestones(brief), targetCheckedRequirements(brief).map((c) => ({ id: c.requirement.id, how: TARGET_CHECK_HOW[c.kind] }))), ...(brief.chained === true ? CHAIN_BUILD_LINES : []));
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
   if (brief.verdict !== "no" && !full) out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
   // ---------- end Wave 3, unit 2 ----------
@@ -859,7 +863,9 @@ export function briefToMarkdown(brief: Brief): string {
   }
 
   const reqs = briefRequirements(brief);
-  if (reqs.length) out.push("", "## What it must do", "", bullets(reqs.map((r) => `**${r.id}**: ${r.text}${r.canDo ? "" : ` (can't be done: ${r.cantDoWhy ?? "not possible yet"})`}`)));
+  // A requirement only a target can prove says so, for the judge and the build alike (lib/full/target-checks.ts).
+  const byTarget = new Set(targetCheckedRequirements(brief).map((c) => c.requirement.id));
+  if (reqs.length) out.push("", "## What it must do", "", bullets(reqs.map((r) => `**${r.id}**: ${r.text}${r.canDo ? (byTarget.has(r.id) ? " (checked from the target, not from a screenshot)" : "") : ` (can't be done: ${r.cantDoWhy ?? "not possible yet"})`}`)));
   out.push("", "## How it works", "", ...brief.primaryFlow.map((s, i) => `${i + 1}. ${s}`));
   if (brief.screens.length) out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
 

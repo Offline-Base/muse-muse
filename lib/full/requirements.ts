@@ -264,11 +264,15 @@ export function requirementsFile(brief: WithRequirements, upTo?: number): string
 /**
  * The verdict on every requirement, decided by code. Met needs both proofs: its test passed in verify, and the judge saw
  * it on screen. A part named as impossible stays "cant". Anything with no result is unmet, never assumed.
+ *
+ * `byTarget` holds code's verdict on the requirements only a target can prove (lib/full/target-checks.ts). Once its
+ * test passed, that verdict stands in place of the judge's: a web screenshot never marks one of them met.
  */
 export function requirementResults(
   list: Requirement[],
   tests: RequirementTest[] | null | undefined,
   reads: RequirementRead[] | null | undefined,
+  byTarget?: ReadonlyMap<string, Pick<RequirementResult, "state" | "detail">>,
 ): RequirementResult[] {
   const test = new Map((tests ?? []).map((t) => [t.id, t]));
   const read = new Map((reads ?? []).map((r) => [r.id, r]));
@@ -278,6 +282,8 @@ export function requirementResults(
     const j = read.get(r.id);
     if (!t) return { id: r.id, text: r.text, state: "unmet", detail: "No test ran for it." };
     if (!t.ok) return { id: r.id, text: r.text, state: "unmet", detail: t.detail || "Its test failed." };
+    const target = byTarget?.get(r.id);
+    if (target) return { id: r.id, text: r.text, state: target.state, ...(target.detail ? { detail: target.detail } : {}) };
     if (reads === null || reads === undefined) return { id: r.id, text: r.text, state: "unchecked", detail: "Its test passed. The judge hasn't looked yet." };
     if (!j) return { id: r.id, text: r.text, state: "unmet", detail: "The judge didn't report on it." };
     return { id: r.id, text: r.text, state: j.met ? "met" : "unmet", ...(j.evidence ? { detail: j.evidence } : {}) };
