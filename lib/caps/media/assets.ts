@@ -103,8 +103,8 @@ export async function handleAsset(req: Request, sha256: string, deps: AssetsDeps
   const asset = SHA.test(sha256) ? assets.find((a) => a.sha256 === sha256 && enabled.includes(a.cap)) : undefined;
   if (!asset) return refuse(404, "not_found_error", "asset_not_found", "No such file on the gateway's list.");
   const now = deps.now?.() ?? new Date();
-  // Counted per file: one page load fetches several files (the speech model is five), so a classroom behind one school
-  // address uses one count of each file per student, not five of one shared count.
+  // Counted per file: one page load can fetch several files, so a classroom behind one school address uses one count of
+  // each file per student, not one shared count.
   const key = `assets:ip:${clientKey(req)}:${asset.sha256.slice(0, 16)}`;
   const counts = await deps.hitRateLimits([key], new Date(Math.floor(now.getTime() / 60_000) * 60_000));
   if ((counts[key] ?? 0) > ASSETS_PER_MINUTE) {

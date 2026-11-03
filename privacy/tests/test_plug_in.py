@@ -205,7 +205,7 @@ def test_plugging_in_turns_off_the_settings_the_ruling_refuses(tmp_path):
     assert values["CHECKER_BACKEND"] == "glimmer" and values["SEARCH_EMBEDDINGS"] == values["PROMPT_GUARD"] == "0"
     assert values["JETSON_LFM_BASE"] == values["JETSON_LFM_API_KEY"] == "" and values["LABELS_BACKEND"] == "checker"
     s = load_settings({**read_dotenv(env), "BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(tmp_path)})
-    assert s.primary_model == s.checker_backend == "glimmer" and not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm)
+    assert s.primary_model == s.checker_backend == "glimmer" and not (s.search_embeddings or s.has_jetson_lfm)
 
 
 def test_the_summary_json_is_read_and_a_failed_run_shows_in_the_table(tmp_path):

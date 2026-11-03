@@ -2,6 +2,7 @@
  * What a product's Code page may show, and the pure parts of versions (docs/VERSIONS.md): no database, no network.
  */
 import { createHash } from "node:crypto";
+import { holdsSharedValue } from "@/lib/keys/shared";
 
 /** One file of a saved version. `held` means its content looked like a secret, so it was never stored. */
 export interface VersionFile {
@@ -60,11 +61,15 @@ function isExecutable(c: Buffer): boolean {
   return magic === 0x7f454c46 || magic === 0xcafebabe || magic === 0xfeedface || magic === 0xfeedfacf || magic === 0xcefaedfe || magic === 0xcffaedfe || (c[0] === 0x4d && c[1] === 0x5a);
 }
 
-/** True when these bytes must not be stored or shown. latin1 keeps every byte, so a key inside a binary is found too. */
+/**
+ * True when these bytes must not be stored or shown. latin1 keeps every byte, so a key inside a binary is found too.
+ * The owner's shared keys (docs/BUILD_KEYS.md) count in any obvious encoding, so the Code page, source.zip and the
+ * GitHub export never carry one.
+ */
 export function holdsSecret(content: Buffer): boolean {
   if (isExecutable(content)) return true;
   const text = content.toString("latin1");
-  return SECRET.some((r) => r.test(text));
+  return SECRET.some((r) => r.test(text)) || holdsSharedValue(content);
 }
 
 export const sha1 = (b: Buffer) => createHash("sha1").update(b).digest("hex");

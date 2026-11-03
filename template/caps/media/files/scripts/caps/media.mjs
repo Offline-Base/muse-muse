@@ -5,20 +5,19 @@
 //   video   the smoke test saw the made <video> play with a duration over 0 (tests/caps/media.ts, expectVideoPlays),
 //           and the saved file is an MP4 whose own index says the same (or a WebM from the recorder fallback)
 //   music   the saved MIDI file starts with MThd and holds at least one note, read here from its bytes
-//   speech  the smoke test saw speak() make audio, with the open model or the browser's own voice
 //   tiles   the smoke test saw findAll run on 2 to 4 tiles and merge without adding boxes (the merge itself is proven by
 //           the platform's unit tests; the build only records counts)
 // and for every product with media:
-//   notices public/notices/media.txt and onnxruntime.txt are there and the product links to media.txt
+//   notices public/notices/media.txt is there and the product links to it
 //   no-cdn  nothing in the product loads a model, wasm or script from another site
 //
 // What these rest on: video and music read the files the test saved, which a product test could replace with others it
-// made; speech and tiles read the smoke test's record, which a product test could write itself. brief.md's parts line
+// made; tiles reads the smoke test's record, which a product test could write itself. brief.md's parts line
 // could be edited by the product, which would only drop checks. Media makes no gateway calls of its own beyond SAM's.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-export const PARTS = ["speech", "video", "music", "samTiling"];
+export const PARTS = ["video", "music", "samTiling"];
 const TILES_SMOKE = 4;
 
 const REMOTE = [
@@ -146,7 +145,7 @@ function fromRecord(record, id, missing) {
 export async function check({ record, root }) {
   const parts = briefParts(root);
   const checks = [];
-  if (!parts.length) checks.push({ id: "parts", ok: false, detail: "brief.md has no \"- Media parts:\" line naming speech, video, music or samTiling" });
+  if (!parts.length) checks.push({ id: "parts", ok: false, detail: "brief.md has no \"- Media parts:\" line naming video, music or samTiling" });
   const dir = path.join(root, "test-results", "caps", "media");
   if (parts.includes("video")) {
     const seen = fromRecord(record, "video", "The smoke test didn't run expectVideoPlays from tests/caps/media.ts");
@@ -169,7 +168,6 @@ export async function check({ record, root }) {
     const ok = seen.ok && notes > 0;
     checks.push({ id: "music", ok, detail: notes === -2 ? "The smoke test saved no MIDI file" : notes < 0 ? "The saved tune.mid doesn't start with MThd" : notes === 0 ? "The saved MIDI file has no notes" : `${seen.detail}; the file has ${notes} notes` });
   }
-  if (parts.includes("speech")) checks.push(fromRecord(record, "speech", "The smoke test didn't run expectSpeech from tests/caps/media.ts"));
   if (parts.includes("samTiling")) {
     const seen = recorded(record, "tiles");
     const n = (k) => Number(String(seen?.detail ?? "").match(new RegExp(`\\b${k}=(\\d+)`))?.[1] ?? NaN);
@@ -192,7 +190,7 @@ export async function check({ record, root }) {
     const text = (f) => read(path.join(root, f))?.toString("utf8") ?? "";
     const remote = sources.filter((f) => REMOTE.some((re) => re.test(text(f))));
     checks.push({ id: "no-cdn", ok: !remote.length, detail: remote.length ? `${remote.slice(0, 3).join(", ")} load${remote.length === 1 ? "s" : ""} a model or script from another site` : "Nothing loads a model or script from another site" });
-    const missing = ["public/notices/media.txt", "public/notices/onnxruntime.txt"].filter((f) => !existsSync(path.join(root, f)));
+    const missing = ["public/notices/media.txt"].filter((f) => !existsSync(path.join(root, f)));
     const linked = sources.some((f) => !f.startsWith("public/") && text(f).includes("/notices/media.txt"));
     checks.push({ id: "notices", ok: !missing.length && linked, detail: missing.length ? `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} missing` : linked ? "The open source notices are linked" : "Link \"Open source notices\" to /notices/media.txt from the page" });
   }

@@ -132,6 +132,7 @@ const MODEL_LABELS: Record<string, string> = {
   "muse-glimmer": "Muse Glimmer",
   "muse-gadget": "Muse Gadget",
   "jetson-fleet": "Jetson fleet",
+  "muse-spark-open": "Muse Spark Open",
 };
 
 export function modelLabel(id: string): string {

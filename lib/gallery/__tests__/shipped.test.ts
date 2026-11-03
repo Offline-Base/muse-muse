@@ -1,7 +1,7 @@
 /**
  * listShippedProducts' filters on a real schema (PGlite): the gallery's published-only read leaves out a product with no
- * live link, before the limit, and the Make page's read takes only the slugs it asks for. getBuildRoom drops a taken-down
- * product.
+ * live link, before the limit, and the Make page's read takes only the slugs it asks for. A gallery read leaves out the
+ * hidden products and puts the first-shown ones first (lib/gallery/hidden.ts). getBuildRoom drops a taken-down product.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/gallery/__tests__/shipped.test.ts
  *
@@ -71,5 +71,30 @@ describe("listShippedProducts", { skip: canMock ? false : "needs --experimental-
     const down = await room("taken-down", new Date(Date.UTC(2026, 10, 1)));
     assert.ok(down, "the room itself still opens");
     assert.equal(down!.product, null);
+  });
+
+  it("leaves hidden products out of a gallery read and puts the first ones first, both before the limit", async () => {
+    const { GALLERY_FIRST, HIDDEN_FROM_GALLERY } = await import("../hidden");
+    const [user] = await testDb.insert(realSchema.users).values({ email: `${randomUUID()}@example.com` }).returning();
+    const [muse] = await testDb.insert(realSchema.inspirations).values({ userId: user!.id }).returning();
+    const first = GALLERY_FIRST[0]!;
+    const hidden = HIDDEN_FROM_GALLERY[0]!;
+    // The first-shown product is the oldest of all, and the hidden one the newest.
+    const rows = [
+      { slug: first, at: new Date(Date.UTC(2026, 9, 1)) },
+      { slug: "plain-gallery-one", at: new Date(Date.UTC(2026, 11, 1)) },
+      { slug: hidden, at: new Date(Date.UTC(2026, 11, 2)) },
+    ];
+    for (const r of rows) {
+      await testDb.insert(realSchema.products).values({ slug: r.slug, name: r.slug, ownerId: user!.id, inspirationId: muse!.id, status: "live", liveUrl: `https://musemuse-${r.slug}.vercel.app`, updatedAt: r.at });
+    }
+    const slugs = rows.map((r) => r.slug);
+    assert.deepEqual((await queries.listShippedProducts(6, { published: true, gallery: true, slugs })).map((p) => p.slug), [first, "plain-gallery-one"]);
+    assert.deepEqual((await queries.listShippedProducts(1, { published: true, gallery: true })).map((p) => p.slug), [first], "first even though it's the oldest");
+    const gallery = (await queries.listShippedProducts(60, { published: true, gallery: true })).map((p) => p.slug);
+    assert.ok(!gallery.includes(hidden));
+    assert.deepEqual(gallery.slice(0, 2), [first, "plain-gallery-one"]);
+    // Without the gallery switch, as the dashboard and gadgets pages read, it's still there, newest first.
+    assert.deepEqual((await queries.listShippedProducts(6, { published: true, slugs })).map((p) => p.slug), [hidden, "plain-gallery-one", first]);
   });
 });

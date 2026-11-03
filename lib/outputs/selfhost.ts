@@ -107,6 +107,7 @@ function platformOnlyParts(files: readonly SourceFile[]): KitManifest["platformO
   add("The connected gadget (a board's camera and microphone) is reached through Muse Muse.", using(/from\s+["']@\/lib\/meta\/gadget["']/));
   add("Muse Glimmer needs an endpoint of your own: set GLIMMER_URL, GLIMMER_API_KEY and GLIMMER_MODEL.", using(/from\s+["']@\/lib\/meta\/glimmer["']/));
   add("The Jetson fleet's boards are reached through Muse Muse, so they don't answer here: those answers show the fleet's offline words.", using(/from\s+["']@\/lib\/meta\/fleet["']/));
+  add("Muse Spark Open runs through Muse Muse on a hosted provider, and Meta's Model API doesn't serve it, so it doesn't answer here. Point lib/meta/spark-open.ts at a provider of your own (Baseten, Fireworks or another host Meta lists) with your own key.", using(/from\s+["']@\/lib\/meta\/spark-open["']/));
   add("The agent's tools, other than Meta's web search, run through Muse Muse.", files.filter((f) => f.path.startsWith("lib/agent/")).map((f) => f.path));
   const services = files.filter((f) => /^lib\/platform\/[^/]+\.ts$/.test(f.path) && !["lib/platform/python.ts", "lib/platform/identity.ts"].includes(f.path)).map((f) => f.path);
   add("Muse Muse platform services (saved data, files, connections, jobs and the like) are Muse Muse's own.", services);

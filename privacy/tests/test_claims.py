@@ -335,7 +335,7 @@ def meta_models_only(settings: config.Settings) -> bool:
     """The organizers' Nov 2 ruling: Muse Glimmer for every model step, and no model that is not Meta's."""
     return (
         settings.primary_model == settings.checker_backend == "glimmer"
-        and not (settings.search_embeddings or settings.prompt_guard or settings.has_jetson_lfm)
+        and not (settings.search_embeddings or settings.has_jetson_lfm)
     )
 
 

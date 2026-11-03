@@ -10,6 +10,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { contributorBuildsOn, env } from "@/lib/env";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import { availableRecipes, recipesCatalogLines } from "@/lib/recipes/registry";
+import { sparkOpenCatalogLine } from "@/lib/prompts/spark-open";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
 import toolCatalog from "@/lib/tools/composio/catalog.json";
@@ -185,7 +186,9 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
   const gpuOn = env.gpuGlimmerForBuilds;
   // The Jetson fleet (docs/CAPABILITIES.md, 17b): its line and the key's part only with FLEET_PRODUCTS on.
   const fleetOn = env.fleetProductsForBuilds;
-  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${fleetOn ? "|fleet" : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
+  // Muse Spark Open (lib/gateway/spark-open.ts): its line, with its provider's name and price, only with SPARK_OPEN_PRODUCTS on.
+  const sparkOpenLine = env.sparkOpenProductsForBuilds ? sparkOpenCatalogLine() : null;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}${gpuOn ? "|gpu" : ""}${fleetOn ? "|fleet" : ""}${sparkOpenLine ? `|sparkOpen:${sparkOpenLine}` : ""}${caps.includes("data") ? `|${env.dataSignIn}` : ""}${caps.includes("live") ? `|live:${env.liveUpdates}` : ""}${caps.includes("media") ? `|${env.mediaParts.join(",")}` : ""}${connectKey}${caps.includes("code") ? `|code:${codePartsKey()}` : ""}${caps.includes("hardware") ? `|board:${env.hardwareBoardToolsUsable}` : ""}${caps.includes("hardware") && env.driveToolsUsable ? "|drive" : ""}${recipesCatalogLines(caps).length ? `|recipes:${availableRecipes(caps).map((r) => r.id).join(",")}` : ""}`;
   // A product's own chatbot needs a snapshot with lib/meta/chat.ts. Both switches below come with one, so with them off the text is today's.
   const chatOffered = contributorBuildsOn() || caps.includes("platform");
   const hit = cached.get(`${key}${chatOffered ? "|chat" : ""}${switchOn ? "|switch" : ""}`);
@@ -204,6 +207,7 @@ export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string
     gpuOn ? GLIMMER_CATALOG_LINE : "- muse-glimmer: Meta's open-weights 30B model. Not on the Model API: it needs an endpoint someone hosts on a GPU server, and Meta's smallest file of it is 16.8 GB, so never promise it runs on a phone, a laptop or a small board. Pick it only when the muse asks for an open-weights model someone hosts.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     ...(fleetOn ? [FLEET_CATALOG_LINE] : []),
+    ...(sparkOpenLine ? [sparkOpenLine] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     // Wave 3, unit 8 (docs/CAPABILITIES.md, section 14): the media cap replaces these two while its part is on.

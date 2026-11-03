@@ -44,9 +44,9 @@ beforeEach(() => {
   process.env.GATEWAY_URL = GATEWAY;
   process.env.PRODUCT_TOKEN = "tok_made_up";
   process.env.EDGE_URL = EDGE;
-  process.env.EDGE_MODEL = "llama-3.2-3b";
+  process.env.EDGE_MODEL = "muse-glimmer-2026-iq1s";
   process.env.EDGE_BOARD = "jetson-04";
-  process.env.EDGE_MODEL_NAME = "Llama 3.2 3B";
+  process.env.EDGE_MODEL_NAME = "Muse Glimmer 30B one-bit";
   process.env.EDGE_CLOUD_TIMEOUT_MS = "300";
   process.env.EDGE_TIMEOUT_MS = "300";
 });
@@ -75,11 +75,11 @@ test("cloud refused: the edge answers, with its fixed label and a json_schema re
   const res = await ask();
   assert.equal(res.ok, true);
   assert.equal(res.by, "edge");
-  assert.equal(res.label, "Answered on jetson-04, Llama 3.2 3B");
+  assert.equal(res.label, "Answered on jetson-04, Muse Glimmer 30B one-bit");
   assert.deepEqual(res.data, GOOD);
   assert.equal(res.fellBack.kind, "refused");
   const sent = calls.find((c) => c.side === "edge").body;
-  assert.equal(sent.model, "llama-3.2-3b");
+  assert.equal(sent.model, "muse-glimmer-2026-iq1s");
   assert.equal(sent.response_format.type, "json_schema");
   assert.equal(sent.response_format.json_schema.name, "reading");
   assert.equal("chat_template_kwargs" in sent, false);
@@ -97,6 +97,43 @@ test("a cloud that turns the request down (a 4xx) is the answer: the edge is nev
     assert.equal(res.reasons.edge.kind, "skipped");
     assert.deepEqual(calls.map((c) => c.side), ["cloud"], `status ${status}`);
   }
+});
+
+/** The gateway's answer to a model the product's token doesn't list (lib/gateway/handler.ts). */
+const modelNotFound = () =>
+  Response.json(
+    { error: { type: "invalid_request_error", code: "model_not_found", message: 'The model "muse-wonder-1.0" isn\'t available to this product on /v1/responses. Allowed: sam-3.1.', param: null } },
+    { status: 404, headers: { "x-should-retry": "false" } },
+  );
+
+test("a cloud 404 model_not_found is a setup error, not a refusal: the edge answers", async () => {
+  fake({ cloud: modelNotFound, edge: () => chatOk(JSON.stringify(GOOD)) });
+  const res = await ask();
+  assert.equal(res.ok, true);
+  assert.equal(res.by, "edge");
+  assert.equal(res.label, "Answered on jetson-04, Llama 3.2 3B");
+  assert.equal(res.fellBack.kind, "setup");
+  assert.equal(res.fellBack.status, 404);
+  assert.deepEqual(calls.map((c) => c.side), ["cloud", "edge"]);
+});
+
+test("a 404 model_not_found with no edge gives the plain both-down message, never 'turned this request down'", async () => {
+  delete process.env.EDGE_URL;
+  fake({ cloud: modelNotFound });
+  const res = await ask();
+  assert.equal(res.ok, false);
+  assert.equal(res.message, BOTH_DOWN_MESSAGE);
+  assert.equal(res.reasons.cloud.kind, "setup");
+  assert.equal(res.reasons.edge.kind, "not_set");
+});
+
+test("any other 404 is still the cloud saying no", async () => {
+  fake({ cloud: () => Response.json({ error: { message: "no such route", code: "not_found" } }, { status: 404 }), edge: () => chatOk(JSON.stringify(GOOD)) });
+  const res = await ask();
+  assert.equal(res.ok, false);
+  assert.equal(res.message, CLOUD_DECLINED_MESSAGE);
+  assert.equal(res.reasons.cloud.kind, "http");
+  assert.deepEqual(calls.map((c) => c.side), ["cloud"]);
 });
 
 test("a cloud 5xx or 408 still falls back to the edge", async () => {

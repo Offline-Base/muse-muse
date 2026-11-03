@@ -2030,6 +2030,8 @@ Captions send people's speech to Meta. Nothing in `muse-device/` changed.
 
 ## 14. Unit 8: media (E)
 
+**Nov 2, 2026: the speech part is gone.** It read aloud with SpeechT5, which isn't a Meta model, and the organizers ruled that every model a project calls must be Meta's. The platform dropped the part first (`lib/caps/media/parts.ts`), then branch tg-meta-only-tree removed `lib/platform/speech.ts`, its model downloads in `media-assets.ts`, `public/notices/onnxruntime.txt`, `expectSpeech` and the checker's speech check from the template. The record below is kept as it was written.
+
 **Scope.** Open-weights speech in the browser (license checked first), video from image sequences with ffmpeg.wasm, music
 as MIDI, and SAM tiling and chunking past 16 objects and long video.
 

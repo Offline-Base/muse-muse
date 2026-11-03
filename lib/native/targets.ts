@@ -41,7 +41,7 @@ export const TARGET_GUIDE: Record<TargetId, string> = {
   agent:
     "an agent that works in several steps: it looks things up with Meta's web search and the listed tools, then answers with its sources. Pick it only when the product must look things up or work in several steps, and pick the fewest tools.",
   edge:
-    "a backup for when the cloud is cut. The product asks Meta's cloud models for its main answer first, and when they can't be reached it asks a small model on an edge board, such as a Jetson, and labels which one answered. Pick it only when the muse asks to keep answering when the cloud or the network is down, or names an edge board or a Jetson. Only the main structured answer has the backup: the page, saved data, files, connections, images, voice and the other models still need the network. The board's model is small, so the answer must be short and flat: a status, a few short lines, a short list. Data in a demo is invented and labeled Simulated.",
+    "a backup for when the cloud is cut. The product asks Meta's cloud models for its main answer first, and when they can't be reached it asks a small model on an edge board, such as a Jetson, and labels which one answered. Pick it only when the muse asks to keep answering when the cloud or the network is down, or names an edge board or a Jetson. Only the main structured answer has the backup: the page, saved data, files, connections, images, voice and the other models still need the network. The board's model is small, so the answer must be short and flat: a status, a few short lines, a short list. When the product must see what is in a photo (find, count or outline things, like a door left open), Meta's SAM 3.1 runs on the board too: list sam-3.1 among its capabilities, and that look has the same backup. Data in a demo is invented and labeled Simulated.",
 };
 
 /** Added to the agent's guide only with COMPOSIO_PERSONAL_ENABLED on, since the writer is offered no personal tool without it. */
@@ -123,6 +123,21 @@ export const TARGET_LIMITS: Partial<Record<TargetId, Array<{ text: string; said:
   ],
 };
 
+/**
+ * The edge limits for a brief that looks with SAM 3.1: there the photo's look has a backup on the board too (segmentOrEdge
+ * in template/lib/meta/edge.ts), so the first line says so instead of putting every image behind the cloud.
+ */
+export const EDGE_SAM_LIMITS: Array<{ text: string; said: RegExp }> = [
+  {
+    text: "Only the main answer and Meta SAM 3.1's look at a photo have a backup on the edge board. Saved data, files, connections, other images and voice go through Muse Muse, so they stop when the cloud is cut.",
+    said: /only (the|its) main answer|stop when the cloud is (cut|down)/i,
+  },
+  { text: "A backup answer is labeled with the board, and a look at a photo with the board and Meta SAM 3.1.", said: /labeled with the board|answered on|seen on/i },
+];
+
+/** True for a brief whose capabilities pick SAM 3.1. */
+const picksSam = (brief: Pick<Brief, "capabilities">) => brief.capabilities.some((c) => c.model === "sam-3.1");
+
 const OWNER_LIMIT = /only (this app's |the product's |the product |the )?owner/i;
 
 function withLimit(limits: string[], text: string, said: RegExp): string[] {
@@ -181,7 +196,7 @@ export function applyTargets(brief: Brief, opts: { enabled: readonly TargetId[];
   const picks = opts.requested?.length ? opts.requested : [...written.keys()];
   const ids = briefTargets({ targets: picks.filter((id) => allowed.has(id)).map((id) => ({ id })) });
   let out: Brief = { ...withoutAgent, targets: ids.map((id) => ({ id, why: written.get(id) ?? (id === "web" ? WEB_WHY : PICKED_WHY) })) };
-  for (const id of ids) for (const { text, said } of TARGET_LIMITS[id] ?? []) out = { ...out, limits: withLimit(out.limits, text, said) };
+  for (const id of ids) for (const { text, said } of (id === "edge" && picksSam(out) ? EDGE_SAM_LIMITS : TARGET_LIMITS[id]) ?? []) out = { ...out, limits: withLimit(out.limits, text, said) };
   if (ids.includes("agent")) out = withAgentFacts(out, settleAgent(brief, opts.personalTools ?? false));
   return out;
 }

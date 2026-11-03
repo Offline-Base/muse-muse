@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * `npm run drill`: the four simulated outage drills, with no key, no build, no model and no network past loopback.
- * `npm run drill:all`: those four and six more scenarios (template/scripts/edge-drill.mjs lists all ten).
+ * `npm run drill`: the eight simulated outage drills (four on the text answer, four on the photo look), with no key, no
+ * build, no model and no network past loopback.
+ * `npm run drill:all`: those eight and eight more scenarios (template/scripts/edge-drill.mjs lists all 16).
  *
  * It runs template/scripts/edge-drill.mjs, which starts the blackhole gateway (edge-blackhole.mjs, standing in for a
  * cloud that can't be reached) and the fake edge server (edge-fake.mjs, standing in for a board's model), then starts
@@ -10,22 +11,30 @@
  *
  *   1. cloud refused    2. cloud hung (waits out the real 10 s cloud deadline)    3. both down    4. tampered reply rejected
  *
+ * and four on its photo route, which looks through segmentOrEdge() in the same file, with the fake edge server standing
+ * in for Meta SAM 3.1 on a board:
+ *
+ *   12. SAM, cloud refused    13. SAM, cloud hung (the same 10 s)    14. SAM, both down    15. SAM, tampered board reply
+ *   rejected
+ *
  * and with --all:
  *
  *   5. cloud slow, inside the limit (about 8 s)    6. cloud flapping (503, OK, 503)    7. edge too slow as well (about
  *   15 s: the 10 s cloud limit plus the 5 s edge limit the runner gives the product)    8. truncated reply rejected
  *   9. injected text shown as data    10. gateway host not found (the product is restarted for it, with every dns.lookup
- *   of a .invalid name failing inside the product before any resolver is asked)
+ *   of a .invalid name failing inside the product before any resolver is asked)    11. cloud model not found (the
+ *   gateway answers 404 model_not_found)    16. SAM, cut-off board reply rejected
  *
- * Usage: npm run drill [-- --only 1,3], npm run drill:all [-- --only 5,9]
+ * Usage: npm run drill [-- --only 1,12], npm run drill:all [-- --only 5,9,16]
  * Output: each result on stdout, and JSON in .data/drill/ (git-ignored). Exit 0 when every drill run passes, 1 when
  * one fails, 2 when setup fails (a port, or the product never came up).
  *
  * What a pass shows, and only this: with the gateway cut on loopback, the product's fallback answered from a fake
- * server, labelled it, showed a plain message when both were down, and refused a reply with the wrong types. With
- * --all, also: it waited for a slow cloud, labelled each answer while the cloud flapped, gave up on a slow edge in
- * time, refused a cut-off reply, kept planted instructions as data, and fell back when the gateway's name didn't
- * resolve. It says nothing about a real model, a real board or a real network.
+ * server, labelled it, showed a plain message when both were down, and refused a reply with the wrong types, for its
+ * text answer and for its look at a Simulated photo. With --all, also: it waited for a slow cloud, labelled each
+ * answer while the cloud flapped, gave up on a slow edge in time, refused a cut-off reply, kept planted instructions as
+ * data, fell back when the gateway's name didn't resolve or the gateway said model_not_found, and refused a cut-off
+ * board reply. It says nothing about a real model, a real board or a real network.
  */
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -62,9 +71,12 @@ async function main() {
     EDGE_BLACKHOLE_PORT: String(holePort),
     EDGE_DRILL_PATH: "/api/actions/status",
     EDGE_DRILL_BODY: "{}",
+    EDGE_DRILL_SAM_PATH: "/api/actions/look",
+    EDGE_DRILL_SAM_BODY: JSON.stringify({ photo: "SIMULATED_PHOTO", prompt: "open door" }),
     EDGE_DRILL_OUT: path.join(OUT, "edge-drill.json"),
     EDGE_BOARD: "a simulated board",
     EDGE_MODEL_NAME: "the fake edge server",
+    EDGE_SAM_MODEL_NAME: "a fake SAM service",
     PRODUCT_TOKEN: "drill",
   });
   const tsx = path.join(ROOT, "node_modules", ".bin", "tsx");

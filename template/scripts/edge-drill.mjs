@@ -13,7 +13,7 @@
  *   4. tampered reply  the gateway drops, the edge sends JSON with wrong types marked TAMPERED: none of it reaches
  *                      the reply, which carries the both-down message instead
  *
- * Those four are the default set, the one builds run. --all adds six more scenarios (--only picks from all ten):
+ * Those four are the default set, the one builds run. --all adds seven more scenarios (--only picks from all 16):
  *
  *   5. cloud slow      the gateway answers at about 8 s, inside the 10 s limit: the product waits for it, shows the
  *                      cloud label and never asks the edge
@@ -34,15 +34,30 @@
  *                      EDGE_DRILL_DNS_BASE_URL to a second copy of the product started with such a GATEWAY_URL (it
  *                      uses the real resolver, and the drill can't see its lookup), or the drill fails and says why.
  *
+ *  11. cloud model not found  the gateway answers 404 model_not_found, as it does for a model the product's token
+ *                      doesn't list: a setup error, not the cloud saying no, so the edge answers with its label
+ *
+ * Photo drills, for a product that looks with Meta SAM 3.1 through segmentOrEdge in lib/meta/edge.ts. They run only
+ * when the product names that route (edge-drill.json's "sam", or EDGE_DRILL_SAM_PATH), and then 12 to 15 join the
+ * default set; --all adds 16. The fake edge server stands in for the board's SAM service (its POST /segment):
+ *
+ *  12. SAM, cloud refused   the gateway drops, the fake board answers: a 2xx with "Seen on", after trying the gateway
+ *  13. SAM, cloud hung      the gateway never answers: the board's answer, with its label, within EDGE_DRILL_HANG_MAX_MS
+ *  14. SAM, both down       gateway and board both drop: the plain "Can't see right now" message, no label, no
+ *                           server error
+ *  15. SAM, tampered board reply rejected  the board sends the wrong types marked TAMPERED: none of it reaches the
+ *                           reply, which carries "Can't see right now" instead
+ *  16. SAM, cut-off board reply rejected   the board's JSON is cut off part way, marked TRUNCATED: the same
+ *
  * With --all and --start, the product gets EDGE_TIMEOUT_MS and EDGE_CLOUD_TIMEOUT_MS from the two limits below, so
  * drill 7 knows how long the product may take.
  *
  * CLI:
  *   MUSEMUSE_BASE_URL=http://127.0.0.1:3101 node scripts/edge-drill.mjs [--start "npm start -- -p 3101"] [--only 1,3] [--all]
  *
- * --start runs the product itself with GATEWAY_URL, EDGE_URL and PORT set for the drill and watches its output for
- * errors. Without it, start the product first with
- *   GATEWAY_URL=http://127.0.0.1:18436 EDGE_URL=http://127.0.0.1:18435/v1 PRODUCT_TOKEN=drill
+ * --start runs the product itself with GATEWAY_URL, EDGE_URL, EDGE_SAM_URL and PORT set for the drill and watches its
+ * output for errors. Without it, start the product first with
+ *   GATEWAY_URL=http://127.0.0.1:18436 EDGE_URL=http://127.0.0.1:18435/v1 EDGE_SAM_URL=http://127.0.0.1:18435 PRODUCT_TOKEN=drill
  * (the default ports below), since a product reads its env when it starts.
  *
  * Env:
@@ -50,6 +65,10 @@
  *   EDGE_DRILL_PATH         the route to ask, for example /api/actions/status. Else edge-drill.json's "path".
  *   EDGE_DRILL_BODY         the JSON body to send. Else edge-drill.json's "body", else {}.
  *   EDGE_DRILL_METHOD       default POST, or edge-drill.json's "method"
+ *   EDGE_DRILL_SAM_PATH     the photo route (segmentOrEdge) for drills 12 to 16. Else edge-drill.json's "sam"."path".
+ *   EDGE_DRILL_SAM_BODY     its JSON body. Else "sam"."body". Any string "SIMULATED_PHOTO" in it becomes a small
+ *                           Simulated PNG as a data URL.
+ *   EDGE_DRILL_SAM_METHOD   default POST, or "sam"."method"
  *   EDGE_DRILL_HANG_MAX_MS  default 15000
  *   EDGE_DRILL_CLOUD_LIMIT_MS  the product's cloud limit, default 10000 (drills 5 and 7)
  *   EDGE_DRILL_EDGE_LIMIT_MS   the product's edge limit, default 5000 (drill 7)
@@ -61,7 +80,9 @@
  *                           test-results/caps/edge.json and the blackhole's to test-results/caps/blackhole.json.
  *
  * edge-drill.json, at the product's root, is written by Muse Code (the muse-edge skill):
- *   { "path": "/api/actions/status", "method": "POST", "body": { ...simulated input } }
+ *   { "path": "/api/actions/status", "method": "POST", "body": { ...simulated input },
+ *     "sam": { "path": "/api/actions/look", "body": { "photo": "SIMULATED_PHOTO", "prompt": "open door" } } }
+ * "sam" only for a product that looks at photos. A product that only looks may leave out "path".
  *
  * Exit codes: 0 every drill passed, 1 a drill failed, 2 setup failed (no MUSEMUSE_BASE_URL or route, a port in use,
  * or the product never came up).
@@ -71,20 +92,30 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_BLACKHOLE_PORT, startBlackhole } from "./edge-blackhole.mjs";
-import { DEFAULT_FAKE_PORT, INJECT_MARK, startEdgeFake, TAMPER_MARK, TRUNCATE_MARK } from "./edge-fake.mjs";
+import { DEFAULT_FAKE_PORT, INJECT_MARK, SIMULATED_PHOTO, SIMULATED_PHOTO_PLACEHOLDER, startEdgeFake, TAMPER_MARK, TRUNCATE_MARK } from "./edge-fake.mjs";
 
 /** The start of lib/meta/edge.ts's BOTH_DOWN_MESSAGE. */
 export const BOTH_DOWN_PHRASE = "Neither the cloud model nor the backup model answered";
 export const EDGE_LABEL_PHRASE = "Answered on";
 /** The start of lib/meta/edge.ts's cloudLabel(). */
 export const CLOUD_LABEL_PHRASE = "Answered in the cloud";
+/** The starts of lib/meta/edge.ts's SAM labels, samBoardLabel() and samCloudLabel(). */
+export const SAM_BOARD_LABEL_PHRASE = "Seen on";
+export const SAM_CLOUD_LABEL_PHRASE = "Seen in the cloud";
+/** The start of lib/meta/edge.ts's SAM_DOWN_MESSAGE. */
+export const SAM_DOWN_PHRASE = "Can't see right now";
+/** SAM_DOWN_PHRASE in JSON or in a page, where the apostrophe may be escaped or curly. */
+const SAM_DOWN = /Can(?:'|&#x27;|&#39;|&apos;|’)t see right now/;
 /** The default set, the one builds run. --all adds the rest. */
 export const DEFAULT_DRILL_IDS = [1, 2, 3, 4];
+/** The photo drills, for a product that names a SAM route. 12 to 15 join the default set; --all adds 16. */
+export const SAM_DRILL_IDS = [12, 13, 14, 15, 16];
+export const DEFAULT_SAM_DRILL_IDS = [12, 13, 14, 15];
 /** Drill 10's gateway: a host under .invalid, a name reserved never to resolve (RFC 6761). */
 export const DNS_DRILL_HOST = "muse-gateway.drill.invalid";
 
 /** Every drill id, default set and --all together. --only takes these and nothing else. */
-export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+export const ALL_DRILL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /**
  * Makes every dns.lookup of a .invalid host fail with ENOTFOUND, the error a real resolver gives, without asking one.
@@ -142,6 +173,24 @@ export function drillTarget(env = process.env, dir = process.cwd()) {
   return { path: route, method: (env.EDGE_DRILL_METHOD || json.method || "POST").toUpperCase(), body };
 }
 
+/** `value` with every string equal to SIMULATED_PHOTO_PLACEHOLDER replaced by the Simulated photo's data URL. */
+export function withSimulatedPhoto(value) {
+  if (value === SIMULATED_PHOTO_PLACEHOLDER) return SIMULATED_PHOTO;
+  if (Array.isArray(value)) return value.map(withSimulatedPhoto);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withSimulatedPhoto(v)]));
+  return value;
+}
+
+/** The photo route for the SAM drills: env first, then edge-drill.json's "sam" in `dir`. Null for a product without one. */
+export function samDrillTarget(env = process.env, dir = process.cwd()) {
+  const file = path.join(dir, "edge-drill.json");
+  const sam = (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}).sam ?? {};
+  const route = env.EDGE_DRILL_SAM_PATH?.trim() || sam.path;
+  if (!route) return null;
+  const body = env.EDGE_DRILL_SAM_BODY ? JSON.parse(env.EDGE_DRILL_SAM_BODY) : (sam.body ?? { photo: SIMULATED_PHOTO_PLACEHOLDER, prompt: "open door" });
+  return { path: route, method: (env.EDGE_DRILL_SAM_METHOD || sam.method || "POST").toUpperCase(), body: withSimulatedPhoto(body) };
+}
+
 async function ask(baseUrl, target, timeoutMs) {
   const started = Date.now();
   const url = new URL(target.path, baseUrl).href;
@@ -165,6 +214,7 @@ async function ask(baseUrl, target, timeoutMs) {
 export async function runDrills({
   baseUrl,
   target,
+  samTarget = null,
   fake,
   hole,
   product = null,
@@ -249,7 +299,19 @@ export async function runDrills({
                 : null,
     },
     ...moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }),
-  ].filter((d) => (only ? only.includes(d.id) : all || DEFAULT_DRILL_IDS.includes(d.id)));
+    ...samDrills({ hangMaxMs }),
+  ].filter((d) => {
+    if (only) return only.includes(d.id);
+    if (d.sam) return !!samTarget && (all || DEFAULT_SAM_DRILL_IDS.includes(d.id));
+    return !!target && (all || DEFAULT_DRILL_IDS.includes(d.id));
+  });
+  const unasked = drills.filter((d) => (d.sam ? !samTarget : !target)).map((d) => d.id);
+  if (unasked.length) {
+    throw new SetupError(`Drill ${unasked.join(", ")} needs ${drills.find((d) => d.id === unasked[0]).sam ? "a photo route: edge-drill.json's \"sam\" or EDGE_DRILL_SAM_PATH" : "a route: edge-drill.json's \"path\" or EDGE_DRILL_PATH"}.`);
+  }
+  if (!drills.length) throw new SetupError("No drill to run: name a route in edge-drill.json (\"path\", \"sam\" or both).");
+  // Drill 10 restarts the product, so it runs last.
+  drills.sort((a, b) => (a.dns ? 1 : 0) - (b.dns ? 1 : 0));
 
   const results = [];
   for (const d of drills) {
@@ -279,7 +341,7 @@ export async function runDrills({
       const hits = fake.injectedHits ?? 0;
       const lookupsBefore = dnsLookups ? dnsLookups() : 0;
       const errorsBefore = product?.errors().length ?? 0;
-      const r = await ask(url, target, d.timeoutMs ?? 40_000);
+      const r = await ask(url, d.sam ? samTarget : target, d.timeoutMs ?? 40_000);
       // Give the server a moment to print anything it prints after replying.
       await new Promise((res) => setTimeout(res, 200));
       const ctx = {
@@ -441,6 +503,23 @@ function moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }) {
                   : injectedAsData(r),
     },
     {
+      id: 11,
+      name: "cloud model not found",
+      about: "Simulated: the gateway answers 404 model_not_found, as it does for a model the product's token doesn't list.",
+      hole: "notfound",
+      edge: "ok",
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? `${bad(r)}: a 404 model_not_found is a setup error, not the cloud saying no, so the edge should have answered`
+          : !r.text.includes(EDGE_LABEL_PHRASE)
+            ? `the reply has no "${EDGE_LABEL_PHRASE}" label`
+            : !ctx.edgeAsked
+              ? "the reply has the label but the fake edge got no request"
+              : !ctx.cloudRequested
+                ? "the product never asked the gateway, so the 404 wasn't tried"
+                : null,
+    },
+    {
       id: 10,
       name: "gateway host not found",
       about: `Simulated: the gateway's host name (${DNS_DRILL_HOST}) can't be resolved.`,
@@ -459,6 +538,105 @@ function moreDrills({ hangMaxMs, cloudLimitMs, edgeLimitMs, slowMs }) {
                 : ctx.gatewayLookups === 0
                   ? "the product never tried the cloud first (it never looked up the gateway's host name)"
                   : null,
+    },
+  ];
+}
+
+/**
+ * The photo drills (12 to 16), for a product whose route looks with segmentOrEdge. The fake edge server is the board's
+ * SAM service here, so `edgeAsked` means the board was asked.
+ */
+function samDrills({ hangMaxMs }) {
+  const seenOnBoard = (r) => r.text.includes(SAM_BOARD_LABEL_PHRASE);
+  const seenAnywhere = (r) => seenOnBoard(r) || r.text.includes(SAM_CLOUD_LABEL_PHRASE);
+  const noLook = `the reply has no plain "${SAM_DOWN_PHRASE}" message`;
+  const rejected = (mark, what) => (r, ctx) =>
+    r.status === 0
+      ? `no reply (${r.error})`
+      : r.text.includes(mark)
+        ? `part of the ${what} board reply reached the page`
+        : !ctx.edgeAsked
+          ? "the fake board got no request"
+          : seenAnywhere(r)
+            ? `the reply has a "Seen" label, but the only board reply was ${what}`
+            : !SAM_DOWN.test(r.text)
+              ? noLook
+              : null;
+  return [
+    {
+      id: 12,
+      name: "SAM, cloud refused",
+      sam: true,
+      about: "Simulated: the gateway drops every connection, and the fake board's SAM service answers.",
+      hole: "refuse",
+      edge: "ok",
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? bad(r)
+          : !seenOnBoard(r)
+            ? `the reply has no "${SAM_BOARD_LABEL_PHRASE}" label`
+            : !ctx.edgeAsked
+              ? "the reply has the label but the fake board got no request"
+              : !ctx.cloudAsked
+                ? NO_CLOUD_TRY
+                : null,
+    },
+    {
+      id: 13,
+      name: "SAM, cloud hung",
+      sam: true,
+      about: "Simulated: the gateway never answers, and the fake board's SAM service does.",
+      hole: "hang",
+      edge: "ok",
+      timeoutMs: hangMaxMs + 5_000,
+      check: (r, ctx) =>
+        !ok2xx(r)
+          ? bad(r)
+          : !seenOnBoard(r)
+            ? `the reply has no "${SAM_BOARD_LABEL_PHRASE}" label`
+            : !ctx.edgeAsked
+              ? "the fake board got no request"
+              : !ctx.cloudAsked
+                ? NO_CLOUD_TRY
+                : r.ms > hangMaxMs
+                  ? `the board's answer took ${secs(r.ms)}, over ${secs(hangMaxMs)}`
+                  : null,
+    },
+    {
+      id: 14,
+      name: "SAM, both down",
+      sam: true,
+      about: "Simulated: the gateway and the fake board both drop every connection.",
+      hole: "refuse",
+      edge: "refuse",
+      check: (r, ctx) =>
+        r.status === 0
+          ? `no reply (${r.error})`
+          : seenAnywhere(r)
+            ? "the reply has a \"Seen\" label, though nothing could look"
+            : !SAM_DOWN.test(r.text)
+              ? noLook
+              : ctx.errors.length
+                ? `the server printed an error: ${ctx.errors[0].slice(0, 160)}`
+                : null,
+    },
+    {
+      id: 15,
+      name: "SAM, tampered board reply rejected",
+      sam: true,
+      about: "Simulated: the gateway drops, and the fake board sends a reply with the wrong types, marked TAMPERED.",
+      hole: "refuse",
+      edge: "tamper",
+      check: rejected(TAMPER_MARK, "tampered"),
+    },
+    {
+      id: 16,
+      name: "SAM, cut-off board reply rejected",
+      sam: true,
+      about: "Simulated: the gateway drops, and the fake board's JSON is cut off part way, marked TRUNCATED.",
+      hole: "refuse",
+      edge: "truncate",
+      check: rejected(TRUNCATE_MARK, "cut-off"),
     },
   ];
 }
@@ -535,7 +713,7 @@ function parseFlags(argv) {
     if (key === "--start") out.start = value;
     else if (key === "--only") {
       out.only = String(value ?? "").split(",").map(Number);
-      if (!out.only.every((id) => ALL_DRILL_IDS.includes(id))) throw new SetupError(`--only takes drill numbers from 1 to 10, comma separated, not "${value ?? ""}".`);
+      if (!out.only.every((id) => ALL_DRILL_IDS.includes(id))) throw new SetupError(`--only takes drill numbers from 1 to ${ALL_DRILL_IDS.length}, comma separated, not "${value ?? ""}".`);
     }
     else throw new SetupError(`Unknown flag ${argv[i]}`);
   }
@@ -546,7 +724,14 @@ async function main() {
   const flags = parseFlags(process.argv.slice(2));
   const baseUrl = process.env.MUSEMUSE_BASE_URL?.trim();
   if (!baseUrl) throw new SetupError("Set MUSEMUSE_BASE_URL to the running product, for example http://127.0.0.1:3101.");
-  const target = drillTarget();
+  const samTarget = samDrillTarget();
+  let target = null;
+  try {
+    target = drillTarget();
+  } catch (err) {
+    // A product that only looks at photos may name only its SAM route.
+    if (!(err instanceof SetupError) || !samTarget) throw err;
+  }
   const outFile = path.resolve(process.env.EDGE_DRILL_OUT || "test-results/caps/edge-drill.json");
   let fake;
   let hole;
@@ -564,10 +749,12 @@ async function main() {
     slowMs: Number(process.env.EDGE_DRILL_SLOW_MS || 8_000),
   };
   // Only a run past the default set changes the product's env, so the default set runs exactly as it always has.
-  const beyondDefault = flags.only ? flags.only.some((id) => !DEFAULT_DRILL_IDS.includes(id)) : !!flags.all;
+  const defaults = [...DEFAULT_DRILL_IDS, ...DEFAULT_SAM_DRILL_IDS];
+  const beyondDefault = flags.only ? flags.only.some((id) => !defaults.includes(id)) : !!flags.all;
   const productEnv = {
     GATEWAY_URL: hole.url,
     EDGE_URL: fake.url,
+    EDGE_SAM_URL: fake.samUrl,
     PRODUCT_TOKEN: process.env.PRODUCT_TOKEN || "drill",
     ...(beyondDefault ? { EDGE_TIMEOUT_MS: String(limits.edgeLimitMs), EDGE_CLOUD_TIMEOUT_MS: String(limits.cloudLimitMs) } : {}),
   };
@@ -605,10 +792,12 @@ async function main() {
       product = startProduct(flags.start, baseUrl, productEnv);
       if (!(await waitUp(baseUrl, 60_000))) throw new SetupError(`The product never answered at ${baseUrl}.`);
     }
-    console.log(`Simulated outage drills against ${baseUrl}${target.path}. GATEWAY_URL=${hole.url} EDGE_URL=${fake.url}`);
+    const routes = [target?.path, samTarget?.path].filter(Boolean).join(" and ");
+    console.log(`Simulated outage drills against ${baseUrl}, ${routes}. GATEWAY_URL=${hole.url} EDGE_URL=${fake.url} EDGE_SAM_URL=${fake.samUrl}`);
     const results = await runDrills({
       baseUrl,
       target,
+      samTarget,
       fake,
       hole,
       // A view that follows the product across drill 10's restart.
@@ -623,7 +812,7 @@ async function main() {
       log: (line) => console.log(line),
     });
     mkdirSync(path.dirname(outFile), { recursive: true });
-    writeFileSync(outFile, JSON.stringify({ simulated: true, at: new Date().toISOString(), baseUrl, path: target.path, results }, null, 2) + "\n");
+    writeFileSync(outFile, JSON.stringify({ simulated: true, at: new Date().toISOString(), baseUrl, path: target?.path ?? null, ...(samTarget ? { samPath: samTarget.path } : {}), results }, null, 2) + "\n");
     const passed = results.filter((r) => r.pass).length;
     console.log(`${passed} of ${results.length} simulated drills passed. Results in ${path.relative(process.cwd(), outFile)}.`);
     return passed === results.length ? 0 : 1;

@@ -6,7 +6,7 @@ import type { CapRenderEntry } from "@/lib/caps/render";
 /**
  * The media cap's part of the prompts (docs/CAPABILITIES.md, 2.6 and section 14). Its text names the platform files in
  * template/caps/media: the skill, the helpers in lib/platform/, tests/caps/media.ts and public/notices/media.txt. No
- * speech part since Nov 2: lib/platform/speech.ts ran SpeechT5, which isn't a Meta model.
+ * speech part since Nov 2: it ran a model that isn't Meta's, and its helper was removed from the template.
  */
 
 const HELPERS: Record<MediaPart, string[]> = {
@@ -50,11 +50,11 @@ export const MEDIA_RENDER: CapRenderEntry = {
       "- Each helper throws a `MediaError` with plain words. Show its message, never a raw error.",
       `- Privacy: ${parts.includes("samTiling") ? "only SAM's tiles leave the page, as the meta-sam skill says; " : ""}video and music are made in the page and nothing is uploaded for them. Don't store what the user makes beyond the browser.`,
       `- Limits the user sees, each once: ${parts.map((p) => LIMITS[p]).join("; ")}.`,
-      "- Every model the product calls is a Meta model through the Muse Muse gateway. Never load a model, wasm or script from another site, and don't add a model package. `lib/platform/speech.ts` isn't offered: don't call `speak()` or `prepareSpeech()`.",
-      "- No stand-in: these run for real in the test browser. Keep test media small: a few frames, a few notes, one short sentence.",
+      "- Every model the product calls is a Meta model through the Muse Muse gateway. Never load a model, wasm or script from another site, and don't add a model package.",
+      "- No stand-in: these run for real in the test browser. Keep test media small: a few frames, a few notes.",
       `- Smoke test, from \`tests/caps/media.ts\`: ${parts.map((p) => SMOKE[p]).join("; ")}. Take a judge screenshot of each result with a plain caption.`,
-      "- `template/AGENTS.md` says the build machine reaches only npm, the Meta API and the Muse Muse gateway: the media files come from the gateway, so that holds.",
-      "- `lib/platform/speech.ts`, `video.ts`, `mp4.ts`, `midi.ts`, `sam-tiles.ts`, `sam-boxes.ts`, `media-assets.ts`, `public/notices/media.txt`, `tests/caps/media.ts` and `scripts/caps/media.mjs` are platform files. Leave them as they are. Link \"Open source notices\" to `/notices/media.txt` from the page.",
+      "- `template/AGENTS.md` says the build machine reaches only npm, the Meta API and the Muse Muse gateway: media needs nothing else, so that holds.",
+      "- `lib/platform/video.ts`, `mp4.ts`, `midi.ts`, `sam-tiles.ts`, `sam-boxes.ts`, `media-assets.ts`, `public/notices/media.txt`, `tests/caps/media.ts` and `scripts/caps/media.mjs` are platform files. Leave them as they are. Link \"Open source notices\" to `/notices/media.txt` from the page.",
     ];
   },
   refine(brief: Brief) {

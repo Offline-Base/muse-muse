@@ -105,6 +105,8 @@ Hackathon codename for the Meta Global AI Developer Hackathon, Startup track. Mu
 
 ## Status
 
+**License:** Apache-2.0 for Offline Base's code ([LICENSE](LICENSE)); Meta's docs, model files and Meta's marks are not covered ([NOTICE](NOTICE)).
+
 **Built from Oct 26 to Nov 4, 2026, for the Meta Global AI Developer Hackathon.** Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the product template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on.
 
 An Oct 27 audit compared every scaffold file with the current tree. It found five small helpers from the scaffold still in use: `museExecArgs`, `metaClient`, `imagePart` and `videoPart`, `toDataUrl` and `glimmerClient`. They were rewritten the same day; `glimmerClient` became `glimmer()`, which also names the served model. Everything else that survives from the scaffold is types, schema, config, docs or template boilerplate.

@@ -13,6 +13,7 @@ import type { CapId } from "@/lib/caps/ids";
 import { jobsJudgeNote } from "@/lib/caps/jobs/judge";
 import { liveJudgeNote } from "@/lib/caps/live/judge";
 import { mediaJudgeNote } from "@/lib/caps/media/judge";
+import { sparkOpenJudgeNote } from "@/lib/prompts/spark-open";
 import type { CapProof, VerifySummary } from "@/lib/types";
 
 /**
@@ -48,6 +49,9 @@ export function capsJudgeNotes(brief: Partial<Brief>): string {
   // The Jetson fleet isn't a cap either (section 17b). Empty with FLEET_PRODUCTS off.
   const fleet = fleetJudgeNote(brief);
   if (fleet) notes.push(fleet);
+  // Muse Spark Open isn't a cap either (lib/gateway/spark-open.ts). Empty with SPARK_OPEN_PRODUCTS off.
+  const sparkOpen = sparkOpenJudgeNote(brief);
+  if (sparkOpen) notes.push(sparkOpen);
   if (!notes.length) return "";
   return `\n\nPlatform services in this product. Fixed checks the platform ran decide whether each one works, not you. Check only what the screenshots show:\n${notes.map((n) => `- ${n}`).join("\n")}`;
 }

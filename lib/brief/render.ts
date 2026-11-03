@@ -35,6 +35,7 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "muse-glimmer": ".agents/skills/meta-glimmer",
   "muse-gadget": ".agents/skills/muse-gadget",
   "jetson-fleet": ".agents/skills/jetson-fleet",
+  "muse-spark-open": ".agents/skills/meta-spark-open",
 };
 
 /** The skill that goes with a target. */
@@ -83,6 +84,13 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
     "Label invented data \"Simulated\". Never say the product works offline, and never call a board answer private or on-device.",
   ],
 };
+
+/** The edge rules a brief that looks with SAM 3.1 adds, so the build calls the board's SAM and drills it. */
+const EDGE_SAM_RULES = [
+  "This product looks at photos, so every SAM 3.1 call goes through `segmentOrEdge` in `lib/meta/edge.ts`, never the meta-sam skill's cloud call. It asks the cloud's `sam-3.1` first and Meta SAM 3.1 on the board at `EDGE_SAM_URL` second. Show its `label` word for word next to every result, and its `message` on the page when it can't see.",
+  "Send the photo from a route handler as a JPEG data URL from `resizeImage` (`maxSide` 1024) and `blobToDataUrl`, with one short noun phrase per call. Draw its `objects` boxes, fractions of the photo, over the photo, and say the count in words. Offer a photo picker, and a camera button when the brief asks for one.",
+  "Add `\"sam\": { \"path\": \"<that route>\", \"body\": { ..., \"photo\": \"SIMULATED_PHOTO\" } }` to `edge-drill.json`; the drill puts a small simulated photo in place of `SIMULATED_PHOTO`. The build then runs four more simulated drills against that route (cloud refused, cloud hung, both down, a tampered board reply), and a failed one fails the checks. If the product's main answer is the look itself, `edge-drill.json` needs only `sam`.",
+];
 
 const FIT_MEANING: Record<RebuildTarget["rebuild"]["fit"], string> = {
   clean: "the same demo, built on current models",
@@ -136,7 +144,8 @@ function whereItRunsLines(brief: Brief): string[] {
   const why = new Map((brief.targets ?? []).map((t) => [t.id, t.why]));
   const out = ["", "## Where it runs", "", "One web product, on these too. Read each skill named here before you write code."];
   for (const t of added) {
-    out.push("", `### ${targetLabel(t)}`, "", `${sentence(why.get(t) ?? "The brief picked it")} Skill: \`${TARGET_SKILLS[t]}\`.`, "", bullets(TARGET_RULES[t]));
+    const rules = t === "edge" && uniqueModels(brief).includes("sam-3.1") ? [...TARGET_RULES.edge, ...EDGE_SAM_RULES] : TARGET_RULES[t];
+    out.push("", `### ${targetLabel(t)}`, "", `${sentence(why.get(t) ?? "The brief picked it")} Skill: \`${TARGET_SKILLS[t]}\`.`, "", bullets(rules));
   }
   return out;
 }
@@ -585,6 +594,8 @@ const STEP_LABELS: Record<string, string> = {
   caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
   // ---------- end Wave 3, unit 2 ----------
   manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
+  // BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): only a build with the owner's shared accounts has this step.
+  keys: "Shared keys (no value of the owner's keys in the product's files, `public/` or `.next/static`; read them from `process.env` in server code)",
 };
 
 /** fix.md for a fix round, run with --session-id so Muse Code keeps its context. */

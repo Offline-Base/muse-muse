@@ -1,4 +1,5 @@
 import type { CapProof, VerifySummary } from "@/lib/types";
+import { redactShared } from "@/lib/keys/shared";
 
 /**
  * Pure helpers for what the sandbox produces: verify.mjs's summary line, judge screenshot captions, the demo run's
@@ -228,7 +229,8 @@ export function captionTimeline(steps: JsonStep[], videoSeconds: number): Captio
   const out: Caption[] = [];
   let t = 0;
   for (const s of steps) {
-    const title = s.title.trim();
+    // BUILD_SHARED_KEYS: a step's title never shows a key's value in the video. The same title when none is set.
+    const title = redactShared(s.title).trim();
     if (title && t < videoSeconds) out.push({ text: title, start: t, end: videoSeconds });
     t += Math.max(0, s.duration) / 1000;
   }

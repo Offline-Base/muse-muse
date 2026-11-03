@@ -6,10 +6,14 @@
  *
  *   POST /api/actions/status  {"rows": "<a Simulated window>"}
  *     200 {verdict, by, label} when the cloud or the backup answered, or 503 {message} with the helper's plain line
+ *   POST /api/actions/look    {"photo": "<a JPEG or PNG data URL>", "prompt": "open door"}
+ *     through segmentOrEdge(), Meta SAM 3.1 in the cloud, else on the board: 200 {count, objects, by, label}, 503
+ *     {message} with the helper's plain "Can't see right now" line, or 400 {message} for a photo it can't read
  *   GET  /                    a one-line page, so the drill runner can tell the server is up
  *
  * Env, as a product reads it (scripts/drill/run.mjs and template/scripts/edge-drill.mjs set these on loopback):
- *   PORT, GATEWAY_URL, PRODUCT_TOKEN, EDGE_URL, EDGE_BOARD, EDGE_MODEL_NAME, EDGE_CLOUD_TIMEOUT_MS, EDGE_TIMEOUT_MS
+ *   PORT, GATEWAY_URL, PRODUCT_TOKEN, EDGE_URL, EDGE_SAM_URL, EDGE_BOARD, EDGE_MODEL_NAME, EDGE_SAM_MODEL_NAME,
+ *   EDGE_CLOUD_TIMEOUT_MS, EDGE_TIMEOUT_MS
  *
  * The data is invented. Nothing here is about a real freezer or store, and the product gives no food-safety advice.
  * It prints nothing on a failed answer, so any error line in its output is a real crash the drill should catch.
@@ -19,7 +23,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { respondJsonOrEdge } from "../../template/lib/meta/edge";
+import { respondJsonOrEdge, segmentOrEdge } from "../../template/lib/meta/edge";
 
 /** The drill bench's verdict (scripts/dev/drill-bench.py, FIELDS, STATUSES and CAUSES). */
 export const Verdict = z.object({
@@ -61,8 +65,15 @@ export function startDemoProduct(port: number) {
     };
     if (req.method === "GET" && (req.url === "/" || req.url === "/health")) {
       res.writeHead(200, { "content-type": "text/plain" });
-      res.end("Simulated cold room drill product. POST /api/actions/status\n");
+      res.end("Simulated cold room drill product. POST /api/actions/status, POST /api/actions/look\n");
       return;
+    }
+    if (req.method === "POST" && req.url === "/api/actions/look") {
+      const body = await readBody(req);
+      const prompt = typeof body.prompt === "string" && body.prompt.trim() ? body.prompt : "open door";
+      const seen = await segmentOrEdge({ image: typeof body.photo === "string" ? body.photo : "", prompt });
+      if (seen.ok) return send(200, { count: seen.count, objects: seen.objects, by: seen.by, label: seen.label });
+      return send(seen.reasons.cloud.kind === "input" ? 400 : 503, { message: seen.message });
     }
     if (req.method !== "POST" || req.url !== "/api/actions/status") return send(404, { message: "Not here." });
     const body = await readBody(req);

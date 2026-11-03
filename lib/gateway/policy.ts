@@ -1,6 +1,7 @@
 import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 import type { GatewayEndpoint, MetaModelId } from "@/lib/types";
+import type { SparkOpenEndpoint } from "@/lib/gateway/spark-open";
 
 export const UPSTREAM_BASE_URL = "https://api.meta.ai/v1";
 
@@ -212,7 +213,7 @@ export const CODE_SESSION_MODELS = ["muse-wonder-1.0", SPARK_STANDIN] as const;
  *   - Contributor only while `testModel` (buildTestModel in lib/env.ts) names it
  * Its budget and its end (stop, or its limit) are the token row's: lib/caps/code/musecode/gateway.ts.
  */
-export function codeSessionRefusal(endpoint: GatewayEndpoint, model: string | null, token: { allowedModels: readonly string[] }, testModel: string | null): { status: number; code: string; message: string } | null {
+export function codeSessionRefusal(endpoint: GatewayEndpoint | SparkOpenEndpoint, model: string | null, token: { allowedModels: readonly string[] }, testModel: string | null): { status: number; code: string; message: string } | null {
   if (endpoint !== "responses") return { status: 403, code: "session_scope", message: "A Muse Code session's token calls only /v1/responses." };
   if (!model) return null;
   const own = token.allowedModels[0];

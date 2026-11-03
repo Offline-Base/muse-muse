@@ -14,10 +14,9 @@
  * Adds the overviews from make-anchors.ts (dataset/anchors.jsonl) and replay answers, shuffles with a fixed seed, and
  * writes dataset/<out>, dataset/<out>-probes.jsonl and dataset/<out>-report.json.
  *
- * The Jetson student stays on Glimmer's lineage (docs/KNOWLEDGE_UPDATE.md, Jetson): --writers muse-glimmer-30b,muse-glimmer-q4
- * keeps only those writers' answers, and --no-anchors leaves out the overviews, which Spark Open wrote. Replay answers
- * are base Glimmer's (aws/job/replay_glimmer.py) and the cutoff examples are templates, so both stay.
- * aws/check_student_lineage.py checks the result against the cache.
+ * To keep a set on Glimmer's own lineage, --writers muse-glimmer-30b,muse-glimmer-q4 keeps only those writers' answers,
+ * and --no-anchors leaves out the overviews, which Spark Open wrote. Replay answers are base Glimmer's
+ * (aws/job/replay_glimmer.py) and the cutoff examples are templates, so both stay.
  */
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";

@@ -1,6 +1,7 @@
-// The six scenario drills that --all adds (5 to 10), end to end on loopback against tiny product servers that use
-// lib/meta/edge.ts. Each drill passes for a product that follows the skill and fails, by name, for one that gets it
-// wrong. No real model, no Meta call, and no DNS query: drill 10's lookups fail in this process.
+// The scenario drills that --all adds to the text route (5 to 11; the photo drills are in edge-sam-drill.test.mjs), end
+// to end on loopback against tiny product servers that use lib/meta/edge.ts. Each drill passes for a product that
+// follows the skill and fails, by name, for one that gets it wrong. No real model, no Meta call, and no DNS query:
+// drill 10's lookups fail in this process.
 //   npx tsx --test --experimental-test-module-mocks template/scripts/__tests__/edge-drill-scenarios.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -216,7 +217,7 @@ describe("runDrills: the six scenarios", () => {
   const dnsLookups = () => lookups;
   const drill = (only, extra = {}) => runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl, dnsLookups, only, ...extra });
 
-  test("without --all only the default four run; with it all ten pass for a product that follows the skill", async () => {
+  test("without --all only the default four run; with it all eleven text drills pass for a product that follows the skill", async () => {
     route = skillRoute;
     assert.deepEqual(DEFAULT_DRILL_IDS, [1, 2, 3, 4]);
     const plain = await runDrills({ baseUrl, target, fake, hole, ...LIMITS, dnsBase: async () => dnsUrl });
@@ -232,6 +233,7 @@ describe("runDrills: the six scenarios", () => {
       [7, true, null],
       [8, true, null],
       [9, true, null],
+      [11, true, null],
       [10, true, null],
     ]);
     for (const r of results.slice(4)) {
@@ -336,6 +338,6 @@ describe("runDrills: the six scenarios", () => {
 
   test("an --only with no known drill is a setup error, not 0 of 0 passed", async () => {
     route = skillRoute;
-    for (const only of [[11], [Number.NaN], []]) await assert.rejects(drill(only), SetupError);
+    for (const only of [[17], [Number.NaN], []]) await assert.rejects(drill(only), SetupError);
   });
 });

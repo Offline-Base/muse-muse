@@ -163,7 +163,7 @@ One link session and one call of each board tool is enough. The first checks the
 
 ## The model on the owner's board (askBoard)
 
-`askBoard(messages, { request })` runs on the model on the owner's paired board: one-bit Muse Glimmer on a Jetson Orin Nano, a small Llama on anything else. The platform picks it from the board's kind. No cloud model sees the messages, but they do pass through this product's server and Muse Muse on the way to the board, so never call that "stays on your device". It can take over a minute, so show progress and which model answered (`target`).
+`askBoard(messages, { request })` runs on the model on the owner's paired board: one-bit Muse Glimmer, which the platform picks from the board's kind. Only a Meta model is asked: a board that runs anything else is refused. No cloud model sees the messages, but they do pass through this product's server and Muse Muse on the way to the board, so never call that "stays on your device". It can take over a minute, so show progress and which model answered (`target`).
 
 When the board is off it throws. `askBoardOrMessage` gives `{ ok: false, message }` instead: show that line and keep the rest of the product working. Don't fall back to a cloud model on your own: the person chose their board for a reason, so ask them first.
 
