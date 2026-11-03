@@ -4113,3 +4113,29 @@ The five open-weights cookbook pages (run-locally, muse-spark-open-mac, post-tra
 - **Helpers** (pure TypeScript, no imports): helpers/mac-cluster.ts, helpers/sft-data.ts, helpers/grpo.ts. The hostfile shape (`ssh`, `ips`, `rdma` with null on a Mac's own entry) and `rdma_ctl enable` in recovery come from the MLX distributed docs, read Nov 3.
 - **Not on this branch:** the registry entry in lib/recipes/registry.ts. Until it lands, `skills.test.ts` fails with "recipe-open-weights is not in the registry". With the entry added locally, lib/recipes tests passed 30 of 30 (8 new in lib/recipes/__tests__/open-weights.test.ts); generated.json is regenerated (12 recipes); root typecheck clean.
 - **Not built yet:** none of the three notes has run as a build. Each is built so it finishes in one build on Contributor; the real training and serving stay on the person's hardware, and the site's own tunes (glimmer-lora, and rl-grpo behind `TUNE_RL`, off) are the owner's call.
+
+## Nov 3, 2026, about 12:30 PM ET: the cookbook merge, every recipe mapped and a cookbook build set (branch tg-c-cookbook, not pushed)
+
+- **Merged** the six section branches: tg-c-fundamentals (8d3a8ab6), tg-c-agents (f44bbb02), tg-c-use-cases (c79c287a), tg-c-muse-code (8a7b177f), tg-c-media (86b905c0), tg-c-open-weights (b6cb3321). Only docs/BUILD_LOG.md (all entries kept) and lib/recipes/generated.json (regenerated, 12 recipes) conflicted. The shared skills (recipe-agent-patterns, recipe-simulated-loops, recipe-voice) merged without conflict and stay under 150 lines.
+- **Registry (lib/recipes/registry.ts):**
+  - New oneLines for recipe-api, recipe-agent-patterns, recipe-code-sessions, recipe-visual-reports, recipe-games, recipe-image, recipe-voice and recipe-simulated-loops, plus new limits where the sections asked.
+  - recipe-code-sessions no longer has `needs: "code"`, so its Part 2 stand-ins reach Production while the code cap is dropped.
+  - Staged command approvals left recipe-simulated-loops' oneLine, so that note gets the short recipe.
+  - New recipe-open-weights.
+  - `models: ["muse-wonder-1.0"]` on every recipe whose sections call Wonder (all in ENDPOINT_MODELS.responses).
+  - Writer rules added:
+    - routing to recipe-agent-patterns
+    - the Muse Code line (only 04/04 can't be a product now)
+    - screenshot bug fixes, worded by whether the code cap is served
+    - recipe-image fixtures
+    - the recipe-api long-sample seed
+    - recipe-open-weights
+    - the captions case in the sam-media line
+- **scripts/demo-batch.ts:**
+  - `--set=cookbook` has 50 notes, one per app-build recipe, each under its slug.
+  - Seven DEMO_NOTES notes (alerts, charts, fridge, games, computer-use, studio, stickers) are now the sections' improved notes. The cookbook set reuses them through `fromDemo`, with a comment on each.
+  - `--dry` now prints targets and a count.
+  - `main` runs only when the file is the script, so the new scripts/__tests__/demo-batch.test.ts can import the sets.
+- **docs/COOKBOOK.md:** all 60 mirror pages: 51 recipes and 9 index pages. 50 are app builds, and contained-execution is a docs demo only, because it needs an OS sandbox on the person's machine. Each row has what covers it and a build id slot, plus the owner command, cost and time. HANDOFF has one new line.
+- **Estimate for the set, not run:** $8.50 to $20 in Meta credits on Contributor (50 at $0.17 to $0.40), with a $90 ceiling at $1.80 a build. Sandbox time comes on top, 30 to 150 minutes a build, run side by side. It waits on the deploy and the new builder snapshot.
+- **Tests:** lib/recipes/__tests__ and scripts/__tests__, 67 of 67 plus judge-check 9 of 9. Flags-off surface, pipeline logic and the spark-open prompt test, 49 of 49. Typecheck clean. Nothing built, spend $0.

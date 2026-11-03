@@ -27,46 +27,51 @@ export interface Recipe {
 export const RECIPES: readonly Recipe[] = [
   {
     id: "recipe-api",
-    oneLine: "Model API patterns: the Files API for long documents, streaming, tool calling, caching, reasoning, long context, retries, and web search with footnotes.",
+    oneLine: "Model API patterns: a first chat with standing rules and history, streaming with a Stop button, tool calling with a tool log, JSON that matches a schema, prompt caching with a cache ledger, reasoning effort and its tokens, photos, long documents and the Files API, retries with a ledger, and web search with footnotes.",
     limit: "Long documents are read at a practical size per call, footnotes list what a search returned, and one run stays within the product's daily budget.",
     longRun: false,
+    // Every section calls Muse Wonder, so a writer that leaves it out of capabilities doesn't ship calls that 404 (the Nov 2 fix for image, voice and SAM).
+    models: ["muse-wonder-1.0"],
   },
   {
     id: "recipe-agent-patterns",
-    oneLine: "Short agent patterns in TypeScript: validated find-and-replace edits, a triage copilot with memory on the page, side chats off a main conversation, and a downloadable repo-agent kit the person runs with their own key.",
-    limit: "A run has a few turns and works on what the person brings. The product never writes to GitHub or anyone's repository.",
+    oneLine: "Short agent patterns in TypeScript, driven from the page: an agent loop that fixes a bundled project's failing tests with the tests run in the browser, a callback-to-async migration with reasoning effort per turn, a running STATE.md across requirement changes, validated find-and-replace edits, an alert triage copilot with memory on the page, side chats off a main conversation, an approval gate before text leaves the page, and a downloadable repo-agent kit the person runs with their own key.",
+    limit: "A run has at most about 15 turns on a small bundled sample or on what the person brings, and tests run in the browser in JavaScript. No model runs on the person's device, and the product never writes to GitHub or anyone's repository.",
     longRun: false,
+    models: ["muse-wonder-1.0"],
   },
   {
+    // No `needs: "code"` since the cookbook pass (Nov 3): without the builder-only code cap a build uses Part 2 of the skill, labeled stand-ins on the product's own agent.
     id: "recipe-code-sessions",
-    oneLine: "Coding tasks run by Muse Code from a product: fix failing tests, a staged migration, a screenshot bug fix, chained sessions, small fan-outs, an audit ledger.",
-    limit: "Only the product's owner can start a session. Each has at most $1 and 15 minutes, works on small uploaded projects, and can't reach remote URLs.",
+    oneLine: "Meta's Muse Code cookbook patterns. With the code cap, real Muse Code sessions: fix failing tests, a staged migration, a screenshot bug fix, chained sessions, small fan-outs. Without it, labeled stand-ins on the product's own agent loop: an append-only audit log with export and crash resume, a replay gate, staged command approvals on a simulated shell, protected rules files, a fan-out board, a goal that can't close early, plan and grill playbooks, and session schedules.",
+    limit: "With the code cap, only the product's owner can start a session, each with at most $1 and 15 minutes on small uploaded projects and no remote URLs. Without it, the product is a labeled stand-in for Muse Code's harness on its own agent and a sample workspace in the page, and it doesn't run Muse Code.",
     longRun: false,
-    needs: "code",
+    models: ["muse-wonder-1.0"],
   },
   {
     id: "recipe-visual-reports",
-    oneLine: "A chart explainer with its numbers checked, research into slides with sources, a polished page checked by screenshots at desktop size, and clickable points placed on a photo.",
-    limit: "Numbers read from images can be wrong. It explains and never advises, and points on a photo are approximate.",
+    oneLine: "A chart explainer with its numbers checked, a bug found from a screenshot and fixed on a bundled page with the fix checked in code, research turned into a slide deck with sources that pages with the arrow keys, a polished page checked by screenshots at desktop size, and clickable points placed on a photo.",
+    limit: "Numbers read from images can be wrong. It explains and never advises, points on a photo are approximate, and a screenshot fix works on one small bundled or pasted page, not a whole project.",
     longRun: false,
+    models: ["muse-wonder-1.0"],
   },
   {
     id: "recipe-games",
-    oneLine: "A 3D browser game with three.js, with its rules written first, built in one pass or in rounds, and tested by holding keys.",
+    oneLine: "A 3D browser game with three.js, such as a kart racer on a loop or a lane-crossing arcade game, with its rules written first, built in one pass or in rounds, and tested by holding keys and by idling until the level ends.",
     limit: "Simple shapes only, with no downloaded models, and one player.",
     longRun: false,
   },
   {
     id: "recipe-image",
-    oneLine: "Muse Image conversations: editing a person's photo in turns, generation grounded by search, a consistent series from anchor images, and careful region edits.",
-    limit: "Text inside images can come out wrong, size sets only the aspect ratio, and search-grounded images are illustrations.",
+    oneLine: "Muse Image conversations: generate, refine and compose with reference images, generation grounded by search, a consistent series from anchor images, and tagging then updating a listing photo across turns.",
+    limit: "Text inside images can come out wrong, size sets only the aspect ratio, search-grounded images are illustrations, and a series of more than four panels is the person's run, not the build's.",
     longRun: false,
     models: ["muse-image-1.0"],
   },
   {
     id: "recipe-voice",
-    oneLine: "Recorded speech with speaker labels, keywords and language hints, push-to-talk voice chess on the page, and a see-and-ask page using a phone's camera.",
-    limit: "It works on recordings of at most 10 minutes or 32 MB, not a live microphone. Speaker labels are anonymous and can be wrong or missing, and it doesn't control other apps.",
+    oneLine: "Recorded speech with speaker labels, keywords and language hints, push-to-talk voice chess on the page with Meta's exact \"Move E2 to E4\" grammar, and a see-and-ask page using a phone's camera.",
+    limit: "It transcribes finished recordings of at most 10 minutes or 32 MB, not a live stream from the microphone. Speaker labels are anonymous and can be wrong or missing, and it doesn't control other apps.",
     longRun: false,
     models: ["muse-voice-transcribe-1.0"],
   },
@@ -79,10 +84,12 @@ export const RECIPES: readonly Recipe[] = [
     models: ["sam-3.1", "muse-voice-transcribe-1.0"],
   },
   {
+    // Staged command approvals left this oneLine in the cookbook pass: recipe-code-sessions does them short, for cents.
     id: "recipe-simulated-loops",
-    oneLine: "A long model loop on a labeled simulation, run in stretches from the open page: computer use on a simulated screen, fixing a bundled project, a role-based team board, a simulated robot arm, an approval gate with a ledger, staged command approvals.",
+    oneLine: "A long model loop on a labeled simulation, run in stretches from the open page: computer use on a simulated Linux desktop or Mac (Mines, tic-tac-toe, a sign-up form with an approval gate), fixing a bundled Python project in the browser, a team of role agents on a shared board, a simulated robot arm, an approval gate with a ledger.",
     limit: "It acts only on a simulation and does not control your computer. Closing the tab pauses a run, and the run is saved in this browser only. A run costs dollars, not cents.",
     longRun: true,
+    models: ["muse-wonder-1.0"],
   },
   {
     id: "recipe-case-agent",
@@ -97,6 +104,13 @@ export const RECIPES: readonly Recipe[] = [
     limit: "A pass means the quotes are in the sources and a model read the claims as backed by them, not that the answer is true. Web pages seen only through search can't be checked by code.",
     longRun: false,
     verifyAgents: true,
+  },
+  {
+    id: "recipe-open-weights",
+    oneLine: "Kits for Muse open weights on a person's own machines: a Mac Studio cluster setup kit for Muse Spark Open with a log doctor, an SFT data studio that checks, splits and exports TorchTitan conversations, and a reward spread check that samples groups and scores them before a GRPO run.",
+    limit: "The product runs no GPU, downloads no weights, trains nothing and serves no open model: it writes and checks files the person runs on their own hardware. Hosted answers stand in for the open model.",
+    longRun: false,
+    models: ["muse-wonder-1.0"],
   },
 ];
 
@@ -167,11 +181,23 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
     "- recipes lists at most 3 ids from the Recipes list above, only when the note or the references need that pattern. Otherwise it is null. Most muses need none.",
     "- A repo URL or repo name in a note can't be read or cloned. Treat it as inspiration: make a fresh version with new names and new content, say so in limits in words for the product's users, and never ask to clone it or copy from it.",
     "- Agent loops are written in TypeScript, even when the note points at a Python repo.",
-    "- When the original needs something a hosted product can't do, the product is a stand-in: verdict is \"partly\" and a limit names it as a stand-in in plain words for its users.",
   ];
+  if (available.some((r) => r.id === "recipe-agent-patterns")) {
+    lines.push(
+      "- A note that asks for an agent loop that fixes failing tests, a migration in dependency order, reasoning effort per turn, a running STATE.md across changes, or an approval gate before a question goes to a cloud model (Meta's glimmer-api-agent) picks recipe-agent-patterns, not recipe-code-sessions or recipe-simulated-loops, unless the note asks for Muse Code sessions or a long simulated run. Its loops run on a sample project the product bundles, and its gate's local half is a stand-in, said in limits.",
+    );
+  }
+  lines.push("- When the original needs something a hosted product can't do, the product is a stand-in: verdict is \"partly\" and a limit names it as a stand-in in plain words for its users.");
   lines.push(
-    "- Some cookbook recipes can't be products: contained execution with bubblewrap and immutable guardrails (04/04, 04/05) can't run in a hosted product, so say so in limits, and scheduled loops (04/09) need the jobs service from the catalog. MCP security tooling that probes other people's systems (04/11) is refused.",
+    "- Some cookbook recipes can't be products: contained execution with bubblewrap (04/04) needs an OS sandbox on the person's own machine, so say so in limits. Muse Code's other harness patterns (04/01 to 04/03, 04/05 to 04/09) are recipe-code-sessions: without the code cap they are labeled stand-ins, so verdict is \"partly\" and a limit says it isn't Muse Code. Scheduled loops (04/09) run while the page is open, or on the jobs service when the catalog serves it. MCP security tooling that probes other people's systems (04/11) is refused.",
   );
+  if (available.some((r) => r.id === "recipe-visual-reports")) {
+    lines.push(
+      caps.includes("code")
+        ? "- A note about fixing a bug from a screenshot in a whole project picks recipe-code-sessions, which runs it in a Muse Code workspace. For one small page, recipe-visual-reports has a bundled-page stand-in."
+        : "- A note about fixing a bug from a screenshot picks recipe-visual-reports (its bundled-page stand-in): the code cap isn't served, so Muse Code can't run it in a workspace.",
+    );
+  }
   if (available.some((r) => r.longRun)) {
     lines.push(
       `- A long recipe (${available.filter((r) => r.longRun).map((r) => r.id).join(", ")}) is the exception to one run costing cents: it has its own daily budget, and costItems count its turns honestly, in dollars. complexity is "complex". Don't add the agent target for one: it writes its own loop.`,
@@ -179,7 +205,17 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
   }
   if (available.some((r) => r.id === "recipe-sam-media")) {
     lines.push(
-      "- With recipe-sam-media, unless the person gave their own clip, fixtures include one image fixture (fromUserSample false): a realistic photo of the subject the product tracks, whole and clearly in frame, like a dog standing on grass. The build turns it into the sample clip. Never a drawing, a test pattern or shapes.",
+      "- With recipe-sam-media, unless the person gave their own clip, fixtures include one image fixture (fromUserSample false): a realistic photo of the subject the product tracks, whole and clearly in frame, like a dog standing on grass, or for speaker captions two made-up people sitting side by side facing the camera. The build turns it into the sample clip. Never a drawing, a test pattern or shapes.",
+    );
+  }
+  if (available.some((r) => r.id === "recipe-image")) {
+    lines.push(
+      "- With recipe-image, unless the person gave their own photos, fixtures include the photos the flow starts from (fromUserSample false, at most 3): the space to furnish, the items laid out for a listing, or the reference objects to compose, each a realistic photo with no text or logos.",
+    );
+  }
+  if (available.some((r) => r.id === "recipe-api")) {
+    lines.push(
+      "- With recipe-api and a note about caching or a long document, the text fixture is a seed under 1,000 characters that names the document's sections. The build writes the full sample into fixtures/ itself: at least about 8,000 characters for caching, 40,000 to 80,000 for a long document, many sections, each with its own made-up facts.",
     );
   }
   if (available.some((r) => r.id === "recipe-case-agent")) {
@@ -189,6 +225,11 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
   }
   if (available.some((r) => r.id === "recipe-verified-agent")) {
     lines.push("- With recipe-verified-agent, targets include agent, and agent is written. Pick it only when someone will act on the answer and the product holds the source text: an upload, a paste, its own data or bundled files. Never for research on the web, even with citations and a \"couldn't confirm\" list: the agent target's deep research does that, in a few turns.");
+  }
+  if (available.some((r) => r.id === "recipe-open-weights")) {
+    lines.push(
+      "- With recipe-open-weights, for notes about running, serving, fine-tuning (SFT) or RL training Muse Spark Open or other open weights on the person's own machines (Mac Studios, mlx, TorchTitan, GRPO): verdict is \"partly\", and limits say in plain words that the product runs no GPU and trains or serves nothing itself. capabilities list muse-wonder-1.0, and muse-spark-open only when it is offered.",
+    );
   }
   return lines.join("\n");
 }
