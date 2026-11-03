@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { GATEWAY_ENDPOINTS } from "@/lib/gateway/policy";
 import type { GatewayEndpoint } from "@/lib/types";
+import type { SparkOpenEndpoint } from "@/lib/gateway/spark-open";
 
 /** The mirrored endpoint for a /v1/<path> request, or null when the gateway doesn't serve it. */
 export function parseEndpoint(path: readonly string[]): GatewayEndpoint | null {
@@ -77,7 +78,7 @@ async function fieldText(value: FormDataEntryValue | null): Promise<string | nul
  * Throws BadRequestError for a body that doesn't parse.
  */
 export async function parseGatewayRequest(
-  endpoint: GatewayEndpoint,
+  endpoint: GatewayEndpoint | SparkOpenEndpoint,
   contentType: string | null,
   body: Uint8Array<ArrayBuffer>,
 ): Promise<ParsedRequest> {
@@ -124,7 +125,7 @@ export async function parseGatewayRequest(
 
 /** True when the token and the endpoint both allow the model. */
 export function modelAllowed(
-  endpoint: GatewayEndpoint,
+  endpoint: GatewayEndpoint | SparkOpenEndpoint,
   model: string,
   tokenModels: readonly string[],
   endpointModels: readonly string[],

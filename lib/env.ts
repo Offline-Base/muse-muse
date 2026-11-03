@@ -16,6 +16,7 @@ import { agentCapacity } from "@/lib/sandbox/agent-capacity";
 import { snapshotCapOverlays } from "@/lib/sandbox/snapshots";
 import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { SPARK_OPEN_OVERLAY } from "@/lib/meta/spark-open";
 import { parseGeoCountries } from "@/lib/trust/geo";
 
 /**
@@ -1570,6 +1571,27 @@ export const env = {
   /** FLEET_ALL_PRODUCTS: signed-in builders' products may use the fleet too. Off, only products an admin owns may. */
   get fleetAllProducts(): boolean {
     return flag("FLEET_ALL_PRODUCTS");
+  },
+
+  // ---------- Muse Spark Open for products (lib/gateway/spark-open.ts) ----------
+
+  /**
+   * SPARK_OPEN_PRODUCTS: the gateway serves model muse-spark-open at {GATEWAY_URL}/v1/chat/completions, on the provider
+   * SPARK_OPEN_PROVIDER names (baseten or fireworks, baseten when unset) with that provider's key (BASETEN_API_KEY or
+   * FIREWORKS_API_KEY). Off: that path answers 404 unknown_endpoint, and the brief, tokens and catalog are today's.
+   */
+  get sparkOpenProducts(): boolean {
+    return flag("SPARK_OPEN_PRODUCTS");
+  },
+  /**
+   * SPARK_OPEN_PRODUCTS, for what a new build is told and given: also needs a builder snapshot made from a checkout with the
+   * helper and skill in its template. template/caps/spark-open ships only its deps.json, so a snapshot lists `spark-open` in
+   * lib/sandbox/snapshots.json exactly when that's true, the way FLEET_PRODUCTS waits for `fleet`.
+   */
+  get sparkOpenProductsForBuilds(): boolean {
+    if (!flag("SPARK_OPEN_PRODUCTS")) return false;
+    const overlays = env.snapshotCaps ?? snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined, undefined, () => {});
+    return overlays.includes(SPARK_OPEN_OVERLAY);
   },
 
   // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------

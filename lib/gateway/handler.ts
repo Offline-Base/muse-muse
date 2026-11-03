@@ -35,10 +35,21 @@ import {
 import { builtInToolCap, noteHeaderValue, rewriteResponsesRequest } from "@/lib/gateway/rewrite";
 import { holdRun, parseRunId, releaseRun, runLimitsFor, settleRun, type RunCounters, type RunHold } from "@/lib/gateway/runs";
 import { isBuiltInTool } from "@/lib/gateway/search";
+import {
+  meterSparkOpen,
+  parseSparkOpenEndpoint,
+  SPARK_OPEN_ENDPOINT,
+  SPARK_OPEN_ENDPOINT_MODELS,
+  sparkOpenEstimate,
+  sparkOpenRequest,
+  type SparkOpenEndpoint,
+  type SparkOpenUpstream,
+} from "@/lib/gateway/spark-open";
 import type { GatewayTokenRow } from "@/lib/gateway/tokens";
 import type { UsageContext } from "@/lib/usage";
 import type { GatewayEndpoint, ModelUsage, ProductStatus } from "@/lib/types";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { SPARK_OPEN_HOST_HEADER, SPARK_OPEN_MODEL } from "@/lib/meta/spark-open";
 
 /** The token fields the gateway needs. findToken's row satisfies it. */
 export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | "allowedModels" | "dailyBudgetUsd"> & {
@@ -87,6 +98,11 @@ export interface GatewayDeps extends RunCounters {
   /** BUILDS_ON_CONTRIBUTOR: a call naming Muse Wonder is served by Contributor or refused (contributorSwitchRefusal), but for keepsWonderUnderSwitch. */
   contributorRuntime?: boolean;
   upstreamBaseUrl?: string;
+  /**
+   * SPARK_OPEN_PRODUCTS (lib/gateway/spark-open.ts): Muse Spark Open's provider and key, read per call, or null when either is
+   * missing. Unset with the flag off, so /v1/chat/completions is an unknown endpoint and nothing below changes.
+   */
+  sparkOpen?(): SparkOpenUpstream | null;
   /** Public {PLATFORM_URL}/api/gateway, for error messages that point at /uploads. */
   gatewayUrl: string;
   /** Keeps work alive after the response (Next's after()). The promise is already running when it's passed. */
@@ -96,6 +112,20 @@ export interface GatewayDeps extends RunCounters {
 
 /** Response headers worth passing back. Encoding and length are dropped because fetch already decoded the body. */
 const PASS_HEADERS = ["content-type", "retry-after", "x-request-id", "request-id", "openai-processing-ms"];
+
+/** Every endpoint the handler may serve: Meta's mirrored ones, and Muse Spark Open's while SPARK_OPEN_PRODUCTS is on. */
+type HandledEndpoint = GatewayEndpoint | SparkOpenEndpoint;
+
+/** The models an endpoint accepts. */
+function endpointModels(endpoint: HandledEndpoint): readonly string[] {
+  return endpoint === SPARK_OPEN_ENDPOINT ? SPARK_OPEN_ENDPOINT_MODELS : ENDPOINT_MODELS[endpoint];
+}
+
+/** The estimate for a call: Muse Spark Open's at its provider's price, or a Meta call's. */
+function estimateFor(endpoint: HandledEndpoint, parsed: ParsedRequest, bodyBytes: number, mostSearches: number, sparkOpen: SparkOpenUpstream | null): number {
+  if (endpoint === SPARK_OPEN_ENDPOINT) return sparkOpen ? sparkOpenEstimate(parsed, sparkOpen.price) : 0;
+  return estimateCost(endpoint, parsed, bodyBytes, mostSearches);
+}
 
 async function checkRateLimits(
   req: Request,
@@ -136,13 +166,15 @@ export async function handleGateway(req: Request, path: readonly string[], deps:
 
 async function handle(req: Request, path: readonly string[], deps: GatewayDeps): Promise<Response> {
   const startedAt = Date.now();
-  const endpoint = parseEndpoint(path);
+  // SPARK_OPEN_PRODUCTS: /v1/chat/completions exists only while deps.sparkOpen is set, so with the flag off this is today's.
+  const endpoint: HandledEndpoint | null = parseEndpoint(path) ?? (deps.sparkOpen ? parseSparkOpenEndpoint(path) : null);
   if (!endpoint) {
+    const served: readonly string[] = deps.sparkOpen ? [...GATEWAY_ENDPOINTS, SPARK_OPEN_ENDPOINT] : GATEWAY_ENDPOINTS;
     return gatewayError(
       404,
       "not_found_error",
       "unknown_endpoint",
-      `The gateway does not serve /v1/${path.join("/")}. It serves ${GATEWAY_ENDPOINTS.map((e) => `/v1/${e}`).join(", ")}.`,
+      `The gateway does not serve /v1/${path.join("/")}. It serves ${served.map((e) => `/v1/${e}`).join(", ")}.`,
       { retry: false },
     );
   }
@@ -212,20 +244,40 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
         retry: false,
       });
     }
-    if (!codeSession && !modelAllowed(endpoint, model, token.allowedModels, ENDPOINT_MODELS[endpoint])) {
-      const allowed = token.allowedModels.filter((m) => (ENDPOINT_MODELS[endpoint] as readonly string[]).includes(m));
+    if (!codeSession && !modelAllowed(endpoint, model, token.allowedModels, endpointModels(endpoint))) {
+      const allowed = token.allowedModels.filter((m) => endpointModels(endpoint).includes(m));
+      // SPARK_OPEN_PRODUCTS: a product that sends Muse Spark Open to Meta's endpoints is told where it answers.
+      const where = deps.sparkOpen && model === SPARK_OPEN_MODEL && endpoint !== SPARK_OPEN_ENDPOINT ? ` ${SPARK_OPEN_MODEL} answers on /v1/${SPARK_OPEN_ENDPOINT}.` : "";
       return gatewayError(
         404,
         "invalid_request_error",
         "model_not_found",
         `The model "${model}" isn't available to this product on /v1/${endpoint}. ` +
-          (allowed.length ? `Allowed: ${allowed.join(", ")}.` : "No models are allowed here for this product."),
+          (allowed.length ? `Allowed: ${allowed.join(", ")}.` : "No models are allowed here for this product.") +
+          where,
         { retry: false },
       );
     }
   }
-
   const notes: string[] = [];
+  // ---------- SPARK_OPEN_PRODUCTS (lib/gateway/spark-open.ts): the provider's body, before any limit is counted. Never reached
+  // with the flag off ----------
+  let sparkOpen: SparkOpenUpstream | null = null;
+  if (endpoint === SPARK_OPEN_ENDPOINT) {
+    sparkOpen = deps.sparkOpen?.() ?? null;
+    if (!sparkOpen) {
+      return gatewayError(503, "server_error", "spark_open_closed", "Muse Spark Open isn't open to products right now.", { retry: false });
+    }
+    const shaped = sparkOpenRequest(parsed, sparkOpen);
+    if (shaped.refusal) {
+      return gatewayError(shaped.refusal.status, "invalid_request_error", shaped.refusal.code, shaped.refusal.message, { retry: false });
+    }
+    notes.push(...shaped.notes);
+    parsed = { kind: "json", json: shaped.json, model };
+    rewritten = true;
+  }
+  // ---------- end SPARK_OPEN_PRODUCTS ----------
+
   // Muse Spark 1.3 is never used: a product built to call it is served by Spark 1.3 Contributor (lib/meta/spark.ts),
   // and metered at that model's price.
   if (model === RETIRED_SPARK && parsed.kind === "json") {
@@ -341,7 +393,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
         runId: heldRun.id,
         limits: heldRun.limits,
         toolCalls,
-        usd: (calls) => estimateCost(endpoint, withCalls(calls), bodyBytes, mostSearches),
+        usd: (calls) => estimateFor(endpoint, withCalls(calls), bodyBytes, mostSearches, sparkOpen),
         now: heldRun.at,
       });
       if (!held.ok) {
@@ -357,7 +409,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       }
     }
     if (rewritten && parsed.kind === "json") body = new TextEncoder().encode(JSON.stringify(parsed.json));
-    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches, jobCall });
+    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches, jobCall, sparkOpen });
     metering = result.metering;
     return result.response;
   } finally {
@@ -381,25 +433,27 @@ function wantsJsonSchema(parsed: ParsedRequest): boolean {
 
 async function forward(
   req: Request,
-  endpoint: GatewayEndpoint,
+  endpoint: HandledEndpoint,
   token: GatewayToken,
   parsed: ParsedRequest,
   body: Uint8Array<ArrayBuffer>,
   contentType: string | null,
   deps: GatewayDeps,
   startedAt: number,
-  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number; jobCall?: JobCall | null },
+  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number; jobCall?: JobCall | null; sparkOpen?: SparkOpenUpstream | null },
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
-  let estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
+  /** SPARK_OPEN_PRODUCTS: where a Muse Spark Open call goes. Null for every Meta call. */
+  const sparkOpen = endpoint === SPARK_OPEN_ENDPOINT ? (call.sparkOpen ?? null) : null;
+  let estimate = estimateFor(endpoint, parsed, body.byteLength, call.mostSearches, sparkOpen);
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
   // ---------- Wave 3, unit 2: fit max_output_tokens to what's left (docs/CAPABILITIES.md, section 8). Off by default ----------
   // Only for a Muse Code session's token and, with ENGINE_FIT_OUTPUT, a build's: a live product's users get the clean
   // budget message, never a reply cut short. A structured reply is never fitted, since cut-off JSON doesn't parse.
   const fits = (token.scope as string) === "code_session" || (deps.fitOutputToBudget === true && token.scope === "build");
-  const fit = fits && !wantsJsonSchema(parsed)
+  const fit = fits && endpoint !== SPARK_OPEN_ENDPOINT && !wantsJsonSchema(parsed)
     ? fitOutputToBudget({ endpoint, parsed, bodyBytes: body.byteLength, mostSearches: call.mostSearches, estimate, leftUsd: budget - spent })
     : null;
   if (fit && parsed.kind === "json") {
@@ -449,7 +503,7 @@ async function forward(
     );
   }
 
-  const upstreamKey = deps.upstreamKey();
+  const upstreamKey = sparkOpen ? sparkOpen.key : deps.upstreamKey();
   const ctx: UsageContext = { source: "gateway", productId: token.productId, tokenId: token.id, endpoint };
   const reservation = estimate > 0 ? await deps.reserveSpend(ctx, model, estimate) : null;
   const unreserve = async () => {
@@ -494,7 +548,7 @@ async function forward(
   const timeoutMs = Math.max(1_000, startedAt + DEFAULT_LIMITS.upstreamTimeoutMs - Date.now());
   let upstream: Response;
   try {
-    upstream = await deps.fetch(`${deps.upstreamBaseUrl ?? UPSTREAM_BASE_URL}/${endpoint}`, {
+    upstream = await deps.fetch(sparkOpen ? `${sparkOpen.baseUrl}/${SPARK_OPEN_ENDPOINT}` : `${deps.upstreamBaseUrl ?? UPSTREAM_BASE_URL}/${endpoint}`, {
       method: "POST",
       headers,
       body: upstreamBody,
@@ -503,7 +557,7 @@ async function forward(
   } catch (err) {
     console.error(`[gateway] upstream ${endpoint} failed:`, err instanceof Error ? err.message : err);
     await unreserve();
-    return done(gatewayError(502, "server_error", "upstream_unreachable", "Couldn't reach the Meta Model API. Try again."));
+    return done(gatewayError(502, "server_error", "upstream_unreachable", sparkOpen ? `Couldn't reach Muse Spark Open on ${sparkOpen.name}. Try again.` : "Couldn't reach the Meta Model API. Try again."));
   }
 
   const outHeaders = new Headers();
@@ -518,6 +572,8 @@ async function forward(
   }
   const note = noteHeaderValue(call.notes);
   if (note) outHeaders.set(NOTE_HEADER, note);
+  // SPARK_OPEN_PRODUCTS: the provider's name, which the product's label shows ("Muse Spark Open, on Baseten").
+  if (sparkOpen) outHeaders.set(SPARK_OPEN_HOST_HEADER, sparkOpen.name);
 
   if (!upstream.ok || !upstream.body || endpoint === "files") {
     await unreserve();
@@ -529,11 +585,13 @@ async function forward(
   const [toClient, toMeter] = upstream.body.tee();
   const runHold = call.runHold;
   const reservedUsd = estimate;
-  const metering = meterReply(endpoint, model, upstreamType, toMeter)
+  const metered = endpoint === SPARK_OPEN_ENDPOINT ? meterSparkOpen(upstreamType, toMeter, sparkOpen?.price ?? { input: 0, cachedInput: 0, output: 0 }) : meterReply(endpoint, model, upstreamType, toMeter);
+  const metering = metered
     .then(async ({ items, builtInCalls }) => {
       // Wave 3, unit 9: a session's stream cut off midway shows no usage, and what Meta bills for it wasn't measured
-      // (the spike), so it keeps its whole reservation rather than settling on what little was seen.
-      if (token.scope === CODE_SESSION_SCOPE && builtInCalls === null && items[0]) items[0] = { ...items[0], costUsd: Math.max(items[0].costUsd, reservedUsd) };
+      // (the spike), so it keeps its whole reservation rather than settling on what little was seen. SPARK_OPEN_PRODUCTS:
+      // so does a Muse Spark Open reply whose usage wasn't read, since its provider bills what it ran.
+      if ((token.scope === CODE_SESSION_SCOPE || endpoint === SPARK_OPEN_ENDPOINT) && builtInCalls === null && items[0]) items[0] = { ...items[0], costUsd: Math.max(items[0].costUsd, reservedUsd) };
       if (reservation) await deps.settleSpend(reservation, items[0] ?? null);
       const rest = reservation ? items.slice(1) : items;
       if (rest.length) await deps.recordUsage(ctx, rest);

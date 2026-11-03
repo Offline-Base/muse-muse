@@ -15,6 +15,7 @@ import { LIVE_RENDER } from "@/lib/caps/live/render";
 import { MEDIA_RENDER } from "@/lib/caps/media/render";
 import { PLATFORM_RENDER } from "@/lib/caps/platform/brief";
 import { RUNTIME_RENDER } from "@/lib/caps/runtime/render";
+import { sparkOpenBuildLines, sparkOpenRefineLines } from "@/lib/prompts/spark-open";
 
 /**
  * Each cap's part of the prompts Muse Code gets (docs/CAPABILITIES.md, 2.6). One line per cap, in plan order; the text
@@ -56,13 +57,15 @@ export function capsBuildLines(brief: Brief): string[] {
   const gpu = gpuBuildLines(brief);
   // The Jetson fleet isn't a cap either (section 17b). Nothing with FLEET_PRODUCTS off.
   const fleet = fleetBuildLines(brief);
-  if (!on.length && !gpu.length && !fleet.length) return [];
-  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)]), ...gpu, ...fleet];
+  // Muse Spark Open isn't a cap either (lib/gateway/spark-open.ts). Nothing with SPARK_OPEN_PRODUCTS off.
+  const sparkOpen = sparkOpenBuildLines(brief);
+  if (!on.length && !gpu.length && !fleet.length && !sparkOpen.length) return [];
+  return ["", "## Platform services", ...on.flatMap(([, e]) => ["", `### ${e.title}`, "", ...e.build(brief)]), ...gpu, ...fleet, ...sparkOpen];
 }
 
 /** What a change request adds for the product's caps. Empty for a product with none. */
 export function capsRefineLines(brief: Brief): string[] {
-  return [...rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []), ...gpuRefineLines(brief), ...fleetRefineLines(brief)];
+  return [...rendered(brief).flatMap(([, e]) => e.refine?.(brief) ?? []), ...gpuRefineLines(brief), ...fleetRefineLines(brief), ...sparkOpenRefineLines(brief)];
 }
 
 /** The product page's brief markdown, after the Agent section. Empty for a brief with no cap blocks. */

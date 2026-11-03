@@ -35,6 +35,7 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "muse-glimmer": ".agents/skills/meta-glimmer",
   "muse-gadget": ".agents/skills/muse-gadget",
   "jetson-fleet": ".agents/skills/jetson-fleet",
+  "muse-spark-open": ".agents/skills/meta-spark-open",
 };
 
 /** The skill that goes with a target. */

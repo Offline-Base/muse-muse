@@ -8,7 +8,8 @@
  * musemuse.trust.json and musemuse.privacy.json. Both are kept root-owned and read-only in TRUST_RECORD_DIR, and every
  * verify and demo puts them and the overlay's platform files back. Script builders only, so they test without a sandbox.
  */
-import { FLEET_BRIEF_MODEL, type Brief } from "@/lib/brief/schema";
+import { FLEET_BRIEF_MODEL, SPARK_OPEN_BRIEF_MODEL, type Brief } from "@/lib/brief/schema";
+import { SPARK_OPEN_PRIVACY_LINE } from "@/lib/prompts/spark-open";
 import { briefCaps } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { liveBlock } from "@/lib/caps/live/brief";
@@ -79,6 +80,8 @@ export function productPrivacyFor(brief: Brief): Record<string, unknown> {
   if (liveBlock(brief)?.captions) services.push("While captions are on, what your microphone picks up goes to Muse Voice Transcribe, a Meta model, to make them. Meta's own terms apply. This app doesn't keep the audio.");
   // The Jetson fleet (docs/CAPABILITIES.md, 17b) isn't one of Meta's models, so it isn't listed with them.
   if (brief.capabilities.some((c) => c.model === FLEET_BRIEF_MODEL)) services.push("To answer on the Jetson fleet, what you type passes through this app's server, Muse Muse, ngrok and a board Muse Muse runs. Don't send private things.");
+  // Muse Spark Open is one of Meta's models, so it is listed with them, and its provider is named here.
+  if (brief.capabilities.some((c) => c.model === SPARK_OPEN_BRIEF_MODEL)) services.push(SPARK_OPEN_PRIVACY_LINE);
   const uploads = brief.inputs.some((i) => ["image", "video", "audio", "pdf"].includes(i.kind));
   return { v: 1, models, keeps: keeps.length ? keeps : ["Nothing on a server."], services, uploads };
 }
