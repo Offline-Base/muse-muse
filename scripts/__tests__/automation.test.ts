@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
-import { DEFAULT_SITE, arg, pickIds, postJson, refusalOf, siteArg, words } from "../automation";
+import { DEFAULT_SITE, arg, getJson, pickIds, postJson, refusalOf, siteArg, words } from "../automation";
 
 const argv = (...a: string[]) => ["node", "script", ...a];
 
@@ -20,6 +20,10 @@ describe("script automation helpers", () => {
       if (req.url === "/moved") {
         res.writeHead(308, { location: "https://www.example.com/moved" });
         return void res.end();
+      }
+      if (req.url === "/html404") {
+        res.writeHead(404, { "content-type": "text/html" });
+        return void res.end("<!doctype html><title>404</title>");
       }
       if (req.url === "/refused") {
         res.writeHead(429, { "content-type": "application/json" });
@@ -66,5 +70,15 @@ describe("script automation helpers", () => {
     assert.equal(seen.filter((s) => s.url === "/moved").length, 1, "never followed");
     const refused = await postJson(origin, "/refused", {}, "secret-for-test");
     assert.deepEqual(refusalOf(refused), { status: 429, error: "rate_limited", retryAfterSeconds: 60 });
+  });
+
+  it("gets public JSON with no key, and gives null for an HTML page and status 0 for no answer", async () => {
+    const ok = await getJson(origin, "/ok");
+    assert.deepEqual(ok, { status: 201, json: { runId: "r1" } });
+    assert.equal(seen.at(-1)!.auth, undefined);
+    assert.deepEqual(await getJson(origin, "/html404"), { status: 404, json: null });
+    const down = await getJson("http://127.0.0.1:1", "/x");
+    assert.equal(down.status, 0);
+    assert.equal(down.json?.error, "network");
   });
 });

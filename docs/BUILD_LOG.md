@@ -4280,3 +4280,39 @@ Cost (list prices, the code's estimates, not checked against the bills):
 - **Fixed, budget leak 2:** the round's floor of 12 steps cost more than a budget under about $1.85, while the room said "no more than" the budget. The route now answers 503 `polish_budget_low` under `POLISH_MIN_USD`.
 - **Still true:** the $0.08 a step figure is an estimate; with PROVE_IT on a passed polish also starts a Prove it run (capped by PROVE_IT_CAP_USD, outside POLISH_MAX_USD); 53 polishes at the $4 default could reach $212, so set POLISH_MAX_USD near $3 or polish only the products to show. A failed polish leaves its edits in the sandbox, as any failed change does, and the next change starts from them.
 - **Checks, no spend:** polish suite 12 of 12, workflow scenarios 89 of 89 (one new: the fix round's cap from what's left), gateway handler and no-wonder 79 of 79, build-steps scenarios 68 of 68, `npx tsc --noEmit -p .` clean, `npx workflow transform lib/pipeline/workflow.ts -m workflow` keeps only the pure lib/polish/logic.ts as new.
+## Nov 3, 2026, about 1:45 PM ET: batch tools to polish, cost and audit the 53 builds (branch tg-w-batch, not pushed)
+
+- **Why:** the owner's Nov 3 afternoon decision. The 53 cookbook and showcase builds started from `scripts/demo-batch.ts` each get a final Muse Wonder UI pass, everything has to stay inside $200 of Meta spend, and every product has to work well enough for Meta to feature.
+- **`npm run polish-batch -- <demo-batch files or build ids>`** (scripts/polish-batch.ts):
+  - It polls each build's public status. Once a build is live or partial, it starts that build's polish (`POST /api/builds/<id>/polish`, which another unit adds).
+  - Defaults: 8 at once, a $200 budget, and $2 held back for each polish in flight plus the next one. It stops starting new polishes once spend plus that reserve would pass the budget.
+  - If the route answers 404 without the app's JSON, the route isn't deployed yet. It says so plainly and exits 2, and `--resume=<file>` carries on later without polishing any build twice.
+  - It waits and retries on 409, 429 and 503, and gives up on a build after 6 tries. It stops on 401 or 403.
+  - It saves to .data/polish-<time>.json after every change. `--dry` prints the plan with no key. `--focus-file` sends each failing product's audit paragraph with its polish.
+- **`npm run spend-ledger -- <files or ids>`** (scripts/spend-ledger.ts):
+  - It adds up `build.costUsd` from `GET /api/builds/<id>` for each build and each polish refinement (a refinement is a build of kind "refine" with its own costUsd), prints a table and what is left, and exits 1 when over budget.
+  - The public route doesn't list a product's refinements. Their ids come from the polish files, plus the product's `latestBuildId` when it is newer than the batch's build.
+  - It doesn't count a product's own model calls after it ships, and the table says so.
+- **`npm run audit-batch -- <files, ids or product addresses>`** (scripts/audit-batch.ts):
+  - It runs Playwright, taken from node_modules or template/node_modules, on desktop 1440x900 and phone 390x844. That is at most 2 main-flow runs per product, with at most 4 products at once in one headless Chromium.
+  - Each run presses "Try the sample", then the next main button (`.primary.ai` first), and waits up to 150 s.
+  - It records console errors, failed /api calls, answers with `model: false`, `fallback: true`, `estimate: true` or an `error` field, sideways scroll, controls under 44 px on the phone and text cut off at the right edge, with screenshots.
+  - It writes .data/audit-<time>.json and .md: pass or fail for each product, and a focus paragraph for each failing one that polish-batch reads back.
+  - It types nothing (made-up samples only). Each sample run calls the product's own models through its live token, so an audit spends a little, outside build costUsd.
+- **Pure parts** are in scripts/batch/logic.ts and scripts/batch/audit-logic.ts: the status parsing, ledger math, polish answers, queue and budget, focus text and markdown. The in-page scripts are plain strings, so the TypeScript runner's helpers never reach the page. `getJson` was added to scripts/automation.ts.
+- **Checked, no spend:**
+  - Free public GETs: `--dry` on the three demo-batch files read so far showed 34 builds, all still building, $0.62 spent, $199.38 left.
+  - The ledger exits 1 with `--budget=0.001`.
+  - `audit-batch --dry` lists the builds it skips.
+  - A full browser audit of two local fake products made of static pages with no model: the clean one passed, and the broken one failed on all 7 problem kinds with screenshots.
+  - No build, polish, refinement or model call ran.
+- **Tests:** scripts/__tests__/batch-logic.test.ts, audit-logic.test.ts and automation.test.ts, 42 of 42. Typecheck clean. None of the new files has "use step" or "use workflow", so no workflow bundle changed.
+
+## Nov 3, 2026, afternoon: review of the batch tools against the polish route in progress (branch tg-w-batch, not pushed)
+
+- **Why:** an independent review read polish-batch next to the polish route the other unit is writing (w-polish, not merged yet: `startPolish` in lib/polish/start.ts). Four answers from that route would have gone wrong.
+- **POLISH_ENABLED off:** the route answers 404 with the app's own `{"error":"not_found"}`. polish-batch read that as "unknown build" and marked every ready build refused for good, even on `--resume`. A polish only goes to a build the public status route just read as shipped, so any 404 now stops the run (exit 2) with a message that names POLISH_ENABLED, and nothing is marked refused.
+- **409 with a buildId** (`already_polished`, or `busy` with the product's running polish): it was retried 6 times and then given up, and that polish's cost never reached the ledger. polish-batch now follows that refinement as the build's polish, so it counts in the ledger and toward the limit, and nothing is polished twice.
+- **Budget:** the route caps a polish at POLISH_MAX_USD, $4 by default, but the queue held only $2 for each one, so 8 at once could pass $200 by up to $16. The default `--reserve` is now 4, and a polish whose answer names `maxUsd` holds that amount, with the largest cap seen held for the next start. 503 `polish_budget_off` (POLISH_MAX_USD at 0) now stops the run instead of retrying, and after a 429 or 503 pause no more starts go out in the same round.
+- **Focus text:** the route refuses focus over 2000 characters with a 400, which marked the build refused. The cut is now 2000 (it was 3500).
+- **Tests:** batch-logic, audit-logic and automation suites, 45 of 45. Typecheck clean. No "use step" or "use workflow" file touched. No build, polish or model call ran.
