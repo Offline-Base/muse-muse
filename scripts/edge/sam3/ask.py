@@ -26,10 +26,10 @@ def main(argv):
     tuned = argv[4] if len(argv) > 4 else "base"
     if not re.fullmatch(r"[0-9a-f]{6,32}", rid):
         raise ValueError("bad request id")
-    if not re.fullmatch(r"[a-z0-9_-]{1,32}", tuned):
-        raise ValueError("bad tuned name")
     d = f"/tmp/sam-ui/{rid}"
     try:
+        if not re.fullmatch(r"[a-z0-9_-]{1,32}", tuned):
+            raise ValueError("bad tuned name")
         b64 = "".join(open(p).read().strip() for p in sorted(glob.glob(d + "/[0-9]*")))
         body = {"image_b64": b64, "prompt": prompt, "threshold": thr, "overlay": True}
         if tuned != "base":

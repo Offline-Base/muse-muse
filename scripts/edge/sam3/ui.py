@@ -212,7 +212,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         try:
             req = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
-            self._send(200, look(req["image_b64"], req.get("prompt", ""), req.get("threshold", 0.5), req.get("tuned") or "base"))
+            if not isinstance(req, dict) or not isinstance(req.get("image_b64"), str):
+                raise ValueError("send a JSON object with image_b64, the photo in base64")
+            args = check_look(req["image_b64"], req.get("prompt", ""), req.get("threshold", 0.5), req.get("tuned") or "base")
+        except (ValueError, TypeError) as e:  # a bad request from the page, not a board fault
+            return self._send(400, {"error": str(e)})
+        try:
+            self._send(200, look(*args))
         except ValueError as e:
             self._send(400, {"error": str(e)})
         except Exception as e:

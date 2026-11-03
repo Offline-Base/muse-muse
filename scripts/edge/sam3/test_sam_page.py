@@ -170,9 +170,46 @@ class SamPageTest(unittest.TestCase):
         self.assertEqual(res["count"], 1)
         self.assertNotIn("tuned", FakeSam.seen[-1])
         self.assertFalse(d.exists())
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "000").write_text(PIXEL)
         p = subprocess.run([sys.executable, str(HERE / "ask.py"), rid, "x", "0.5", "Bad Name"], capture_output=True, text=True,
                            env={**os.environ, "SAM_URL": self.sam_url}, timeout=30)
         self.assertIn("bad tuned name", p.stdout)
+        self.assertFalse(d.exists(), "a refused look still removes its pieces")
+
+    def test_page_refuses_bad_requests_with_400(self):
+        import urllib.error
+        import urllib.request
+        old = ui.CFG
+        ui.CFG = self.direct()
+        srv, url = serve(ui.H)
+        try:
+            for body in [b"{}", b"[1]", b'{"image_b64": 5}', b"not json", json.dumps({"image_b64": PIXEL, "prompt": "muse",
+                                                                                       "threshold": "high"}).encode()]:
+                req = urllib.request.Request(url + "/api/segment", body, {"Content-Type": "application/json"})
+                with self.assertRaises(urllib.error.HTTPError) as e:
+                    urllib.request.urlopen(req, timeout=10)
+                self.assertEqual(e.exception.code, 400, body)
+                e.exception.close()
+            req = urllib.request.Request(url + "/api/segment", json.dumps({"image_b64": PIXEL, "prompt": "muse", "tuned": "muse"}).encode())
+            with urllib.request.urlopen(req, timeout=10) as r:
+                self.assertEqual(json.loads(r.read())["weights"], "muse")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            ui.CFG = old
+
+    def test_compare_photo_fits_the_limit(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("no Pillow")
+        with tempfile.TemporaryDirectory() as t:
+            photo = Path(t) / "noise.png"
+            Image.frombytes("RGB", (1600, 1200), os.urandom(1600 * 1200 * 3)).save(photo)
+            b64 = compare.photo_b64(photo, 1024)
+            self.assertLessEqual(len(b64), ui.MAX_B64)
+            ui.check_look(b64, "muse", 0.5, "base")
 
     def test_compare_writes_page_and_json(self):
         with tempfile.TemporaryDirectory() as t:

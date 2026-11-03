@@ -5,8 +5,8 @@
 
 It reaches the board the way ui.py does (SAM_URL straight, or FLEET_URL through the control plane, with the token asked
 for at the prompt). It writes one page with every look side by side, Meta's weights on the left and the tuned ones on the
-right, a JSON file beside it, and prints a table. Pillow, if installed, shrinks the photo to 1024 px first; without it
-the photo is sent as it is and must be under 300 KB.
+right, a JSON file beside it, and prints a table. Pillow, if installed, shrinks the photo first (1024 px straight,
+640 px through the fleet, like the page); without it the photo is sent as it is and must be under 300 KB.
 """
 import argparse
 import base64
@@ -29,9 +29,13 @@ def photo_b64(path, max_side=1024):
         return base64.b64encode(raw).decode()
     im = Image.open(io.BytesIO(raw)).convert("RGB")
     im.thumbnail((max_side, max_side))
-    buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=85)
-    return base64.b64encode(buf.getvalue()).decode()
+    for quality in (85, 75, 65, 55):  # stay under the page's 400,000-character limit
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=quality)
+        out = base64.b64encode(buf.getvalue()).decode()
+        if len(out) <= ui.MAX_B64:
+            break
+    return out
 
 
 def summary(r):
@@ -76,7 +80,8 @@ def main(argv=None):
     why = cfg.problem()
     if why:
         sys.exit(why)
-    b64 = photo_b64(a.photo)
+    # Through the fleet, 640 px like the page: fewer pieces, and the tinted picture back fits in the job's output.
+    b64 = photo_b64(a.photo, 1024 if cfg.mode == "direct" else 640)
     rows = []
     for prompt in a.prompt or ["muse", "plush toy"]:
         row = {"prompt": prompt}
