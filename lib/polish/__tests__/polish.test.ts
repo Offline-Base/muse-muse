@@ -180,3 +180,76 @@ describe("POST /api/builds/{id}/polish", () => {
     assert.deepEqual(broken.calls.failed, ["polish-1"]);
   });
 });
+
+describe("the no-worse gate (owner's rule, Nov 3)", async () => {
+  const { polishBaseline, polishBaselineLine, polishBrokeLine, polishFixLines, polishJudgeNote, polishKeptLine, polishNoWorse, withoutKnownFailing } = await import("@/lib/polish/logic");
+  const reqs = (states: Record<string, string>) => Object.entries(states).map(([id, state]) => ({ id, state }));
+  const judge = (states: Record<string, string>, extra: Partial<{ pass: boolean; blocking: boolean; ownPass: boolean }> = {}) => ({ pass: false, blocking: false, ownPass: true, requirements: reqs(states), ...extra });
+
+  it("reads the live build's unmet requirements in id order, and no list as unknown", () => {
+    assert.deepEqual(polishBaseline(reqs({ R10: "unmet", R2: "met", R7: "unmet", R3: "unmet", R4: "cant" })), { known: true, failing: ["R3", "R7", "R10"], met: ["R2"] });
+    assert.deepEqual(polishBaseline(reqs({ R1: "met" })), { known: true, failing: [], met: ["R1"] });
+    for (const none of [null, undefined, []]) assert.deepEqual(polishBaseline(none), { known: false, failing: [], met: [] });
+  });
+
+  it("ships when only what failed before still fails, and the judge's own call passed", () => {
+    assert.deepEqual(polishNoWorse({ verifyPassed: true, judge: judge({ R1: "met", R3: "unmet", R7: "unmet" }), failing: ["R3", "R7"] }), { ship: true, stillFailing: ["R3", "R7"], newlyFailing: [] });
+    // One of the old failures fixed is still no worse.
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge({ R3: "met", R7: "unmet" }), failing: ["R3", "R7"] }).ship, true);
+  });
+
+  it("blocks on anything that passed before and fails now, or a requirement with no record", () => {
+    const gate = polishNoWorse({ verifyPassed: true, judge: judge({ R1: "unmet", R3: "unmet", R9: "unmet" }), failing: ["R3"] });
+    assert.deepEqual(gate, { ship: false, stillFailing: ["R3"], newlyFailing: ["R1", "R9"] });
+    // Met on the live build and now only unchecked, cant or missing is worse too, though "unchecked" doesn't fail the verdict.
+    const lost = polishNoWorse({ verifyPassed: true, judge: judge({ R1: "met", R2: "unchecked", R3: "unmet", R4: "cant" }), failing: ["R3"], met: ["R1", "R2", "R4", "R5"] });
+    assert.deepEqual(lost, { ship: false, stillFailing: ["R3"], newlyFailing: ["R2", "R4", "R5"] });
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge({ R1: "met", R2: "met", R3: "unmet" }), failing: ["R3"], met: ["R1", "R2"] }).ship, true);
+  });
+
+  it("blocks on a failed verify, no judge, the judge's own fail, a blocking call, or an empty baseline", () => {
+    const states = { R3: "unmet" };
+    assert.equal(polishNoWorse({ verifyPassed: false, judge: judge(states), failing: ["R3"] }).ship, false);
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: null, failing: ["R3"] }).ship, false);
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge(states, { ownPass: false }), failing: ["R3"] }).ship, false);
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: { pass: false, blocking: false, requirements: reqs(states) }, failing: ["R3"] }).ship, false, "no own call: unknown, so no");
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge(states, { blocking: true }), failing: ["R3"] }).ship, false);
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge(states), failing: [] }).ship, false);
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: { pass: false, blocking: false, ownPass: true }, failing: ["R3"] }).ship, false, "no requirement states");
+  });
+
+  it("is today's gate when the judge passed", () => {
+    assert.deepEqual(polishNoWorse({ verifyPassed: true, judge: { pass: true, blocking: false }, failing: [] }), { ship: true, stillFailing: [], newlyFailing: [] });
+  });
+
+  it("says plainly what it is held to, what it broke and what it shipped with, with no em dash", () => {
+    assert.equal(polishBaselineLine({ known: true, failing: [], met: [] }), null);
+    assert.equal(polishBaselineLine({ known: true, failing: ["R3", "R7"], met: [] }), "The live version already fails R3 and R7. This pass can still ship if every requirement that passed there still passes, and those stay listed as known issues.");
+    assert.match(polishBaselineLine({ known: false, failing: [], met: [] })!, /ships only if every requirement passes\.$/);
+    assert.equal(polishBrokeLine(["R1", "R2", "R9"]), "This pass broke R1, R2 and R9, which weren't failing on the live version, so it can't ship as it is.");
+    assert.equal(polishKeptLine("https://x.vercel.app", ["R8"]), "Shipped as partial at https://x.vercel.app. Every requirement that passed on the live version still passes. R8 still fails as before, so it stays listed as known issues.");
+    assert.match(polishKeptLine(null, ["R3", "R7"]), /^Finished as partial without publishing to its own link\. .* R3 and R7 still fail as before, so they stay/);
+    const all = [polishBaselineLine({ known: true, failing: ["R3"], met: [] })!, polishBaselineLine({ known: false, failing: [], met: [] })!, polishBrokeLine(["R1"]), polishKeptLine("u", ["R3"]), polishJudgeNote(["R3"]), ...polishFixLines(["R3", "R7"])];
+    for (const line of all) assert.ok(!line.includes(EM_DASH), line);
+  });
+
+  it("drops only the old failures' lines from the fix round's judge notes, and tells it to leave them", () => {
+    const lines = ["R3 is not met: A. Its test failed.", "R30 is not met: B.", "R7 is not met: C.", "The header is clipped."];
+    assert.deepEqual(withoutKnownFailing(lines, ["R3"]), ["R30 is not met: B.", "R7 is not met: C.", "The header is clipped."]);
+    const fix = polishFixLines(["R3", "R7"]).join("\n");
+    assert.match(fix, /^## Already failing before this pass\n\nR3 and R7 already failed on the live version before this UI pass\. Leave them as they are: don't spend steps on them/);
+  });
+
+  it("tells the judge, only on a polish with known failures, not to fail the product for them alone", async () => {
+    const { judgeContent } = await import("@/lib/judge");
+    const { BRIEF } = await import("@/lib/promote/__tests__/fixtures");
+    const req = (n: number) => ({ id: `R${n}`, text: `Thing ${n}`, kind: "asked" as const, words: "", savesData: false, canDo: true, cantDoWhy: null });
+    const brief = { ...BRIEF, requirements: [req(1), req(2), req(3)] };
+    const input = { brief, references: [], screenshots: [{ url: "https://x.public.blob.vercel-storage.com/01.png", caption: "Start" }], requirementTests: [{ id: "R1", ok: true }, { id: "R2", ok: true }, { id: "R3", ok: false }] };
+    const text = (parts: ReturnType<typeof judgeContent>["content"]) => parts.flatMap((p) => (p.type === "input_text" ? [p.text] : [])).join("\n");
+    const told = text(judgeContent({ ...input, knownFailing: ["R3"] }).content);
+    assert.ok(told.includes(polishJudgeNote(["R3"])));
+    assert.match(polishJudgeNote(["R3"]), /already failed R3 before this pass\. Report it in requirements as the screens show, but don't fail the product for it alone/);
+    assert.ok(!text(judgeContent(input).content).includes("UI pass on a live product"));
+  });
+});
