@@ -28,6 +28,7 @@ Use tokens in every style and inline SVG, never raw hex. Light and dark switch o
 | `--line` | dividers, table borders, tags |
 | `--fg`, `--fg-2` | primary text; secondary text (tagline, hints, meta, limits) |
 | `--accent`, `--on-accent` | the primary button, selected marks, progress; white on it |
+| `--bubble-out`, `--on-bubble-out` | the person's chat bubble and its text, a pair: set both or neither |
 | `--link` | links, text buttons |
 | `--tinted-bg`, `--tinted-fg` | tinted buttons, selected chips and segments |
 | `--secondary-bg` | secondary buttons, chips, segments, icon buttons, avatars |

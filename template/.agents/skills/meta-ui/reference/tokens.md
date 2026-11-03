@@ -50,6 +50,7 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 | `--on-media` | #FFFFFF | #FFFFFF | FB `--always-white` | lines and labels drawn over a photo |
 | `--scrim` | black 60% | black 60% | ours | dark glass under a label on a photo (white on it is 5.7:1 even over white) |
 | `--bubble-in` | #F0F0F0 | #303030 | FB incoming bubble | incoming chat bubble |
+| `--bubble-out`, `--on-bubble-out` | `--accent`, `--on-accent` | same | FB outgoing bubble | the person's bubble and its text, a pair: set both or neither |
 | `--skeleton` | #979A9F at 40% | #979A9F at 30% | FB glimmer gray, softened (ours) | skeleton shapes |
 
 ## Type

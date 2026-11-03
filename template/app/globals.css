@@ -68,6 +68,9 @@
 
   /* Chat and loading */
   --bubble-in: #f0f0f0;
+  /* The person's bubble and its text, a pair: change them together, never the background alone. */
+  --bubble-out: var(--accent);
+  --on-bubble-out: var(--on-accent);
   --skeleton: rgba(151, 154, 159, 0.4); /* Facebook's glimmer gray #979a9f, drawn at 40% */
 
   /* Type: Inter for UI and body, Montserrat for headings and big numbers, both self-hosted */
@@ -244,6 +247,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-16) 0; }
   padding: 6px max(var(--gutter), env(safe-area-inset-right, 0px)) 6px max(var(--gutter), env(safe-area-inset-left, 0px));
 }
 .appbar-name { min-width: 0; font: 700 20px/24px var(--font-display); letter-spacing: -0.01em; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
+/* Links that stand on their own are full controls for a finger: the name as a link home, every link in a <nav>, and a
+   link that is a part of its own in a stack, row, card or row of actions, like "Download the files". */
+a.appbar-name { display: inline-flex; align-items: center; min-height: var(--control-height); min-width: var(--control-height); }
+:where(nav a, [role="tablist"] a) { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-height); min-width: var(--control-height); padding-inline: var(--space-8); }
+:where(.stack, .row, .card, .actions) > a { display: inline-flex; align-items: center; justify-self: start; min-height: var(--control-height); min-width: var(--control-height); }
 a.appbar-name:hover { text-decoration: none; }
 .appbar-action { display: flex; flex: none; align-items: center; gap: var(--space-8); }
 @media (max-width: 479px) {
@@ -292,7 +300,9 @@ select {
   background-repeat: no-repeat;
 }
 input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--accent); }
-input[type="range"] { width: 100%; accent-color: var(--accent); }
+/* A checkbox or radio is pressed through its label, so the label row is a full control tall. */
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) { display: flex; align-items: center; gap: 10px; min-height: var(--control-height); }
+input[type="range"] { width: 100%; height: var(--control-height); accent-color: var(--accent); }
 progress { width: 100%; height: 6px; border: 0; border-radius: var(--pill); overflow: hidden; appearance: none; background: var(--progress-track); accent-color: var(--accent); }
 progress::-webkit-progress-bar { background: var(--progress-track); }
 progress::-webkit-progress-value { background: var(--accent); border-radius: var(--pill); }
@@ -325,9 +335,10 @@ button.text {
   border: 0; background: none; font: var(--type-label); color: var(--link); cursor: pointer;
 }
 button.text:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+/* A 40 px circle in a 44 px tap area: the fill stops at the content box. */
 button.icon {
-  display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
-  border: 0; border-radius: 50%; background-color: var(--secondary-bg); color: var(--fg); cursor: pointer;
+  display: inline-grid; place-items: center; flex: none; width: var(--control-height); height: var(--control-height); padding: 2px;
+  border: 0; border-radius: 50%; background-color: var(--secondary-bg); background-clip: content-box; color: var(--fg); cursor: pointer;
   transition: background-color var(--dur-xxs) linear, transform var(--dur-xxs) var(--ease-quick);
 }
 button.icon:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
@@ -374,7 +385,11 @@ button.tinted.ai[aria-busy="true"] {
 .chip.negative { background-color: var(--negative-soft); }
 .chip.negative svg { color: var(--negative); }
 .tag { border: 1px solid var(--line); color: var(--fg-2); font-weight: 500; }
-button.chip { min-height: 36px; padding: 0 14px; border: 0; font: var(--type-label); cursor: pointer; transition: background-color var(--dur-xxs) linear; }
+/* A filter chip draws 36 px tall inside a 44 px tap area: clear borders above and below, with the fill inside them. */
+button.chip {
+  min-height: var(--control-height); padding: 0 14px; border: 0; border-block: 4px solid transparent; background-clip: padding-box;
+  font: var(--type-label); cursor: pointer; transition: background-color var(--dur-xxs) linear;
+}
 button.chip:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
 .chip[aria-pressed="true"] { background-color: var(--tinted-bg); color: var(--tinted-fg); }
 button.chip[aria-pressed="true"]:hover:not(:disabled) { background-image: none; background-color: var(--tinted-hover-bg); }
@@ -405,7 +420,7 @@ button.chip[aria-pressed="true"]::before {
 .segmented[data-layout="stack"] { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
 .segmented label {
   position: relative; display: flex; min-width: 0; align-items: center; justify-content: center; gap: 6px;
-  min-height: 36px; padding: 6px 12px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
+  min-height: var(--control-height); padding: 6px 12px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
   text-align: center; line-height: 18px; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-xxs) linear;
 }
 /* Stacked rows read as a list: the text starts after room kept for the check, so choosing never moves it. */
@@ -445,8 +460,8 @@ button.chip[aria-pressed="true"]::before {
    takes the room and wraps a long name, an 88 px .num field and a remove button, under one header row that is only for
    the eye (each field has an aria-label). Rows with no .num field drop that column. */
 .rows { display: grid; gap: var(--space-8); margin: 0; padding: 0; list-style: none; }
-.rows > li { display: grid; grid-template-columns: minmax(0, 1fr) 88px 40px; align-items: center; gap: var(--space-8); }
-.rows > li:not(:has(> .num)) { grid-template-columns: minmax(0, 1fr) 40px; }
+.rows > li { display: grid; grid-template-columns: minmax(0, 1fr) 88px var(--control-height); align-items: center; gap: var(--space-8); }
+.rows > li:not(:has(> .num)) { grid-template-columns: minmax(0, 1fr) var(--control-height); }
 .rows textarea { min-height: var(--control-height); }
 .rows > .rows-head { font: 600 13px/18px var(--font); color: var(--fg-2); }
 .rows > .rows-head > * { padding-inline: 13px; }
@@ -589,7 +604,7 @@ button.chip[aria-pressed="true"]::before {
    shows them together, and two share the whole row), one column on phones. Each tile is a .media whose figcaption
    holds its words and its icon buttons, one button tall with or without one, so the captions line up. */
 .gallery { display: grid; gap: var(--space-16) var(--space-12); grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
-.gallery .media > figcaption { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); min-height: 40px; }
+.gallery .media > figcaption { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); min-height: var(--control-height); }
 
 /* Dropzone (components/FilePicker) */
 .dropzone {
@@ -617,7 +632,7 @@ button.chip[aria-pressed="true"]::before {
 .thread { display: flex; flex-direction: column; gap: var(--space-8); }
 .bubble { max-width: min(82%, 560px); padding: var(--space-8) var(--space-12); border-radius: var(--radius-bubble); font: 400 15px/20px var(--font); overflow-wrap: anywhere; }
 .bubble.in { align-self: flex-start; background: var(--bubble-in); color: var(--fg); }
-.bubble.out { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
+.bubble.out { align-self: flex-end; background: var(--bubble-out); color: var(--on-bubble-out); }
 .bubble.out a { color: inherit; }
 .bubble.in + .bubble.in, .bubble.out + .bubble.out { margin-top: -6px; }
 .bubble.in:has(+ .bubble.in) { border-bottom-left-radius: 4px; }
@@ -628,17 +643,18 @@ button.chip[aria-pressed="true"]::before {
 /* A pill while it is one line; the radius stays put when it grows, so longer text keeps square-ish corners. */
 .composer {
   display: flex; align-items: flex-end; gap: var(--space-8); min-height: var(--control-height);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-16); background: var(--surface-2); border-radius: calc(var(--control-height) / 2);
+  padding: 0 0 0 var(--space-16); background: var(--surface-2); border-radius: calc(var(--control-height) / 2);
 }
 .composer:has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .composer textarea {
-  flex: 1; min-width: 0; min-height: 36px; max-height: 9em; padding: 6px 0; border: 0; border-radius: 0;
+  flex: 1; min-width: 0; min-height: var(--control-height); max-height: 9em; padding: 10px 0; border: 0; border-radius: 0;
   background: transparent; resize: none; field-sizing: content;
 }
 .composer textarea:focus-visible { outline: none; }
+/* Send fills the composer's height, a full tap area, and draws a 36 px circle inside it (the fill stops at the content box). */
 .composer .send {
-  display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
-  background-color: var(--accent); color: var(--on-accent); cursor: pointer; transition: transform var(--dur-xxs) var(--ease-quick);
+  display: grid; place-items: center; flex: none; width: var(--control-height); height: var(--control-height); padding: 4px; border: 0; border-radius: 50%;
+  background-color: var(--accent); background-clip: content-box; color: var(--on-accent); cursor: pointer; transition: transform var(--dur-xxs) var(--ease-quick);
 }
 .composer .send:hover:not(:disabled) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
 .composer .send:active:not(:disabled) { transform: scale(0.95); }
