@@ -142,5 +142,31 @@
       "spark-open",
       "trust"
     ]
+  },
+  "snap_9heVjeRgxcye4EkOwb8DgxVjkj7H": {
+    "createdAt": "2026-11-03T16:17:48.172Z",
+    "templateHash": "12a7b38a8ea7",
+    "capOverlays": [
+      "code",
+      "connect",
+      "core",
+      "data",
+      "extension",
+      "files",
+      "fleet",
+      "games",
+      "games-babylon",
+      "games-phaser",
+      "gpu",
+      "hardware",
+      "jobs",
+      "live",
+      "media",
+      "musecode",
+      "platform",
+      "runtime",
+      "spark-open",
+      "trust"
+    ]
   }
 }
