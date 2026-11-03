@@ -389,6 +389,7 @@ expect(Math.max(...heights)).toBeGreaterThan(4);
 ```
 
 - The overlay's viewBox is the image's pixel size; it takes its height from that, so shapes line up at any width, with or without a caption. `strokeWidth` is in screen pixels, however far the image is scaled down.
+- Turn the model's numbers into the image's pixels with `@/lib/client/overlay` (`toPoint`, `toRect`, `maskTransform`, `viewBox`; `toPercent` for HTML dots), so dots, boxes and masks share one scale (product-ui, Overlays).
 - Over a photo, draw in `var(--on-media)`: white lines get a soft dark halo, so they show on light photos too. Over a page render, a document, a drawing or another light image, draw in `var(--signature-line)` at 3 px with a 15% `--signature` fill, as above. For several kinds of object, stroke each kind with one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink`, `--teal`.
 - An image with nothing drawn over it fits the screen's height, centered with its caption, so a whole page shows at once.
 - The figcaption is the one line that says the result in words, so there is no second status line. When the model names the image, that name is the card's h2, not the caption. The card's ModelChip credits the model for everything in the card, so an `.ai-badge` ("AI" or "Made with AI") goes only where it can't: on a model's tile in a gallery that also holds the person's photo, or on an image in a card with no ModelChip. Over a photo it is white on `--scrim` in the corner; on a page or printable, whose corner holds content, it leads the figcaption.

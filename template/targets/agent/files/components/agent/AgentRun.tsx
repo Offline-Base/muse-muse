@@ -5,6 +5,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { Markdown } from "@/components/Markdown";
 import { ModelChip } from "@/components/ModelChip";
 import { Skeleton } from "@/components/Skeleton";
+import { UsageStrip, type Usage } from "@/components/UsageStrip";
 import { stopMessage, type AgentStep } from "@/lib/agent/events";
 import type { UseAgent } from "@/lib/agent/client";
 import { ConfirmCard } from "./ConfirmCard";
@@ -34,12 +35,18 @@ export function AgentRun<T>({
   agent,
   title = "Your answer",
   numberedSources = false,
+  usage,
   children,
 }: {
   agent: UseAgent<T>;
   title?: string;
   /** Number the sources, when the answer points at them by number, as deep research's does. */
   numberedSources?: boolean;
+  /**
+   * The cost line under the answer. By default it shows the run's cost, and gives way to a UsageStrip the page places
+   * itself, so cost never shows twice. Pass token counts to add them to this line, or false to leave it out.
+   */
+  usage?: false | Omit<Usage, "costUsd">;
   children?: (answer: T) => ReactNode;
 }) {
   const { view, busy } = agent;
@@ -124,7 +131,7 @@ export function AgentRun<T>({
         {/* The answer comes first once there is one, with what it took under it. */}
         {finished ? steps : null}
 
-        {finished && view.costUsd > 0 ? <p className="meta">About ${view.costUsd.toFixed(view.costUsd < 0.1 ? 3 : 2)} in model and tool costs.</p> : null}
+        {finished && usage !== false ? <UsageStrip usage={{ ...usage, costUsd: view.costUsd }} what="in model and tool costs" fallback /> : null}
 
         {running || canGoOn ? (
           <div className="actions">

@@ -28,6 +28,7 @@ Build: paste or upload a noisy alert feed, and get repeated patterns, a sharper 
 - Use zod schemas in place of state files. The page holds the current rule and notes, and sends them with each call.
 - Keep notes under a fixed size. When they pass it, make one call to compact them, and show the result to the person.
 - Proposed changes to the rule are shown as a diff, and the person accepts them.
+- Clearing the saved run is one `<ConfirmButton>` (product-ui, Clear, delete and reset), placed once, never a full-width button on every page.
 
 Check: a sample feed with a known repeating alert, and a test that an invented row id is rejected. Limit: memory lives in this browser, and the product acts on nothing. It only proposes.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/02_agent_patterns/05_alert_fatigue_copilot

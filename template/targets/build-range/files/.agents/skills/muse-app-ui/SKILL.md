@@ -88,6 +88,8 @@ Set these from the Design direction first, in both color blocks of `app/muse-app
 | `.media`, `.overlay`, `.gallery` | image results with overlays; several images |
 | `.note`, `.error`, `.limits`, `.empty` | tips, failures, limits, nothing yet |
 | `.toast`, `dialog`, `details` | confirmations, one short question, long extras |
+| `<ConfirmButton>` | clear, delete and reset: a small text button that asks first in a dialog |
+| `<UsageStrip>` | a result's cost, tokens and cached tokens, in one line, once per page |
 | `<Icon name />` | the kit's icons, listed below. An npm icon set or your own SVG is fine for what they miss |
 | `<Markdown text />` | model prose |
 
@@ -187,7 +189,7 @@ Every token switches with `prefers-color-scheme`. A direction with one fixed sch
 - With the default tokens, these text pairs pass WCAG AA in both modes. Once you change tokens, **check each text pair yourself: every text color on its ground reaches at least 4.5:1 (3:1 for large text)**: `--fg` and `--fg-2` on `--bg`, `--surface`, `--surface-2`, `--glass` or `--signature-soft`; `--link` on the first three; `--tinted-fg` on `--tinted-bg`; `--signature-ink` on `--signature-soft` or `--surface`; `--fg` on `--segment`; white on `--accent` or `--ai-gradient`; `--on-media` on `--scrim`. Check anything else first. White on the send gradient is for its icon only.
 - Every control has a label. FilePicker and Segmented show theirs. The Composer's label is for screen readers, so its placeholder says what to type, in 30 characters or fewer: the box grows to fit its placeholder, and a longer one wraps to a second line on a phone. Icon-only buttons need `aria-label`.
 - Never remove focus outlines, the composer's included. Status is never color alone: pair it with an icon and words (pressed chips and the chosen segment show a check by themselves).
-- Controls stay 44 px tall for fingers, even where the look could go smaller. Icon-only buttons are 40 px circles, the composer's Send included (`reference/tokens.md`, Size). Don't shrink either, and don't grow Send to 44.
+- Controls stay 44 px tall for fingers, even where the look could go smaller. Icon-only buttons are 40 px circles, the composer's Send included (`reference/tokens.md`, Size), and every primary control, those included, is at least 44 x 44 px to tap at phone size (product-ui, Accessibility). Don't shrink either.
 
 ## Do and don't
 

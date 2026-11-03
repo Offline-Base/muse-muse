@@ -47,8 +47,9 @@ Build: upload a photo, and get dots placed right on each item, with a card for e
 
 - `respondJson` returns `{ items: [{ name, x, y, note }] }`, with `x` and `y` integers on a **0 to 1000 grid** across the image, where (0, 0) is the top left.
 - Reject anything outside 0 to 1000 in the schema.
-- Code draws the dots and tooltips over the image, using percent positions (`x / 10`%), so they stay right at any size. Never ask the model for HTML here.
+- Code draws the dots and tooltips over the image with `@/lib/client/overlay`: `toPercent(item, { units: "1000" })` for each dot, so it stays right at any size. If the schema also has a box per item, draw it with `toRect(box, { units: "1000", to: natural })` in an `svg.overlay` with `viewBox={viewBox(natural)}`, the same units as the dots. Never divide or scale by hand, and never ask the model for HTML here.
+- Each dot is a button at least 44 x 44 px to tap on a phone (a small drawn dot with a larger clear ring). Tapping one scrolls its card into view and focuses it (product-ui, Layout).
 - Keep tooltips inside the image frame near its edges.
 
-If the notes touch on food or health, the page says "General information, not medical advice", and never tells a person what to eat for a condition. Check: unit tests for the schema and position math, and a screenshot on a sample image. Limit: points are approximate. Use SAM only when exact outlines matter (`meta-sam`).
+If the notes touch on food or health, the page says "General information, not medical advice", and never tells a person what to eat for a condition. Check: unit tests for the schema and position math, including `assert.deepEqual(overlayProblems(natural, shapes), [])` on the sample's real output, so each box's center lands inside the image and near its dot; and a screenshot on a sample image. Limit: points are approximate. Use SAM only when exact outlines matter (`meta-sam`).
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/03_use_cases/10_perception_grounding

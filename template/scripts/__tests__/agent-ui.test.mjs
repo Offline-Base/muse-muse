@@ -54,6 +54,15 @@ test("a finished run shows its answer card with sources and the cost, as an esti
   assert.match(html, /<details open=""><summary>1 step/, "a judge shot and a test can see the finished steps");
 });
 
+test("the cost line is one UsageStrip, which the page can fill with tokens or turn off, so cost never shows twice", () => {
+  const done = { status: "completed", answer: "Yes.", text: "Yes.", costUsd: 0.084 };
+  assert.equal((render(done).match(/data-usage/g) ?? []).length, 1);
+  assert.match(render(done, { usage: { input: 314, output: 871, cached: 0 } }), /About \$0\.084 in model and tool costs · 1,185 tokens · 0 from cache/);
+  const off = render(done, { usage: false });
+  assert.doesNotMatch(off, /data-usage|About \$/);
+  assert.doesNotMatch(render({ ...done, costUsd: 0 }), /data-usage/);
+});
+
 test("a structured answer draws itself", () => {
   const html = render({ status: "completed", answer: { summary: "Fields" }, text: "" }, {}, (answer) => h("p", null, `Drawn: ${answer.summary}`));
   assert.match(html, /<div data-result="true"><p>Drawn: Fields<\/p><\/div>/);
