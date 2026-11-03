@@ -31,6 +31,8 @@ const nextConfig: NextConfig = {
     // Drive export builds a drive's pages from drive/ and the kit's list at request time (docs/DRIVE_EXPORT.md).
     "/api/device/drive": ["./drive/**/*", "./lib/drive/kit-files.json"],
     "/api/gateway/gadget": ["./drive/**/*", "./lib/drive/kit-files.json"],
+    // The rover's setup packs the board kit from muse-device/ at request time and sends it through the fleet (lib/device/rover.ts).
+    "/api/device/rover": ["./muse-device/server.py", "./muse-device/autostart.sh", "./muse-device/rover/**/*"],
   },
   ...(GEO_REWRITES.length ? { rewrites: async () => ({ beforeFiles: GEO_REWRITES, afterFiles: [], fallback: [] }) } : {}),
 };

@@ -1643,4 +1643,16 @@ export const env = {
   get hardwareBoardKey(): string | null {
     return optional("HARDWARE_BOARD_KEY");
   },
+
+  // ---------- The demo rover (docs/ROVER.md) ----------
+
+  /**
+   * ROVER_ENABLED: the rover card on /device, /api/device/rover and its drive route, and the rover's tools for Muse Wonder.
+   * Signed-in admins only, never OPEN_ACCESS=admin's shared account. Needs BOARD_FLEET_URL and BOARD_FLEET_TOKEN, with the
+   * fleet's admin role, since setup runs on the board as root. Off: the card isn't shown and the routes answer 404, touching
+   * nothing. The board is ROVER_BOARD, read in lib/device/rover.ts.
+   */
+  get roverEnabled(): boolean {
+    return flag("ROVER_ENABLED");
+  },
 };

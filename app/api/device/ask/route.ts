@@ -3,7 +3,8 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { ASKS_PER_MINUTE, runDeviceAgent } from "@/lib/device/agent";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { cachedFleetBoards, fleetAsk, fleetConfigured } from "@/lib/device/fleet";
-import { DEFAULT_PLATFORM_MODEL } from "@/lib/env";
+import { callRoverTool, listRoverTools, roverBoard } from "@/lib/device/rover";
+import { DEFAULT_PLATFORM_MODEL, env } from "@/lib/env";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -22,8 +23,9 @@ class PausedError extends Error {}
 
 /**
  * POST {prompt} -> {answer, steps}: Muse Wonder answers using the board's tools and, when it's set up, the fleet's read-only
- * tools. Either is enough. Admins only, since it uses a real camera and microphone and spends model credits. 503
- * device_not_configured (neither is set up) or paused, 429 rate_limited, 502 device_unavailable or model_unavailable.
+ * tools, and with ROVER_ENABLED the rover's tools through the fleet. Either board or the fleet is enough. Admins only, since
+ * it uses a real camera and microphone and spends model credits. 503 device_not_configured (neither is set up) or paused,
+ * 429 rate_limited, 502 device_unavailable or model_unavailable.
  */
 export const POST = route(async (req: Request) => {
   const user = await requireAdminOrAutomation(req);
@@ -34,6 +36,8 @@ export const POST = route(async (req: Request) => {
   const config = deviceConfig();
   // OPEN_ACCESS=admin on a preview acts as an admin for anyone who opens it, and these use the fleet's token.
   const fleet = fleetConfigured() && !user.openAccess;
+  // The rover is reached through the fleet with a token only this server holds, so the same accounts are kept from it.
+  const rover = fleet && env.roverEnabled;
   if (!config && !fleet) return errorJson(503, "device_not_configured");
   if (await spendPaused()) return errorJson(503, "paused");
   const key = `device:ask:${user.id}`;
@@ -56,6 +60,7 @@ export const POST = route(async (req: Request) => {
         callTool: async (name, args) =>
           config ? callDeviceTool(config, name, args) : { content: [{ type: "text", text: `No board is set up, so ${name} didn't run.` }], isError: true },
         ...(fleet ? { fleet: { boards: () => cachedFleetBoards(), ask: (input) => fleetAsk(input) } } : {}),
+        ...(rover ? { rover: { listTools: () => listRoverTools(roverBoard()), callTool: (name, args) => callRoverTool(roverBoard(), name, args) } } : {}),
       }),
     );
   } catch (err) {

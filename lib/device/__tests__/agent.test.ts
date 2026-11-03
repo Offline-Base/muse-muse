@@ -255,3 +255,129 @@ describe("runDeviceAgent", () => {
     await assert.rejects(runDeviceAgent("look", h.deps), /fetch failed/);
   });
 });
+
+describe("runDeviceAgent with the rover", () => {
+  const ROVER_LIST = ["rover_drive", "rover_stop", "rover_look", "rover_ranges", "rover_photo", "rover_status", "capture_image", "run_command"];
+  const SAFE = ["capture_image", "rover_stop", "rover_look", "rover_ranges", "rover_photo", "rover_status"];
+  const offered = (body: ResponseCreateParamsNonStreaming) => (body.tools as unknown as Array<{ name: string }>).map((tool) => tool.name);
+
+  /** The board lists only a camera, and the rover lists its tools and, as muse-device's server does, the board's others too. */
+  function withRover(replies: ModelResponse[], roverResults: Record<string, DeviceToolResult> = {}) {
+    const h = harness(replies, { capture_image: PHOTO });
+    const roverCalled: Array<{ name: string; args: Record<string, unknown> }> = [];
+    h.deps.rover = {
+      listTools: async () => ROVER_LIST.map((name) => ({ name, description: `${name}.`, inputSchema: { type: "object" } })),
+      callTool: async (name, args) => {
+        roverCalled.push({ name, args });
+        return roverResults[name] ?? { content: [{ type: "text", text: '{"front_mm":500}' }], isError: false };
+      },
+    };
+    return { ...h, roverCalled };
+  }
+
+  it("offers the rover's tools that read, look and stop, and only the rover's own, with a word about them", async () => {
+    const h = withRover([reply("r1", [], "Clear ahead.")]);
+    await runDeviceAgent("how far is the wall in front of the rover?", h.deps);
+    assert.deepEqual(offered(h.bodies[0]!), SAFE);
+    assert.match(h.bodies[0]!.instructions!, /rover_ranges before each move/);
+  });
+
+  it("offers rover_drive only when the person asks for a move, and not when they say not to", async () => {
+    for (const prompt of ["Drive forward a little", "turn left and take a photo", "go forward until the wall", "back up", "move closer to the door", "Can you steer it around the box?"]) {
+      const h = withRover([reply("r1", [], "Sure.")]);
+      await runDeviceAgent(prompt, h.deps);
+      assert.deepEqual(offered(h.bodies[0]!), ["capture_image", "rover_drive", "rover_stop", "rover_look", "rover_ranges", "rover_photo", "rover_status"], prompt);
+    }
+    for (const prompt of ["Did anything move in the photo?", "What's on the left?", "whose turn is it on the board?", "Don't drive, just tell me what's ahead", "How did the setup go?"]) {
+      const h = withRover([reply("r1", [], "Sure.")]);
+      await runDeviceAgent(prompt, h.deps);
+      assert.deepEqual(offered(h.bodies[0]!), SAFE, prompt);
+    }
+  });
+
+  it("takes rover_drive away once a photo from either camera is in the conversation", async () => {
+    for (const photo of ["rover_photo", "capture_image"]) {
+      const h = withRover(
+        [reply("r1", [toolCall("rover_ranges", "{}", "c1"), toolCall(photo, "{}", "c2")]), reply("r2", [toolCall("rover_drive", '{"left":100,"right":100}')]), reply("r3", [], "Done.")],
+        { rover_photo: PHOTO },
+      );
+      const result = await runDeviceAgent("drive forward and look", h.deps);
+      assert.ok(offered(h.bodies[0]!).includes("rover_drive"), photo);
+      assert.ok(!offered(h.bodies[1]!).includes("rover_drive"), photo);
+      assert.ok(offered(h.bodies[1]!).includes("rover_stop"), photo);
+      assert.ok(!h.roverCalled.some((c) => c.name === "rover_drive"), photo);
+      assert.equal(result.steps.at(-1)!.isError, true);
+    }
+  });
+
+  it("goes on offering rover_drive after a reading of the ranges", async () => {
+    const h = withRover([reply("r1", [toolCall("rover_ranges")]), reply("r2", [], "Done.")]);
+    await runDeviceAgent("drive forward", h.deps);
+    assert.ok(offered(h.bodies[1]!).includes("rover_drive"));
+  });
+
+  it("holds a drive to a short, slower one that waits, and fills in ms so leaving it out can't drive longer", async () => {
+    for (const args of ['{"left":100,"right":100,"ms":1500}', '{"left":200,"right":100}', '{"left":100,"right":-255}', '{"left":100}', '{"direction":"forward"}']) {
+      const h = withRover([reply("r1", [toolCall("rover_drive", args)]), reply("r2", [], "No.")]);
+      const result = await runDeviceAgent("drive forward", h.deps);
+      assert.deepEqual(h.roverCalled, [], args);
+      assert.equal(result.steps[0]!.isError, true);
+      assert.match(JSON.stringify(outputOf(h.bodies[1]!).output), /didn't run/);
+    }
+    const h = withRover([reply("r1", [toolCall("rover_drive", '{"left":-120,"right":120,"wait":false,"note":"x"}')]), reply("r2", [], "Turned.")]);
+    await runDeviceAgent("turn left", h.deps);
+    assert.deepEqual(h.roverCalled, [{ name: "rover_drive", args: { left: -120, right: 120, ms: 500, wait: true } }]);
+    // The model is told the limits it's held to, not the rover's own wider ones.
+    const drive = (h.bodies[0]!.tools as unknown as Array<{ name: string; parameters: { properties: { left: { maximum: number }; ms: { maximum: number } } } }>).find((tool) => tool.name === "rover_drive")!;
+    assert.equal(drive.parameters.properties.left.maximum, 160);
+    assert.equal(drive.parameters.properties.ms.maximum, 1000);
+  });
+
+  it("checks a look, and passes the rover's other tools their arguments as they are", async () => {
+    const h = withRover([reply("r1", [toolCall("rover_look", '{"pan":120}', "c1"), toolCall("rover_photo", '{"width":320}', "c2")]), reply("r2", [], "Done.")], { rover_photo: PHOTO });
+    const result = await runDeviceAgent("what's to the right of the rover?", h.deps);
+    assert.equal(result.steps[0]!.isError, true);
+    assert.deepEqual(h.roverCalled, [{ name: "rover_photo", args: { width: 320 } }]);
+  });
+
+  it("calls the rover for its tools and the board for the board's", async () => {
+    const h = withRover([reply("r1", [toolCall("rover_ranges", "{}", "c1"), toolCall("capture_image", "{}", "c2")]), reply("r2", [], "Both.")]);
+    await runDeviceAgent("what's around the rover?", h.deps);
+    assert.deepEqual(h.roverCalled.map((c) => c.name), ["rover_ranges"]);
+    assert.deepEqual(h.called.map((c) => c.name), ["capture_image"]);
+  });
+
+  it("won't let the board stand in for the rover, or the rover's list bring anything else", async () => {
+    const h = withRover([reply("r1", [toolCall("run_command", '{"command":"ls"}')]), reply("r2", [], "No.")]);
+    h.deps.listTools = async () => ["capture_image", "rover_drive"].map((name) => ({ name, inputSchema: { type: "object" } }));
+    const result = await runDeviceAgent("drive forward", h.deps);
+    const names = offered(h.bodies[0]!);
+    assert.equal(names.filter((name) => name === "rover_drive").length, 1);
+    assert.ok(!names.includes("run_command"));
+    assert.equal(result.steps[0]!.isError, true);
+    assert.deepEqual([...h.called, ...h.roverCalled], []);
+  });
+
+  it("goes on without the rover when it doesn't answer or isn't set up", async () => {
+    const h = withRover([reply("r1", [toolCall("rover_drive", '{"left":100,"right":100}')]), reply("r2", [], "No rover.")]);
+    h.deps.rover!.listTools = async () => {
+      throw new Error("The tool server has not made its token yet.");
+    };
+    const result = await runDeviceAgent("drive forward", h.deps);
+    assert.deepEqual(offered(h.bodies[0]!), ["capture_image"]);
+    assert.doesNotMatch(h.bodies[0]!.instructions!, /rover/);
+    assert.deepEqual(h.roverCalled, []);
+    assert.equal(result.answer, "No rover.");
+  });
+
+  it("gives a rover that fails partway to the model as a failed tool", async () => {
+    const h = withRover([reply("r1", [toolCall("rover_stop")]), reply("r2", [], "It didn't answer.")]);
+    h.deps.rover!.callTool = async () => {
+      throw new Error("fetch failed for https://fleet.example.com/admin/device/ArduinoQ-01/mcp");
+    };
+    const result = await runDeviceAgent("stop", h.deps);
+    assert.equal(result.steps[0]!.isError, true);
+    assert.doesNotMatch(JSON.stringify(result), /fleet\.example/);
+    assert.equal(result.answer, "It didn't answer.");
+  });
+});

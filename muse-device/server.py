@@ -21,6 +21,10 @@ The training tools need setup-train.sh to have run and train.py beside this file
 this server's python has no torch. Each run keeps its state in ~/train/runs/<name>/, so it outlives a restart of this server.
 Under systemd, give this server's unit KillMode=process and OOMPolicy=continue. Otherwise restarting it ends a run, and a run
 killed for memory takes the server down with it, leaving nothing to report that.
+
+The rover's tools (drive, stop, look, ranges, rover_status) are offered where ~/.muse-device/rover.json exists, which
+rover/setup-rover.sh writes on the rover's Arduino UNO Q, and need rover/bridge_client.py beside this file. They call the
+rover's sketch through the board's arduino-router (docs/ROVER.md). capture_image takes the rover's photos.
 """
 import argparse
 import array
@@ -39,6 +43,7 @@ import shutil
 import signal
 import socket
 import ssl
+import struct
 import subprocess
 import tempfile
 import threading
@@ -55,8 +60,17 @@ try:
 except ImportError:
     # Copied without drive.py: every other tool answers as before, and the drive tools aren't offered.
     drive = None
+try:
+    from rover import bridge_client
+except ImportError:
+    # Copied without rover/: the rover's tools aren't offered, as on every board but the rover's.
+    bridge_client = None
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"]
 MAX_BODY_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024
@@ -123,6 +137,21 @@ REQUEST_TIMEOUT_S = 15
 MAX_CONNECTIONS = 32
 # secrets.token_urlsafe(32) makes 43. Under this the token is empty, cut short, or one anyone could guess.
 MIN_TOKEN_CHARS = 32
+# The rover kit (rover/, docs/ROVER.md). The sketch holds a drive to 3000 ms and a speed to 255 too, and stops by itself.
+ROVER_FILE = os.path.join(STATE_DIR, "rover.json")
+ROVER_CALL_TIMEOUT_S = 3
+ROVER_MAX_DRIVE_MS = 3000
+ROVER_MAX_SPEED = 255
+ROVER_MAX_DEGREES = 90
+# After a drive's time, for the sketch to have stopped; after a look, for an SG90 to have swung across.
+ROVER_STOP_SETTLE_S = 0.15
+ROVER_LOOK_SETTLE_S = 0.5
+# A VL53L0X reads 8190 or so with nothing in range, which is about 1.2 m in its default mode.
+ROVER_CLEAR_MM = 8000
+# struct v4l2_capability is 104 bytes, and VIDIOC_QUERYCAP is _IOR('V', 0, struct v4l2_capability).
+VIDIOC_QUERYCAP = 0x80685600
+V4L2_CAP_VIDEO_CAPTURE = 0x00000001
+V4L2_CAP_DEVICE_CAPS = 0x80000000
 
 # start_model's floor, on top of the files themselves: llama-server's own buffers, and its cache per 4096 tokens of context.
 # Estimates, not measured on a board: this is here to stop a load that can't fit, not to judge one that nearly does.
@@ -163,12 +192,33 @@ def run(args, timeout=10):
     return done.stdout.strip() if done.returncode == 0 else None
 
 
+def captures_video(device):
+    """Whether a video node captures frames. The UNO Q's video0 and video1 are its video codec's, which only turn frames
+    into other frames in memory. When it can't tell, such as without permission to open the node, it says yes."""
+    if fcntl is None:
+        return True
+    caps = bytearray(104)
+    try:
+        fd = os.open(device, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return True
+    try:
+        fcntl.ioctl(fd, VIDIOC_QUERYCAP, caps)
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+    capabilities, device_caps = struct.unpack_from("=II", caps, 84)
+    return bool((device_caps if capabilities & V4L2_CAP_DEVICE_CAPS else capabilities) & V4L2_CAP_VIDEO_CAPTURE)
+
+
 def find_cameras():
-    """Video nodes that capture frames. A UVC camera's metadata node has index 1, so index 0 picks the real one."""
+    """Video nodes that capture frames. A UVC camera's metadata node has index 1, so index 0 picks the real one, and a
+    codec's nodes capture nothing."""
     cameras = []
     for node in sorted(glob.glob("/sys/class/video4linux/video*")):
-        if read_text(f"{node}/index") == "0":
-            name = os.path.basename(node)
+        name = os.path.basename(node)
+        if read_text(f"{node}/index") == "0" and captures_video(f"/dev/{name}"):
             cameras.append({"device": f"/dev/{name}", "name": read_text(f"{node}/name")})
     return cameras
 
@@ -964,6 +1014,103 @@ def drive_tool(work):
     return call
 
 
+def rover_call(method, *params):
+    """One call to the rover's sketch through the board's router. The sketch answers in JSON, and a failure is a ToolError."""
+    try:
+        answer = bridge_client.call(method, params, timeout=ROVER_CALL_TIMEOUT_S)
+    except bridge_client.BridgeError as err:
+        raise ToolError(f"The rover didn't answer {method}. {err} If the Muse Rover app isn't running, setup-rover.sh starts it.")
+    try:
+        value = json.loads(answer)
+    except (TypeError, ValueError):
+        value = None
+    if not isinstance(value, dict):
+        raise ToolError(f"The rover's answer to {method} isn't one this server can read, so its sketch may be another version. Run setup-rover.sh again.")
+    return value
+
+
+def clamped(args, name, default, low, high, notes):
+    """A number held to low..high and made whole, with a note in notes when it had to be."""
+    value = args.get(name, default)
+    if value is None:
+        raise ToolError(f"{name} is needed: a number from {low} to {high}.")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ToolError(f"{name} must be a number from {low} to {high}.")
+    kept = max(low, min(high, round(value)))
+    if kept != value:
+        notes.append(f"{name} {value} became {kept}")
+    return kept
+
+
+def range_report(ranges):
+    """The sketch's three distances in mm, or null with why: missing (it isn't answering) or clear (nothing within reach)."""
+    report, sensors = {}, {}
+    for side in ("front", "left", "right"):
+        mm = ranges.get(side)
+        if isinstance(mm, bool) or not isinstance(mm, int) or mm < 0:
+            report[f"{side}_mm"], sensors[side] = None, "missing"
+        elif mm >= ROVER_CLEAR_MM:
+            report[f"{side}_mm"], sensors[side] = None, "clear"
+        else:
+            report[f"{side}_mm"], sensors[side] = mm, "ok"
+    return {**report, "sensors": sensors}
+
+
+def rover_drive(args):
+    notes = []
+    left = clamped(args, "left", None, -ROVER_MAX_SPEED, ROVER_MAX_SPEED, notes)
+    right = clamped(args, "right", None, -ROVER_MAX_SPEED, ROVER_MAX_SPEED, notes)
+    ms = clamped(args, "ms", 500, 0, ROVER_MAX_DRIVE_MS, notes)
+    wait = args.get("wait", True)
+    if not isinstance(wait, bool):
+        raise ToolError("wait must be true or false.")
+    answer = rover_call("drive", left, right, ms)
+    if not answer.get("ok"):
+        raise ToolError(f"The rover didn't move: {answer.get('why') or 'it gave no reason'}. Backing up and turning on the spot still work.")
+    result = {key: answer.get(key, value) for key, value in (("left", left), ("right", right), ("ms", ms))}
+    if wait:
+        time.sleep(result["ms"] / 1000 + ROVER_STOP_SETTLE_S)
+        status = rover_call("status")
+        result.update(driving=status.get("driving"), stopped_because=status.get("last_stop"), ticks=rover_call("ticks"))
+    if notes:
+        result["clamped"] = notes
+    return text_result(json.dumps(result))
+
+
+def rover_stop(_args):
+    rover_call("stop")
+    return text_result(json.dumps({"stopped": True}))
+
+
+def rover_look(args):
+    if args.get("pan") is None and args.get("tilt") is None:
+        raise ToolError("Give pan, tilt or both, in degrees from straight ahead.")
+    notes = []
+    # The one not given stays where it is.
+    where = rover_call("status") if args.get("pan") is None or args.get("tilt") is None else {}
+    pan = clamped(args, "pan", where.get("pan", 0), -ROVER_MAX_DEGREES, ROVER_MAX_DEGREES, notes)
+    tilt = clamped(args, "tilt", where.get("tilt", 0), -ROVER_MAX_DEGREES, ROVER_MAX_DEGREES, notes)
+    answer = rover_call("look", pan, tilt)
+    result = {"pan": answer.get("pan", pan), "tilt": answer.get("tilt", tilt)}
+    if (result["pan"], result["tilt"]) != (pan, tilt):
+        notes.append(f"the mount's limits in rover.json held it to pan {result['pan']} and tilt {result['tilt']}")
+    time.sleep(ROVER_LOOK_SETTLE_S)
+    if notes:
+        result["clamped"] = notes
+    return text_result(json.dumps(result))
+
+
+def rover_ranges(_args):
+    return text_result(json.dumps(range_report(rover_call("ranges"))))
+
+
+def rover_status(_args):
+    status = rover_call("status")
+    status["ticks"] = rover_call("ticks")
+    status["ranges"] = range_report(rover_call("ranges"))
+    return text_result(json.dumps(status))
+
+
 def text_result(text):
     return {"content": [{"type": "text", "text": text}]}
 
@@ -1210,6 +1357,62 @@ DRIVE_TOOLS = {} if drive is None else {
     ),
 }
 TOOLS.update(DRIVE_TOOLS)
+SPEED_PROP = {"type": "integer", "minimum": -ROVER_MAX_SPEED, "maximum": ROVER_MAX_SPEED}
+DEGREES_PROP = {"type": "integer", "minimum": -ROVER_MAX_DEGREES, "maximum": ROVER_MAX_DEGREES}
+# offer_rover_tools adds these on the board setup-rover.sh set up.
+ROVER_TOOLS = {} if bridge_client is None else {
+    "drive": (
+        rover_drive,
+        {
+            "description": f"Drives the rover's two wheels for up to {ROVER_MAX_DRIVE_MS} ms, then it stops by itself. left and right are each wheel's speed, from -{ROVER_MAX_SPEED} (full back) to {ROVER_MAX_SPEED} (full forward): both positive goes forward, both negative back, opposite signs turn on the spot. Values past the limits are clamped, and the reply says so. While both wheels go forward, the rover stops itself for anything in front closer than its stop distance (rover_status shows it), and won't start forward then. With wait true, the default, this returns once the drive is over, with why the rover stopped and its encoder ticks.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "left": SPEED_PROP,
+                    "right": SPEED_PROP,
+                    "ms": {"type": "integer", "minimum": 0, "maximum": ROVER_MAX_DRIVE_MS, "default": 500},
+                    "wait": {"type": "boolean", "default": True},
+                },
+                "required": ["left", "right"],
+                "additionalProperties": False,
+            },
+        },
+    ),
+    "stop": (
+        rover_stop,
+        {
+            "description": "Stops both of the rover's wheels at once.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    ),
+    "look": (
+        rover_look,
+        {
+            "description": f"Points the rover's camera mount, in degrees from straight ahead: pan from -{ROVER_MAX_DEGREES} (left) to {ROVER_MAX_DEGREES} (right), tilt from -{ROVER_MAX_DEGREES} (down) to {ROVER_MAX_DEGREES} (up). Give pan, tilt or both, and the other stays put. The mount holds each to what it reaches, and the reply says where it went. Returns once the servos have had time to get there, so capture_image can follow.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"pan": DEGREES_PROP, "tilt": DEGREES_PROP},
+                "additionalProperties": False,
+            },
+        },
+    ),
+    "ranges": (
+        rover_ranges,
+        {
+            "description": "Reads the rover's three distance sensors, front, left and right, in mm. A null distance is missing (that sensor isn't answering) or clear (it sees nothing within about 1.2 m), as sensors says.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "annotations": READ_ONLY,
+        },
+    ),
+    "rover_status": (
+        rover_status,
+        {
+            "description": "Reports the rover: whether it's driving and how fast, why it last stopped, its stop distance, where the camera mount points, which distance sensors answer, the ranges, and each wheel's encoder ticks, which count up going forward and down going back.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "annotations": READ_ONLY,
+        },
+    ),
+}
 EXEC_TOOL = (
     run_command,
     {
@@ -1223,6 +1426,14 @@ EXEC_TOOL = (
         "annotations": {"destructiveHint": True},
     },
 )
+
+
+def offer_rover_tools():
+    """Adds the rover's tools where setup-rover.sh wrote rover.json. True when it did."""
+    if not ROVER_TOOLS or not os.path.exists(ROVER_FILE):
+        return False
+    TOOLS.update(ROVER_TOOLS)
+    return True
 
 
 def without_home(text):
@@ -1542,6 +1753,9 @@ def main():
         raise SystemExit("--allow-exec and --tls don't go together: a paired site could then run any command on this board.")
     if options.allow_exec:
         TOOLS["run_command"] = EXEC_TOOL
+    # Nor should it move a real rover: that stays with whoever holds the board's own token.
+    if not options.tls:
+        offer_rover_tools()
     serve(options.host, options.port, options.tls)
 
 

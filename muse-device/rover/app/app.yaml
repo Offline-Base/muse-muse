@@ -1,0 +1,4 @@
+name: Muse Rover
+icon: 🤖
+description: "Muse Muse's rover: two wheels, a pan-tilt camera mount and three distance sensors. It stops by itself for anything close in front. Muse Muse drives it through the board's muse-device server."
+bricks: []

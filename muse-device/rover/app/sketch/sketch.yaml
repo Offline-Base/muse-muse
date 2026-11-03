@@ -1,0 +1,7 @@
+# No libraries are listed: the sketch uses Arduino_RouterBridge, which App Lab builds every app with, and the core's Wire.
+# A library listed here would also have to list every one the build uses, at its exact version.
+profiles:
+  default:
+    platforms:
+      - platform: arduino:zephyr
+default_profile: default

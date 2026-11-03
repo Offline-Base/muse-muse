@@ -130,3 +130,17 @@ The owner decided: Meta models only, no Qwen. Nothing below has run on a board.
 | New `sim_board.py`, `test_pairing.py` | A simulated board: your server's real TLS, pairing and routes, with made-up hardware and a fixed rule for a model, in its own folder. The robot tools live here only: **`server.py` has no actuator tools**. Runs on a Mac: `python3 -m unittest test_pairing`. |
 
 Your call, not made here: I didn't make it refuse to bind off loopback without TLS, since that could break how the fleet starts it. docs/OFFLINE.md suggests it.
+
+# Changes for the rover kit (Nov 2, branch `rover-kit`)
+
+The rover in `docs/ROVER.md`: ArduinoQ-01 drives two wheels and a pan-tilt camera mount and reads three distance sensors, set up
+in one fleet exec by `rover/setup-rover.sh`. **This is where `server.py` gets actuator tools**, so the line above about it having
+none no longer holds. Nothing here has run on the board, and nobody deployed it.
+
+| Change | Why |
+| --- | --- |
+| `from rover import bridge_client` and `import fcntl`, each inside a `try` | Copied without `rover/`, the server starts as before and offers no rover tools. |
+| `VERSION` 0.6.0 to 0.7.0, four lines in the docstring | Five new tools. `test_server.py` and `test_drive.py` expect `0.7.0`, in three places. |
+| New `drive`, `stop`, `look`, `ranges`, `rover_status`, added by `offer_rover_tools()` in `main()` | Only where `~/.muse-device/rover.json` exists, and **never with `--tls`**: a paired site's token opens every tool, and moving a real rover stays with the board's own token. Speeds clamped to -255..255, a drive capped at 3000 ms, angles to -90..90, and the sketch holds the same limits itself and stops for anything close in front. A failed Bridge call is a `ToolError` that names the call. |
+| `find_cameras` also asks each node `VIDIOC_QUERYCAP` (`captures_video`) | The UNO Q's `video0` and `video1` are its video codec's, so `capture_image` would have picked one. A node it can't open or ask counts as a camera, as before, so a Jetson's list doesn't change. |
+| New `rover/` and `test_rover.py` | The sketch, the router client, the config, the setup and its self-test, a run of the sketch on a computer (`rover/host_check`), and 61 tests. |

@@ -35,6 +35,7 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
   let boardCalls = 0;
   let hits = 0;
   let pauseAfterModelCalls = Infinity;
+  let roverListed = 0;
   let handlers: typeof import("@/app/api/device/ask/route");
 
   const post = (body: unknown) => handlers.POST(new Request("http://x/api/device/ask", { method: "POST", body: JSON.stringify(body) }));
@@ -58,6 +59,16 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
           return [{ name: "capture_image", inputSchema: { type: "object" } }];
         },
         callDeviceTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
+      },
+    });
+    mock.module(at("../rover.ts"), {
+      namedExports: {
+        roverBoard: () => "ArduinoQ-01",
+        listRoverTools: async () => {
+          roverListed++;
+          return ["rover_drive", "rover_ranges"].map((name) => ({ name, inputSchema: { type: "object" } }));
+        },
+        callRoverTool: async () => ({ content: [{ type: "text", text: '{"front_mm":500}' }], isError: false }),
       },
     });
     mock.module(at("../../quota.ts"), { namedExports: { spendPaused: async () => paused || modelCalls >= pauseAfterModelCalls } });
@@ -100,6 +111,7 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
     boardCalls = 0;
     hits = 0;
     pauseAfterModelCalls = Infinity;
+    roverListed = 0;
     recorded = [];
     process.env.DEVICE_MCP_URL = URL_VALUE;
   });
@@ -167,6 +179,42 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
       assert.equal((await res.json()).error, "device_not_configured");
     } finally {
       openAccess = false;
+      delete process.env.BOARD_FLEET_URL;
+      delete process.env.BOARD_FLEET_TOKEN;
+    }
+  });
+
+  it("gives Wonder the rover only with ROVER_ENABLED and the fleet, and never to OPEN_ACCESS=admin's stand-in admin", async () => {
+    process.env.BOARD_FLEET_URL = "https://fleet.example.com/admin";
+    process.env.BOARD_FLEET_TOKEN = "jpt_made_up_token";
+    try {
+      await post({ prompt: "how far is the wall?" });
+      assert.equal(roverListed, 0);
+      assert.ok(!offered[0]!.includes("rover_ranges"));
+
+      process.env.ROVER_ENABLED = "1";
+      offered = [];
+      modelCalls = 0;
+      await post({ prompt: "how far is the wall?" });
+      assert.equal(roverListed, 1);
+      assert.deepEqual(offered[0], ["capture_image", "rover_ranges", "fleet_status", "fleet_ask_model"]);
+
+      openAccess = true;
+      offered = [];
+      modelCalls = 0;
+      await post({ prompt: "how far is the wall?" });
+      assert.equal(roverListed, 1);
+      assert.deepEqual(offered[0], ["capture_image"]);
+
+      openAccess = false;
+      delete process.env.BOARD_FLEET_TOKEN;
+      offered = [];
+      modelCalls = 0;
+      await post({ prompt: "how far is the wall?" });
+      assert.equal(roverListed, 1);
+    } finally {
+      openAccess = false;
+      delete process.env.ROVER_ENABLED;
       delete process.env.BOARD_FLEET_URL;
       delete process.env.BOARD_FLEET_TOKEN;
     }
