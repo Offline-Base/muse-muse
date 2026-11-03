@@ -768,12 +768,13 @@ describe("Lab results", () => {
     assert.ok(built > html.indexOf("<h1>Bakery LoRA</h1>") && built < html.indexOf("The run</h2>"), "prominently, under the title");
     assert.match(html, /was trained from <a href="https:\/\/huggingface\.co\/OfflineBase\/Glimmer-30B-2026-Knowledge"[^>]*>Muse Muse&#x27;s 2026-knowledge Glimmer/);
     assert.match(html, /<li>For people 18 and over only\.<\/li><li>Its answers are written by a model\. Never present them as written by a person\.<\/li><li>It can make up answers, and it can go along with a false premise in a question\./);
-    assert.match(html, /Tuned Glimmer beat the 2026 Glimmer it started from on <strong>1 of 2<\/strong>, r30b won <strong>0<\/strong>/);
+    assert.match(html, /Tuned Glimmer beat the 2026 Glimmer it started from on <strong>1 of 2<\/strong>, 2026 Glimmer won <strong>0<\/strong>/);
     assert.match(html, /<th scope="col">2026 Glimmer \(r30b\)<\/th><th scope="col">Tuned Glimmer<\/th>/);
     assert.doesNotMatch(html, /Base Glimmer|beat base/);
     const table = render(ResultsTable, { results: [r, view()!], caption: "Results" });
     assert.equal([...table.matchAll(/<span class="chip">Built with Muse Spark Open<\/span>/g)].length, 1, "only the r30b row");
     assert.match(table, /The 2026 Glimmer it started from won 0/);
+    assert.doesNotMatch(html + table, /r30b won|score r30b|r30b \d|>r30b </, "scores name the 2026 Glimmer, not the run's code name");
     assert.match(table, /Base won 0/);
   });
 

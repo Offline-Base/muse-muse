@@ -37,6 +37,8 @@ describe("the recorded runs", () => {
         assert.match(r.source, /BUILD_LOG/);
         assert.match(r.ranOn, /^\d{4}-\d{2}-\d{2}$/);
         assert.doesNotMatch(`${r.name} ${r.place} ${r.detail}`, /—/);
+        // The gateway never serves muse-spark-1.3 (lib/gateway/handler.ts), so a run can't credit it.
+        assert.doesNotMatch(r.detail, /Muse Spark 1\.3(?! Contributor)/, `${slug} ${r.device}`);
       }
     }
   });

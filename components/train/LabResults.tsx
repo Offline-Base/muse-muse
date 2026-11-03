@@ -126,7 +126,7 @@ export function ResultsTable({ results, caption }: { results: ResultView[]; capt
                   </span>
                 </td>
                 <td className="train-nowrap">
-                  {r.sparkOpen ? "r30b " : "Base "}
+                  {r.sparkOpen ? "2026 Glimmer " : "Base "}
                   {scoreText(s.avgBaseScore)} · Tuned <strong>{scoreText(s.avgTunedScore)}</strong>
                   <span className="row-sub muted">out of 10</span>
                 </td>

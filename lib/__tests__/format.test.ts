@@ -15,6 +15,15 @@ describe("servedModelLabel", () => {
     assert.equal(servedModelLabel("muse-wonder-1.0", { switchOn: true, keepsWonder: true }), "Muse Wonder");
   });
 
+  it("never names retired Muse Spark 1.3 as the model that ran, since the gateway serves it on Contributor", () => {
+    for (const switchOn of [true, false]) {
+      assert.equal(servedModelLabel("muse-spark-1.3", { switchOn }), "Spark 1.3 Contributor, in place of Muse Spark 1.3");
+    }
+    assert.equal(servedModelLabel("muse-spark-1.3", { switchOn: true, sparkToWonder: true }), "Spark 1.3 Contributor, in place of Muse Spark 1.3");
+    assert.equal(servedModelLabel("muse-spark-1.3", { switchOn: false, sparkToWonder: true }), "Muse Wonder, in place of Muse Spark 1.3");
+    assert.equal(servedModelLabel("muse-spark-1.3-contributor", { switchOn: true }), "Spark 1.3 Contributor");
+  });
+
   it("tells a gadget or board brief from the rest", () => {
     assert.equal(briefKeepsWonder({ capabilities: [{ model: "muse-wonder-1.0" }, { model: "muse-gadget" }] }), true);
     assert.equal(briefKeepsWonder({ capabilities: [{ model: "muse-wonder-1.0" }], hardware: { boardTools: true } } as never), true);

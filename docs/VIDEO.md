@@ -63,7 +63,10 @@ The script to film, rewritten Nov 2, 2026, night, from the owner's answers to th
 **5. A leak is a bad day too (1:06 to 1:26)**
 - On screen: `/private`, before and after, then a few seconds of the replay recorded on Muse Glimmer, then the numbers card.
 - Labels: "Muse Glimmer 30B in the cloud for this demo. Invented data."
-- Say: "A leak is a bad day too. Muse Privacy keeps documents on hardware you own. Muse plans with tags like Student A, Muse Glimmer does the reading, and a last check runs on every result before it leaves. On 200 invented items, it leaked nothing."
+- Say: "A leak is a bad day too. Muse Privacy lets Muse plan with tags like Student A, never the files. Muse Glimmer reads them, in the cloud here, on invented data, and a last check runs on every result. On 200 invented items, zero names or identifiers got out."
+- Why this wording (Nov 3): the submitted path runs Muse Glimmer 30B on OpenRouter, so "keeps documents on hardware you own" was false for what is filmed, and "leaked nothing" claims more than the checker counts (the page itself says no run shows that nothing gets out).
+- "Before and after" only renders with `STORY_PAGES=1` (read at build time, so it takes a redeploy). With it off, open on the page header and the replay instead; everything else in this shot is on the live page today.
+- Hide the walking mascot first (the "..." next to Guest, then Settings, "Muse on screen"), or it crosses the replay's buttons.
 - The card, from the Nov 2 rerun (PR #98): "Muse Glimmer 30B in the cloud, through OpenRouter, today's setup, Nov 2: 0 leaks of names or identifiers on 200 invented items. Nothing shared that should have waited or stayed. The router right 71.5% of the time, with 101 approval requests, 50 of them not needed."
 - Film the replay by stepping through it: scene A's grading wait is 125 s and scene E's overnight run 627 s. Scene F (government records) isn't in the cloud recording, so don't show or mention it.
 - Never "device-only" or "nothing leaves the device" while Glimmer runs in the cloud.

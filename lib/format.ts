@@ -1,6 +1,6 @@
 import type { TargetId } from "@/lib/brief/schema";
 import type { BuildStatus, Manifest, ProductStatus } from "@/lib/types";
-import { contributorSwitchOn, SPARK_STANDIN } from "@/lib/meta/spark";
+import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
  * Display helpers shared by server pages and client components. Pure functions only: no server imports, no
@@ -146,11 +146,14 @@ export function modelLabel(id: string): string {
  * What a plan or a build room calls a model the product asks for: the one that really runs. Under BUILDS_ON_CONTRIBUTOR
  * the gateway serves a product's muse-wonder-1.0 calls on Spark 1.3 Contributor, so the plan says so. `keepsWonder` is
  * a gadget or board product, whose live calls stay on Muse Wonder (keepsWonderUnderSwitch in lib/gateway/policy.ts).
+ * muse-spark-1.3 is retired: the gateway serves it on Spark 1.3 Contributor, switch or not, so it's never named as if it
+ * ran. `sparkToWonder` is TRUST_SPARK_TO_WONDER (off), which can move a live call to Muse Wonder only with the switch off.
  * Routing never reads this: it only names what the gateway does.
  */
-export function servedModelLabel(id: string, opts: { keepsWonder?: boolean; switchOn?: boolean } = {}): string {
+export function servedModelLabel(id: string, opts: { keepsWonder?: boolean; switchOn?: boolean; sparkToWonder?: boolean } = {}): string {
   const on = opts.switchOn ?? contributorSwitchOn();
   if (id === "muse-wonder-1.0" && on && !opts.keepsWonder) return `${modelLabel(SPARK_STANDIN)}, in place of Muse Wonder`;
+  if (id === RETIRED_SPARK) return `${modelLabel(opts.sparkToWonder && !on ? "muse-wonder-1.0" : SPARK_STANDIN)}, in place of Muse Spark 1.3`;
   return modelLabel(id);
 }
 

@@ -99,7 +99,7 @@ export function PrivateStoryHelps() {
       <h2 className="how-heading">If you came here to build with Muse Muse</h2>
       <p className="muted">
         Muse Muse builds in the cloud, so it&apos;s the wrong place for a real class list or patient file: please use made-up data there. Say you build a grading helper with it. You test on invented essays, and when the
-        real essays come, Muse Privacy is how Muse can help with them while they stay on your laptop.
+        real essays come, Muse Privacy is built so Muse can help with them while they stay on your laptop. That needs the reader model on the laptop too, which is the target and hasn&apos;t been measured: today&apos;s demo runs it in the cloud, on invented essays only.
       </p>
       <p className="muted">
         They sit side by side today. A product Muse Muse builds doesn&apos;t call Muse Privacy, and the two share no code. You use it from the Muse app, as a connector.
