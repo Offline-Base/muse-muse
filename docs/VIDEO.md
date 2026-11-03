@@ -28,7 +28,7 @@ Where it came from: this replaces the three-minute table that was in docs/STORY.
 - Stay signed out, so the site shows what judges see. Browser at 1440×900, light theme, 100% zoom, a clean profile.
 - Never show `.env.local`, the Vercel, Lambda or AWS consoles, an admin job page (it shows the instance's address), the fleet console, or any ngrok domain or board address.
 - Builds on the test model get a corner label "Test model". Sped-up footage gets "Sped up".
-- Muse Privacy's numbers in shot 9 must come from runs on Muse Glimmer. The Oct 30 and "0 leaks on 300" numbers were measured with a model that isn't Meta's, so they don't go on screen. If the Glimmer rerun is approved and logged by recording day, use its numbers; until then the card carries "[pending rerun on Glimmer]" and only the Oct 27 Glimmer run.
+- Muse Privacy's numbers in shot 9 must come from runs on Muse Glimmer. The Oct 30 and "0 leaks on 300" numbers were measured with a model that isn't Meta's, so they don't go on screen. The Glimmer rerun of today's setup ran on Nov 2 and is logged (`privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md`, privacy/docs/BUILD_LOG.md), so the card uses its numbers. It found no leaks to list.
 - Keep the fleet console and jetson-03, 04 and 05 out of frame. Show only the Muse app connector, never the Claude or ChatGPT connector labels.
 
 ## Timing
@@ -43,8 +43,8 @@ Where it came from: this replaces the three-minute table that was in docs/STORY.
 | 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
 | 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
 | 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
-| 8 | 1:44 to 2:04 | 2 | Muse Privacy: tags, not documents | needs re-record on Glimmer |
-| 9 | 2:04 to 2:17 | 2 | The numbers, on Glimmer | needs re-record on Glimmer |
+| 8 | 1:44 to 2:04 | 2 | Muse Privacy: tags, not documents | film once the Glimmer replay is deployed |
+| 9 | 2:04 to 2:17 | 2 | The numbers, on Glimmer | film now |
 | 10 | 2:17 to 2:27 | 3 | Glimmer on the Jetson | Hussam films |
 | 11 | 2:27 to 2:37 | 3 | What that costs | film now |
 | 12 | 2:37 to 2:50 | Close | The claim, and its marks | film now |
@@ -119,20 +119,20 @@ Keep the company's name out of this act (`components/story/__tests__/story.test.
 - Say: "Some files can't go to any cloud. One spreadsheet in an unapproved AI tool meant a hospital notified 3,182 patients. GAO found all 12 agencies it selected that allow generative AI restrict it."
 - Source: docs/MESSAGING.md, both Checked. Say "a patient spreadsheet", nothing more about its contents.
 
-**8. Muse Privacy: tags, not documents (1:44 to 2:04)** [needs re-record on Glimmer]
+**8. Muse Privacy: tags, not documents (1:44 to 2:04)** [film once the Glimmer replay is deployed]
 
-- On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data." The replay on the site today was recorded with a model that isn't Meta's, so re-record it on Glimmer before filming this shot. Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
+- On screen: `/private`, before and after, then the replay, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data." It was re-recorded on Glimmer on Nov 2 (`privacy/eval/reports/muse_app/rehearsal_cloud_2026-11-02.md`: scenes A to E pass, 0 of 16 tool outputs held a private value). The government-records scene (F) isn't in it, since the privacy toggles are off in cloud mode, so don't show or say it. Scene A's grading wait is 125 s and scene E's night 627 s in the recording: step through them, don't film them in real time. Optional overlay: "'The access decision does not depend on the agent behaving as intended.' Meta Engineering, on PrivacyLib, Oct 27, 2026."
 - Say: "Muse Privacy is a connector you run yourself. Muse plans with tags like Student A and never gets the documents. For this demo, Meta's Muse Glimmer does every step that touches them, in the cloud, on invented data. Your policy file decides what can leave, and a last check runs on every result before it goes. Glimmer on your own device is the target."
 - Never "device-only", "on the device" or "nothing leaves the device" for this act while the path is cloud Glimmer.
-- `/private` itself still names LFM3-VL-2B and shows LFM-measured numbers (`components/private/PrivateBody.tsx`, `lib/private/replay.ts`, the privacy unit's fix). Film it only after that page is changed to Glimmer, or keep those lines out of frame.
+- `/private` now names only Muse Glimmer and shows only Glimmer numbers, with the replay back on the page (branch `tg-privacy-glimmer`). Film it only once that branch is merged and deployed with `STORY_PAGES` on; the live page until then has no replay.
 - Source: docs/STORY.md, privacy paragraph; privacy/README.md.
 
-**9. The numbers, on Glimmer (2:04 to 2:17)** [needs re-record on Glimmer]
+**9. The numbers, on Glimmer (2:04 to 2:17)** [film now]
 
-- On screen: a card. "Invented items. Muse Glimmer 30B in the cloud, through OpenRouter. Oct 27, an earlier code state: 0 leaks of names or identifiers on 100 items, the router right 76% of the time. Today's setup: [pending rerun on Glimmer]. No real users."
-- Say: "On 100 invented items, Muse Glimmer's run leaked no names or identifiers, and the router was right about three times in four. That was an earlier version, and the rerun on today's setup is pending."
-- Swap in the rerun's numbers only once it is logged, and give every leak it finds.
-- Source: `privacy/eval/reports/final.md` (final_cloud, Glimmer on OpenRouter, Oct 27); eval/README.md, "Muse Privacy".
+- On screen: a card. "Invented items. Muse Glimmer 30B in the cloud, through OpenRouter, today's setup, Nov 2: 0 leaks of names or identifiers on 200 items. Nothing shared that should have waited or stayed. The router right 71.5% of the time, with 101 approval requests, 50 of them not needed. No real users."
+- Say: "On 200 invented items, Muse Glimmer leaked no names or identifiers, and shared nothing that should have waited for the teacher. It's cautious: right about seven times in ten, and about half of its 101 requests for an OK weren't needed."
+- The run found no leaks, so there are none to list. Don't say "no leaks" without "200 invented items", and don't call it a test set: `fresh_200_b` is a development set, and the sealed set hasn't been scored.
+- Source: `privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md` (Glimmer on OpenRouter, Nov 2, today's defaults, 200 items); the Oct 27 run on an earlier code state is `privacy/eval/reports/final_cloud.md` (0 leaks on 100, 76%); eval/README.md, "Muse Privacy".
 
 ### Act 3: the Jetson
 
@@ -166,7 +166,8 @@ Drop shot 0 (open on shot 1 and fold "one sentence" into its line), and cut shot
 | Shots | Who | When |
 |---|---|---|
 | 0, 3, 5 (recorded build), 6, 7, 11, 12 | Ethan, or whoever records | Any time once `STORY_PAGES` is on |
-| 8, 9 | Ethan, or whoever records | After the replay is re-recorded on Glimmer |
+| 8 | Ethan, or whoever records | Once `tg-privacy-glimmer` is merged and deployed |
+| 9 | Ethan, or whoever records | Any time: it's a card |
 | 1, 2, 4, 5 (tuned app) | Whoever runs the chain | Only during the approved chain run. Otherwise use the fallbacks |
 | 10 | Hussam | 1 to 2 hours, on jetson-02 |
 
@@ -198,8 +199,8 @@ What changes:
 | 5 | 1:08 to 1:22 | 1 | An app built around it | film now, plus needs the chain run |
 | 6 | 1:22 to 1:32 | 1 | The marks on `/offline` | film now |
 | 7 | 1:32 to 1:44 | 2 | Why some files can't go to a cloud | film now |
-| 8 | 1:44 to 1:56 | 2 | Muse Privacy: tags, not documents, shorter | needs re-record on Glimmer |
-| 9 | 1:56 to 2:04 | 2 | The numbers, on Glimmer, shorter | needs re-record on Glimmer |
+| 8 | 1:44 to 1:56 | 2 | Muse Privacy: tags, not documents, shorter | film once the Glimmer replay is deployed |
+| 9 | 1:56 to 2:04 | 2 | The numbers, on Glimmer, shorter | film now |
 | 10 | 2:04 to 2:09 | 3 | Glimmer on the Jetson, shorter | Hussam films |
 | E1 | 2:09 to 2:17 | 3 | Drills passing on the build screen | needs M5, needs M7 |
 | E2 | 2:17 to 2:23 | 3 | The tune card | needs the schema gate, needs M8 |
@@ -230,15 +231,15 @@ About 2:54. Shot 11's card ("What that costs") is dropped; its numbers stay in t
 - On screen: the plan, then a few of the 900 training rows scrolling, each marked Simulated.
 - Say: "A Meta model writes the plan. The training rows are simulated cold-room logs our own code wrote, with 100 sealed away that the tune never sees." (Not "a Meta model writes the training data": for this run it doesn't. docs/CHAIN_RUN.md.)
 
-**8, shorter (1:44 to 1:56)** [needs re-record on Glimmer]
+**8, shorter (1:44 to 1:56)** [film once the Glimmer replay is deployed]
 
-- On screen: `/private`, before and after, then a few seconds of the replay re-recorded on Glimmer, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data."
+- On screen: `/private`, before and after, then a few seconds of the replay recorded on Glimmer on Nov 2, labeled "Recorded replay. A script plays Muse. Muse Glimmer 30B in the cloud, invented data."
 - Say: "Muse Privacy plans with tags like Student A and never gets the documents. For this demo, Muse Glimmer reads them in the cloud, on invented data. Your policy file decides what can leave, and a last check runs on every result."
 
-**9, shorter (1:56 to 2:04)** [needs re-record on Glimmer]
+**9, shorter (1:56 to 2:04)** [film now]
 
 - On screen: shot 9's card, unchanged.
-- Say: "On 100 invented items, Muse Glimmer's run leaked no names or identifiers. The rerun on today's setup is pending."
+- Say: "On 200 invented items, Muse Glimmer leaked no names or identifiers, and shared nothing that should have waited."
 
 **10, shorter (2:04 to 2:09)** [Hussam films]
 

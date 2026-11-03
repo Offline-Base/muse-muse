@@ -70,11 +70,12 @@ None of these ran on a Jetson, a Raspberry Pi or a phone.
 
 ## Muse Privacy
 
-Only Muse Glimmer rows are here. Under the Nov 2 ruling (below), the LFM3-VL-2B runs that made most of Muse Privacy's numbers are earlier experiments, listed at the end. The planned submission mode is Muse Glimmer 30B through OpenRouter on invented data (an owner decision still open); its own fresh numbers wait on a rerun. All invented data with a simulated teacher. The sealed set has not been scored, and the persona study has not run.
+Only Muse Glimmer rows are here. Under the Nov 2 ruling (below), the LFM3-VL-2B runs that made most of Muse Privacy's numbers are earlier experiments, listed at the end. The planned submission mode is Muse Glimmer 30B through OpenRouter on invented data (an owner decision still open). Its numbers on today's defaults come from a rerun on Nov 2. All invented data with a simulated teacher. The sealed set has not been scored, and the persona study has not run.
 
 | What | Number | Label | Source |
 |---|---|---|---|
-| Glimmer 30B on OpenRouter, earlier runs (the planned submission mode, not rerun since) | 0 leaks in the final runs. Router 76% on 100 items, 75% on the holdout, 72% then 81% on 100 unseen items. Same total on 21 of 24 essays across two Glimmer runs, 15 of 24 against Muse Spark 1.3 | Simulated, cloud | [final](../privacy/eval/reports/final.md), [grading_crosscheck](../privacy/eval/reports/grading_crosscheck.md) |
+| Glimmer 30B on OpenRouter, today's defaults, Nov 2 (the planned submission mode) | 0 leaks on 200 invented items (`fresh_200_b`, a development set), with 58 approved releases checked too. Router 71.5% (143 of 200), 101 approval requests, 50 of them needless, 0 shared that should have waited or stayed, 7 meant as summaries shared whole, tagged. Holdout 75.0% (15 of 20), 0 leaks. $0.16 of OpenRouter | Simulated, cloud | [glimmer_fresh_200_b](../privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md), [glimmer_holdout](../privacy/eval/reports/glimmer_holdout_2026-11-02.md) |
+| Glimmer 30B on OpenRouter, earlier runs (Oct 27, an earlier code state) | 0 leaks in the final runs. Router 76% on 100 items, 75% on the holdout, 72% then 81% on 100 unseen items. Same total on 21 of 24 essays across two Glimmer runs, 15 of 24 against Muse Spark 1.3 | Simulated, cloud | [final](../privacy/eval/reports/final.md), [grading_crosscheck](../privacy/eval/reports/grading_crosscheck.md) |
 
 More rows, with the command behind each one, are in [privacy/README.md](../privacy/README.md#numbers). Rows there run on LFM unless they say Glimmer.
 

@@ -68,7 +68,7 @@ Read Nov 2 in the Official Rules (https://cerebralvalley.ai/e/meta-ai-developer-
 1. **Meta already ships a local-then-cloud pattern.** In its cookbook, Glimmer runs locally, the person sees the exact text, and Muse Spark gets that text only once the person approves it. Each send is logged.
    - `privacy/docs/PRIOR_WORK.md` lists PlanTwin, Minions and PAPILLON but not this. A judge from Meta will know it, so list it first.
    - The difference, from `privacy/README.md`: Muse plans over tags and never gets the documents. A policy file decides what may leave, a check for names and identifiers runs on every result, and a router learns from what was approved before. Nobody has to approve each string.
-   - Measured so far: 0 leaks of names or identifiers on invented sets.
+   - Measured so far on Glimmer: 0 leaks of names or identifiers on invented sets (200 items on Nov 2, 100 on Oct 27), and one leak in the round before Oct 27's final runs, from a guard gap since closed.
    - Research says hybrid splits do leak (PAPILLON's best setup leaked 7.5%). So the claim is always "measured on N invented items", never "never leaves".
 2. **Fine-tuning isn't the new part.** Meta documents SFT, LoRA, QLoRA and RL for Glimmer, and points to Unsloth. We tune on Unsloth's 4-bit build, so say so.
    - The claim: one sentence becomes a plan, data, a tune, a blind check against the base model, and a file you keep, plus an app built around it.
@@ -106,7 +106,7 @@ Still stale, found by Hussam's PR #61 and left for later because they need a new
 - That Meta hasn't built private AI, fine-tuning or local agents.
 - That Muse Privacy solves Meta's local-and-cloud problem.
 - That data never leaves the device. Say how many leaks on how many invented items, and what that tested.
-- "0 leaks on 300 items", or the Oct 30 run's 10 leaks on 200 items (`privacy/eval/reports/device_only_fresh_200.md`), as Muse Privacy results. Both were measured with LFM3-VL-2B, which isn't a Meta model, so neither goes in public copy. Muse Privacy's public numbers come only from runs on Glimmer (the Oct 27 cloud run, or the pending rerun on Glimmer), with every leak given.
+- "0 leaks on 300 items", or the Oct 30 run's 10 leaks on 200 items (`privacy/eval/reports/device_only_fresh_200.md`), as Muse Privacy results. Both were measured with LFM3-VL-2B, which isn't a Meta model, so neither goes in public copy. Muse Privacy's public numbers come only from runs on Glimmer (the Nov 2 rerun of today's setup, `privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md`, or the Oct 27 cloud run), with every leak given.
 - That fleet or board answers are private. They pass through the product's server, Muse Muse, ngrok and the lead board, and jetson-05's ngrok agent keeps recent request bodies in memory (PR #61).
 - That Glimmer 30B runs well on 8 GB.
 - That one-bit or 4-bit costs nothing.

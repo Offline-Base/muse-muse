@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EARLIER_ROUND, GLIMMER_RUN, PrivateBody } from "@/components/private/PrivateBody";
 import { Replay } from "@/components/private/Replay";
-import { PRIVATE_NUMBERS, REPLAY_SCENES } from "@/lib/private/replay";
+import { PRIVATE_NUMBERS, REPLAY_SCENES, REPLAY_SOURCE } from "@/lib/private/replay";
 
 const REPORTS = "privacy/eval/reports";
 const rehearsal = readFileSync(`${REPORTS}/${PRIVATE_NUMBERS.rehearsal.report}`, "utf8");
@@ -36,14 +36,23 @@ describe("/private", () => {
       const kept = /kept: (.+)$/.exec(note!)?.[1];
       assert.equal(step.kept, kept);
     });
-    assert.match(rehearsal, /private values in any tool output: 0 of 18 outputs/);
+    assert.match(rehearsal, new RegExp(`private values in any tool output: 0 of ${PRIVATE_NUMBERS.rehearsal.outputs} outputs`));
+  });
+
+  it("replays a recording made on Muse Glimmer 30B, as the report says (Nov 2 ruling)", () => {
+    assert.match(rehearsal, /^- model: meta\/muse-glimmer-30b$/m);
+    assert.match(rehearsal, /^- backend: openrouter, cloud mode/m);
+    assert.match(rehearsal, new RegExp(`^Date: ${PRIVATE_NUMBERS.rehearsal.date} `, "m"));
+    assert.ok(REPLAY_SOURCE.includes("Muse Glimmer 30B") && REPLAY_SOURCE.includes("invented"));
+    for (const banned of ["LFM", "Liquid", "on the device only"]) assert.ok(!REPLAY_SOURCE.includes(banned), banned);
   });
 
   it("shows the numbers the Muse Glimmer report has", () => {
     // Nov 2 ruling: only Meta models count, so the page quotes the Glimmer run, not the device runs on LFM3-VL-2B.
     assert.match(glimmer, new RegExp(`\\| Model \\| ${GLIMMER_RUN.model} \\|`));
     assert.match(glimmer, /\| Backend \| openrouter \|/);
-    assert.match(glimmer, /\| Date \| 2026-10-27 /);
+    assert.match(glimmer, /\| Date \| 2026-11-02 /); // today's defaults, rerun on Glimmer
+    assert.match(glimmer, /\| Learned rules \| none \|/);
     assert.match(glimmer, new RegExp(`\\| Items \\| ${GLIMMER_RUN.items} \\|`));
     assert.match(glimmer, new RegExp(`\\| Leaks \\| ${GLIMMER_RUN.leaks} \\|`));
     assert.match(glimmer, new RegExp(`\\| Approval requests \\| ${GLIMMER_RUN.approvals} \\|`));
@@ -63,7 +72,7 @@ describe("/private", () => {
     const tileList = renderToStaticMarkup(<PrivateBody />).split('<dl class="pv-tiles">')[1]!.split("</dl>")[0]!;
     const tiles = [...tileList.matchAll(/<dd>(.*?)<\/dd>/g)].map((m) => text(m[1]!).trim());
     assert.equal(tiles[0], `${GLIMMER_RUN.unsafeShares} of ${GLIMMER_RUN.items}`, "the first tile is the wrong shares");
-    assert.equal(tiles[1], `${GLIMMER_RUN.leaks} of ${GLIMMER_RUN.items}, ${EARLIER_ROUND.leaks} in the round before`, "the leak tile carries both rounds");
+    assert.equal(tiles[1], `${GLIMMER_RUN.leaks} of ${GLIMMER_RUN.items}, ${EARLIER_ROUND.leaks} in an earlier round`, "the leak tile carries both rounds");
   });
 
   it("says plainly what it is and what hasn't been done", () => {
@@ -74,16 +83,18 @@ describe("/private", () => {
   });
 
   it("names no model that isn't Meta's as doing the work, and drops the device-only claims (Nov 2 ruling)", () => {
-    const page = text(renderToStaticMarkup(<PrivateBody />));
-    for (const banned of ["LFM", "Liquid", "EmbeddingGemma", "Prompt Guard", "DEVICE_ONLY=1", "device-only", "300"]) {
-      assert.ok(!page.includes(banned), banned);
+    for (const story of [false, true]) {
+      const page = text(renderToStaticMarkup(<PrivateBody story={story} />));
+      for (const banned of ["LFM", "Liquid", "EmbeddingGemma", "Prompt Guard", "DEVICE_ONLY=1", "device-only", "300"]) {
+        assert.ok(!page.includes(banned), `${banned} (story ${story})`);
+      }
+      assert.ok(page.includes("Step 1 of"), "the replay, recorded again on Muse Glimmer, is on the page");
     }
-    assert.ok(!page.includes("Step 1 of"), "the replay recorded on LFM3-VL-2B is off the page");
   });
 
   it("starts on the first step, and shows no em dash or company name anywhere", () => {
     const replay = renderToStaticMarkup(<Replay />);
-    assert.match(replay, /Step 1 of 5/);
+    assert.match(replay, new RegExp(`Step 1 of ${REPLAY_SCENES[0]!.steps.length}<`));
     assert.ok(replay.includes("run_private_task"));
     const copy = renderToStaticMarkup(<PrivateBody />) + JSON.stringify(REPLAY_SCENES);
     assert.ok(!copy.includes("—"));

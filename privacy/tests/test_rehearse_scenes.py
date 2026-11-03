@@ -13,16 +13,45 @@ from types import SimpleNamespace
 import pytest
 import respx
 
+from base import manifest
 from scripts import rehearse_scenes as rs
 
 
 def test_arguments():
     args = rs.parse_args([])
-    assert (args.scene, args.dry_run, args.essays, args.home) == ("ALL", False, 24, None)
+    assert (args.scene, args.dry_run, args.cloud, args.essays, args.home) == ("ALL", False, False, 24, None)
     assert rs.parse_args(["--scene", "c", "--dry-run", "--essays", "3"]).scene == "C"
-    for bad in (["--scene", "G"], ["--essays", "0"], ["--essays", "25"]):
+    assert rs.parse_args(["--cloud", "--scene", "a"]).cloud
+    bad_ones = (["--scene", "G"], ["--essays", "0"], ["--essays", "25"], ["--cloud", "--dry-run"], ["--cloud", "--scene", "F"])
+    for bad in bad_ones:
         with pytest.raises(SystemExit):
             rs.parse_args(bad)
+
+
+def test_cloud_mode_skips_the_toggle_scene():
+    assert rs.scenes_to_run("ALL", cloud=False) == "ABCDEF"
+    assert rs.scenes_to_run("ALL", cloud=True) == "ABCDE"
+    assert rs.scenes_to_run("F", cloud=False) == "F" and rs.scenes_to_run("F", cloud=True) == ""
+    assert rs.scenes_to_run("C", cloud=True) == "C"
+
+
+def test_the_mode_must_match_the_settings():
+    device = SimpleNamespace(device_only=True, glimmer_backend="llama_server")
+    cloud = SimpleNamespace(device_only=False, glimmer_backend="openrouter")
+    rs.check_mode(device, cloud=False)
+    rs.check_mode(cloud, cloud=True)
+    with pytest.raises(SystemExit, match="DEVICE_ONLY=1"):
+        rs.check_mode(cloud, cloud=False)
+    with pytest.raises(SystemExit, match="--cloud needs"):
+        rs.check_mode(device, cloud=True)
+    with pytest.raises(SystemExit, match="--cloud needs"):  # Glimmer on a local server is not cloud mode
+        rs.check_mode(SimpleNamespace(device_only=False, glimmer_backend="llama_server"), cloud=True)
+
+
+def test_the_report_names_the_model_that_answered():
+    glimmer = SimpleNamespace(checker_backend="glimmer", answer_model="meta/muse-glimmer-30b", checker_model="lfm3-vl-2b")
+    assert rs.model_of(glimmer) == "meta/muse-glimmer-30b"
+    assert rs.model_of(SimpleNamespace(checker_backend="lfm", answer_model="lfm3-vl-2b", checker_model="lfm3-vl-2b")) == "lfm3-vl-2b"
 
 
 def test_status_of_every_shape_a_tool_answers_with():
@@ -72,7 +101,16 @@ def test_only_invented_markdown_is_copied(tmp_path):
     assert len(list((root / "essays").glob("*.md"))) == 3
     assert len(list((root / "casework").glob("*.md"))) == 6 and (root / "records" / "parent_contacts.md").is_file()
     assert not (root / "forms").exists()
-    assert {p.suffix for p in root.rglob("*") if p.is_file()} <= {".md", ""}
+    files = [p for p in root.rglob("*") if p.is_file() and p.name != manifest.MANIFEST_NAME]
+    assert {p.suffix for p in files} <= {".md", ""}
+    # A cloud backend reads the copy only while its manifest lists every file in it (config.assert_synthetic).
+    assert manifest.check(root).ok and len(manifest.read_manifest(root)) == len(files) - 1  # all but the marker
+
+
+def test_a_file_missing_from_the_demo_manifest_is_not_copied(tmp_path, monkeypatch):
+    monkeypatch.setattr(rs.manifest, "read_manifest", lambda folder: {})
+    with pytest.raises(SystemExit, match="manifest"):
+        rs.copy_invented(tmp_path / "w", essays=1)
 
 
 def test_the_fake_model_answers_from_the_schema():

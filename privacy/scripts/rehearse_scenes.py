@@ -1,16 +1,19 @@
 """Rehearse the six demo scenes, playing Muse against an in-process connector.
 
-    uv run python -m scripts.rehearse_scenes [--scene A..F|all] [--home PATH] [--dry-run] [--essays N]
+    uv run python -m scripts.rehearse_scenes [--scene A..F|all] [--home PATH] [--dry-run | --cloud] [--essays N]
 
 Real services on a scratch BASE_HOME (never the live one) and a copy of the invented demo folders
 only: essays, records, casework and rubric.md. The scenes call the tools the way Muse would, with
 the tags from earlier results passed back, and cards are answered through the approval page's API
 in process, the way the user taps Share it. The device model is the one the settings name
-(DEVICE_ONLY=1 is required); --dry-run fakes it, so nothing calls a model. Every tool output is
-checked for private values (roster names, guardians, the casework people, and egress's own final
-check). Prints and writes statuses only, to eval/reports/muse_app/rehearsal_<date>.md with the
-command at the top. Exits 1 when a scene misses its expected statuses or an output holds a private
-value.
+(DEVICE_ONLY=1 is required, unless --cloud); --dry-run fakes it, so nothing calls a model. --cloud
+runs the demo's cloud mode instead (DEVICE_ONLY=0, GLIMMER_BACKEND=openrouter): Muse Glimmer on
+OpenRouter reads tagged text from the invented copy, which carries the .synthetic marker the cloud
+backend requires. Scene F is not run with --cloud, since the privacy toggles need every model on the
+device. Every tool output is checked for private values (roster names, guardians, the casework
+people, and egress's own final check). Prints and writes statuses only, to
+eval/reports/muse_app/rehearsal_[dry_|cloud_]<date>.md with the command at the top. Exits 1 when a
+scene misses its expected statuses or an output holds a private value.
 
 The scenes (docs/MUSE_SETUP.md, "Scenes"): A grading with a wait for the user's OK, B mail merge,
 C a newsletter quote shared after Share it, D an IEP refusal three ways, E a dreaming night and its
@@ -41,16 +44,22 @@ from unittest import mock
 
 from mcp import Client
 
+from base import manifest
 from base.config import REPO_ROOT, load_settings
 from base.connector.server import REFUSED_END, build_server
 from base.egress import KEPT_DEFAULT, KEPT_REASONS
 from base.workspace.contacts import ContactsError, load_contacts
 
 SCENES = "ABCDEF"
-OUT = REPO_ROOT / "eval" / "reports" / "muse_app"
+# Scenes that turn on a privacy toggle, which needs DEVICE_ONLY=1, so --cloud skips them.
+TOGGLE_SCENES = "F"
+NOT_IN_CLOUD = "not run: the privacy toggles need every model on the device (DEVICE_ONLY=1)"
+OUT =REPO_ROOT / "eval" / "reports" / "muse_app"
 INVENTED = ("essays", "records", "casework")  # demo/ may also hold personal files; never those
 WAIT = 25  # what the connector tells Muse to pass as wait_seconds
 TAP_AFTER = 2.0  # seconds before the rehearsal taps Share it while get_result waits
+NIGHT_LIMIT = 480.0  # seconds scene E waits for the night on the device
+CLOUD_NIGHT_LIMIT = 1500.0  # with --cloud the gate's holdout runs are cloud calls, minutes each
 STARTED = ("queued", "running")
 GRADE = (
     "Grade each essay in this folder against rubric.md and write feedback for each student. "
@@ -71,14 +80,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--scene", default="all", type=lambda v: v.upper(), choices=[*SCENES, "ALL"], help="one scene, or all")
     p.add_argument("--home", type=Path, help="a new or empty folder for the scratch BASE_HOME (default: a temp folder)")
-    p.add_argument("--dry-run", action="store_true", help="fake the device model: no model call at all")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="fake the device model: no model call at all")
+    mode.add_argument(
+        "--cloud",
+        action="store_true",
+        help="cloud mode: Muse Glimmer on OpenRouter over the invented copy (DEVICE_ONLY=0); scene F is not run",
+    )
     p.add_argument("--essays", type=int, default=24, help="how many of the 24 invented essays to copy (default 24)")
     p.add_argument("--max-minutes", type=float, default=12.0, help="stop starting steps after this long")
     p.add_argument("--out", type=Path, default=OUT, help="where the report goes")
     args = p.parse_args(argv)
     if not 1 <= args.essays <= 24:
         p.error("--essays must be 1 to 24")
+    if args.cloud and args.scene != "ALL" and not scenes_to_run(args.scene, cloud=True):
+        p.error(f"scene {args.scene} is {NOT_IN_CLOUD}")
     return args
+
+
+def scenes_to_run(scene: str, *, cloud: bool) -> str:
+    """The scenes to play: all or one, without the toggle scenes in cloud mode."""
+    chosen = SCENES if scene == "ALL" else scene
+    return "".join(s for s in chosen if not (cloud and s in TOGGLE_SCENES))
+
+
+def check_mode(settings, *, cloud: bool) -> None:
+    """Refuse settings that do not match the mode: every model on the device, or --cloud with
+    Muse Glimmer on OpenRouter (which reads only folders with a .synthetic marker)."""
+    if cloud:
+        if settings.device_only or settings.glimmer_backend != "openrouter":
+            raise SystemExit("--cloud needs DEVICE_ONLY=0 and GLIMMER_BACKEND=openrouter (Muse Glimmer on OpenRouter)")
+    elif not settings.device_only:
+        raise SystemExit(
+            "this needs DEVICE_ONLY=1, so that no text leaves this device, "
+            "or --cloud for Muse Glimmer on OpenRouter over the invented copy"
+        )
+
+
+def model_of(settings) -> str:
+    """The model that answers the scenes' steps: the checker's when it is LFM (refused since the
+    Nov 2 ruling), else the answer model, Muse Glimmer."""
+    return settings.checker_model if settings.checker_backend == "lfm" else settings.answer_model
 
 
 # ----- what a tool answered, as a status -----
@@ -218,6 +260,7 @@ class Player:
         self.secrets = secrets
         self.deadline = deadline
         self.rows: list[Row] = []
+        self.night_limit = NIGHT_LIMIT  # seconds scene E waits for the dreaming night
 
     def late(self) -> bool:
         return time.monotonic() > self.deadline
@@ -372,7 +415,7 @@ def scene_d(m: Player) -> None:
 def scene_e(m: Player) -> None:
     status, body, _ = m.call("E", "the 2 AM job: run_dreaming", "run_dreaming", {}, "started")
     if status in STARTED:
-        m.follow("E", "the night finishes", body["job_id"], "done")
+        m.follow("E", "the night finishes", body["job_id"], "done", limit=m.night_limit)
     m.call("E", "the 8 AM job: dreaming_report", "dreaming_report", {}, "shared")
 
 
@@ -396,16 +439,26 @@ SCENE_STEPS = {"A": scene_a, "B": scene_b, "C": scene_c, "D": scene_d, "E": scen
 
 
 def copy_invented(root: Path, essays: int) -> None:
-    """The invented demo folders only, .md files only, under a .synthetic marker."""
+    """The invented demo folders only, .md files only, under a .synthetic marker and its manifest.
+
+    Every file copied must be in demo/'s own manifest with a matching hash (it lists git-tracked
+    invented files only), so the copy's manifest can only ever list invented files. A cloud
+    backend reads a marked folder only while its manifest lists every file in it.
+    """
     demo = REPO_ROOT / "demo"
+    listed = manifest.read_manifest(demo) or {}
     root.mkdir(parents=True)
     (root / ".synthetic").write_text("invented data for the scene rehearsal\n")
-    shutil.copy2(demo / "rubric.md", root / "rubric.md")
+    copied = ["rubric.md"]
     for name in INVENTED:
         files = sorted((demo / name).glob("*.md"))
-        (root / name).mkdir()
-        for path in files[:essays] if name == "essays" else files:
-            shutil.copy2(path, root / name / path.name)
+        copied += [f"{name}/{path.name}" for path in (files[:essays] if name == "essays" else files)]
+    for rel in copied:
+        if listed.get(rel) != manifest.file_sha256(demo / rel):
+            raise SystemExit("a demo file is not in demo/'s manifest with a matching hash, so it is not copied")
+        (root / rel).parent.mkdir(exist_ok=True)
+        shutil.copy2(demo / rel, root / rel)
+    manifest.write(root, copied)
 
 
 def scratch_home(path: Path | None) -> tuple[Path, Path | None]:
@@ -433,10 +486,15 @@ def run(args: argparse.Namespace) -> tuple[list[Row], dict]:
     if args.dry_run:
         env |= {"DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_API_KEY": "dry-run", "DREAMING_BACKEND": "rules"}
     settings = load_settings(env)
-    if not settings.device_only:
-        raise SystemExit("this needs DEVICE_ONLY=1, so that no text leaves this device")
+    check_mode(settings, cloud=args.cloud)
     settings.ensure_home()
-    facts = {"model": "a fake that answers from the schema (--dry-run)" if args.dry_run else settings.checker_model, "essays": args.essays}
+    facts = {"model": "a fake that answers from the schema (--dry-run)" if args.dry_run else model_of(settings), "essays": args.essays}
+    if args.cloud:
+        facts["backend"] = f"{settings.glimmer_backend}, cloud mode (DEVICE_ONLY=0), invented data only"
+    scenes = scenes_to_run(args.scene, cloud=args.cloud)
+    skipped = [s for s in (SCENES if args.scene == "ALL" else args.scene) if s not in scenes]
+    if skipped:
+        facts[f"scene {', '.join(skipped)}"] = NOT_IN_CLOUD
     models = fake_models() if args.dry_run else contextlib.nullcontext()
     try:
         with models:
@@ -446,7 +504,9 @@ def run(args: argparse.Namespace) -> tuple[list[Row], dict]:
                 origin = f"http://127.0.0.1:{settings.approval_port}"
                 page = TestClient(create_app(services), base_url=origin, headers={"Origin": origin})
                 player = Player(services, page, Secrets(services), time.monotonic() + args.max_minutes * 60)
-                for scene in SCENES if args.scene == "ALL" else args.scene:
+                if args.cloud:
+                    player.night_limit = CLOUD_NIGHT_LIMIT
+                for scene in scenes:
                     if player.late():
                         player.rows.append(Row(scene, "not started: out of time", "", "skipped", "run", 0.0))
                         continue
@@ -511,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     when = datetime.now()
     text = report(rows, facts, shown_command(argv), when)
     args.out.mkdir(parents=True, exist_ok=True)
-    name = f"rehearsal_{'dry_' if args.dry_run else ''}{when:%Y-%m-%d}.md"
+    name = f"rehearsal_{'dry_' if args.dry_run else 'cloud_' if args.cloud else ''}{when:%Y-%m-%d}.md"
     (args.out / name).write_text(text)
     print(text)
     return 0 if rows and all(r.ok for r in rows) else 1
