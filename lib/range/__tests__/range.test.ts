@@ -15,7 +15,7 @@ import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { briefInstructions } from "@/lib/prompts/brief";
 import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { contrast, DIRECTION_STARTS, directionProblems, directionStart, type Direction, isDefaultLook, recentFrom } from "@/lib/range/direction";
-import { APP_LOOK_COMMIT, applyRangeScript, RANGE_OVERLAY, restoreRangeFilesScript } from "@/lib/sandbox/look";
+import { APP_LOOK_COMMIT, APP_LOOK_NOTE, applyRangeScript, RANGE_OVERLAY, restoreRangeFilesScript } from "@/lib/sandbox/look";
 
 const DIRECTION: Direction = {
   summary: "A printed almanac for bird watchers, warm and dense.",
@@ -263,6 +263,36 @@ describe("the build-range overlay", () => {
     git("commit", "-qm", APP_LOOK_COMMIT);
     writeFileSync(path.join(dir, "scripts/smoke-report.mjs"), "base");
     assert.equal(run(restoreRangeFilesScript(targets)).status, 0);
+    assert.match(readFileSync(path.join(dir, "scripts/smoke-report.mjs"), "utf8"), /RESULT_TOP_MAX = 2400/);
+    assert.equal(readFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "utf8"), "the muse-app look's own skill");
+    assert.equal(existsSync(path.join(dir, ".agents/skills/design-looks")), false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps the direction's skill files out after a look polish whose commit Muse Code didn't make, from BUILD_NOTES.md", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "range-note-"));
+    const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: dir, encoding: "utf8" });
+    git("init", "-q");
+    writeFileSync(path.join(dir, "AGENTS.md"), "base");
+    git("add", ".");
+    git("commit", "-qm", "base");
+    const targets = path.resolve("template/targets");
+    const run = (script: string) => spawnSync("bash", ["-c", script], { cwd: dir, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" } });
+    assert.equal(run(applyRangeScript(targets)).status, 0);
+    rmSync(path.join(dir, ".agents/skills/design-looks"), { recursive: true, force: true });
+    writeFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "the muse-app look's own skill");
+    // Not at the top: the direction's files still come back.
+    writeFileSync(path.join(dir, "BUILD_NOTES.md"), `# Notes\n\n1\n2\n3\n4\n${APP_LOOK_NOTE}\n`);
+    assert.equal(run(restoreRangeFilesScript(targets)).stdout, "");
+    assert.equal(existsSync(path.join(dir, ".agents/skills/design-looks/SKILL.md")), true);
+    rmSync(path.join(dir, ".agents/skills/design-looks"), { recursive: true, force: true });
+    writeFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "the muse-app look's own skill");
+    // At the top, as the polish note asks, even in bold: the wider limits come back, the skill files don't.
+    writeFileSync(path.join(dir, "BUILD_NOTES.md"), `**${APP_LOOK_NOTE}**\n\n# Notes\n`);
+    writeFileSync(path.join(dir, "scripts/smoke-report.mjs"), "base");
+    const restored = run(restoreRangeFilesScript(targets));
+    assert.equal(restored.status, 0);
+    assert.equal(restored.stdout, "");
     assert.match(readFileSync(path.join(dir, "scripts/smoke-report.mjs"), "utf8"), /RESULT_TOP_MAX = 2400/);
     assert.equal(readFileSync(path.join(dir, ".agents/skills/muse-app-ui/SKILL.md"), "utf8"), "the muse-app look's own skill");
     assert.equal(existsSync(path.join(dir, ".agents/skills/design-looks")), false);

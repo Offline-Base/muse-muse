@@ -9,7 +9,7 @@
  *
  * Pure: no Node APIs and no I/O, so the build workflow can import it.
  */
-import { APP_LOOK_COMMIT, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_COMMIT } from "@/lib/sandbox/look";
+import { APP_LOOK_COMMIT, APP_LOOK_NOTE, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_COMMIT } from "@/lib/sandbox/look";
 
 /** The owner's exception to BUILDS_ON_CONTRIBUTOR for this one refinement (lib/__tests__/no-wonder.test.ts, POLISH). */
 export const POLISH_MODEL = "muse-wonder-1.0" as const;
@@ -124,13 +124,13 @@ const APP_LOOK_FILES = `${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files`;
  */
 const META_LOOK_STEP = [
   `${POLISH_META_STEP} This round changes the look on purpose, so it overrides any line that says to keep the current look or follow a Design direction. The look: a white page, hairline cards, regular-weight Inter, one blue for actions, a purple gradient only on what a model made, a floating composer, and a left sidebar where the product has room for one.`,
-  `   - The look's own files are in ${APP_LOOK_FILES} (read-only). Copy its .agents/skills/muse-app-ui, .agents/skills/product-ui and .agents/skills/meta-ui over the product's (cp -R). If ${LOOK_CSS} is missing, copy it from there too.`,
+  `   - The look's own files are in ${APP_LOOK_FILES} (read-only). Put its .agents/skills/muse-app-ui, .agents/skills/product-ui and .agents/skills/meta-ui in place of the product's: D=${APP_LOOK_FILES}; for s in muse-app-ui product-ui meta-ui; do [ -d $D/.agents/skills/$s ] && rm -rf .agents/skills/$s && cp -R $D/.agents/skills/$s .agents/skills/; done. If ${LOOK_CSS} is missing, copy it from $D too. Then chmod -R u+w .agents/skills ${LOOK_CSS}: copies are read-only.`,
   `   - If that folder isn't in this sandbox: keep .agents/skills/muse-app-ui if the product has it, and keep or write ${LOOK_CSS} with every token in .agents/skills/muse-app-ui/reference/tokens.md, light and dark, as that table gives them. If the skill is missing too, keep the current look, say so at the top of BUILD_NOTES.md, and go on to step 2.`,
-  `   - Remove every design direction. ${LOOK_CSS} must hold the look's own values (diff it with the copy in that folder, or check it against the tokens table): take out every color, font, shadow, radius or token that differs. Map a token only the product's CSS defines to the nearest one in ${LOOK_CSS}, and take out the colors, fonts and decoration a direction added in the product's own CSS. Delete .agents/skills/design-looks and any font package a direction added. When the commit "${RANGE_COMMIT}" is there (git log --grep='^${RANGE_COMMIT}$' --format=%h -1), git show --stat <commit> lists what it wrote.`,
+  `   - Remove every design direction. ${LOOK_CSS} must hold the look's own values (diff it with $D/${LOOK_CSS}, or check it against the tokens table): take out every color, font, shadow, radius or token that differs. Map a token only the product's CSS defines to the nearest one in ${LOOK_CSS}, and take out the colors, fonts and decoration a direction added in the product's own CSS. Delete .agents/skills/design-looks and any font package a direction added. If the commit "${RANGE_COMMIT}" is there, git show --stat on it lists what it wrote.`,
   `   - In app/layout.tsx, import @fontsource-variable/inter/opsz.css and then ./muse-app.css after ./globals.css, drop @fontsource-variable/montserrat and any other font, and use #181819 as the dark theme color. Keep the product's title and the rest.`,
   "   - If app/manifest.ts or lib/native/app-icon.tsx is there, use background_color #ffffff, theme_color #ffffff and an icon on #0064d4.",
   `   - In AGENTS.md, take the look, font and skill lines from the copy in that folder, and keep every other line. Point every mention of meta-ui, design-looks or a Design direction in AGENTS.md, BUILD_NOTES.md and code comments at muse-app-ui. Leave brief.md as it is: its Design direction no longer sets the look.`,
-  `   - Put "Look: Meta AI app (.agents/skills/muse-app-ui)" at the top of BUILD_NOTES.md, then commit: git add -A && git commit -qm "${APP_LOOK_COMMIT}".`,
+  `   - Put "${APP_LOOK_NOTE}" at the top of BUILD_NOTES.md, then commit: git add -A && git commit -qm "${APP_LOOK_COMMIT}".`,
   "   Then follow .agents/skills/muse-app-ui and .agents/skills/product-ui on every screen, and run Muse Code's /taste skill on every screen as the last pass. Where /taste and muse-app-ui disagree, muse-app-ui wins.",
 ].join("\n");
 

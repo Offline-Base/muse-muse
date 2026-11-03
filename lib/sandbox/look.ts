@@ -24,6 +24,12 @@ export const LOOK_COMMIT = "Look: muse-app";
  */
 export const APP_LOOK_COMMIT = "Look: Meta AI app";
 
+/**
+ * The line a look "meta" polish puts at the top of BUILD_NOTES.md. restoreRangeFilesScript reads it too (in the first
+ * five lines), so a polish whose APP_LOOK_COMMIT Muse Code didn't make still keeps the build-range skill files out.
+ */
+export const APP_LOOK_NOTE = "Look: Meta AI app (.agents/skills/muse-app-ui)";
+
 /** The look's tokens in the product, from the overlay. A product with it has the look. */
 export const LOOK_CSS = "app/muse-app.css";
 
@@ -115,9 +121,9 @@ export function applyRangeScript(dir: string = OVERLAYS_DIR): string {
 /**
  * Before every verify and demo, after the look's and the template's own restores, in a product with RANGE_COMMIT: puts its
  * platform files back, so its skill's rules and its wider final-screen limits outlast those restores. Once a look polish
- * has put the product on the Meta AI app look (APP_LOOK_COMMIT), only the files outside .agents/skills come back (the
- * wider limits), so the direction's skill rules and design-looks stay out. Nothing, and no output, in any other product,
- * so a flag-off product runs what it always ran.
+ * has put the product on the Meta AI app look (APP_LOOK_COMMIT, or APP_LOOK_NOTE near the top of BUILD_NOTES.md), only
+ * the files outside .agents/skills come back (the wider limits), so the direction's skill rules and design-looks stay
+ * out. Nothing, and no output, in any other product, so a flag-off product runs what it always ran.
  */
 export function restoreRangeFilesScript(dir: string = OVERLAYS_DIR): string {
   const overlay = `${dir}/${RANGE_OVERLAY}`;
@@ -125,6 +131,8 @@ export function restoreRangeFilesScript(dir: string = OVERLAYS_DIR): string {
   return [
     `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -n "$(git log --format=%s --grep=${q(`^${RANGE_COMMIT}$`)} -1 2>/dev/null)" ]; then`,
     `  applook="$(git log --format=%s --grep=${q(`^${APP_LOOK_COMMIT}$`)} -1 2>/dev/null)"`,
+    // The polish also puts the look's line at the top of BUILD_NOTES.md, in case Muse Code didn't make the commit.
+    `  if [ -z "$applook" ] && head -n 5 BUILD_NOTES.md 2>/dev/null | grep -qF ${q(APP_LOOK_NOTE)}; then applook=1; fi`,
     `  node -e ${q(list)} ${q(`${overlay}/platform-files.json`)} | while IFS= read -r p; do`,
     `    case "$p" in .agents/skills/*) if [ -n "$applook" ]; then continue; fi ;; esac`,
     `    rm -f -- "$p"`,

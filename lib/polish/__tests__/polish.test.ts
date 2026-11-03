@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { MAX_NOTE_CHARS } from "@/lib/pipeline/references";
-import { APP_LOOK_COMMIT, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_COMMIT } from "@/lib/sandbox/look";
+import { APP_LOOK_COMMIT, APP_LOOK_NOTE, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_COMMIT } from "@/lib/sandbox/look";
 import { changeLabel, isLookPolish, isMetaLookPolish, isMetaUiLookPolish, isPolishMessage, metaLookShipped, POLISH_META_STEP, POLISH_META_UI_STEP, passedPolish, POLISH_HEADER, POLISH_LABEL, POLISH_MAX_FOCUS_CHARS, polishBudgetLine, polishEnding, polishFixSteps, POLISH_MIN_USD, polishNote, polishPlan, polishRoomLine } from "@/lib/polish/logic";
 import { startPolish, type PolishDeps } from "@/lib/polish/start";
 
@@ -59,6 +59,9 @@ describe("the polish note with look meta", () => {
       "#181819",
       "#0064d4",
       `git commit -qm "${APP_LOOK_COMMIT}"`,
+      `"${APP_LOOK_NOTE}" at the top of BUILD_NOTES.md`,
+      `D=${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files; for s in muse-app-ui product-ui meta-ui; do [ -d $D/.agents/skills/$s ] && rm -rf .agents/skills/$s && cp -R`,
+      "chmod -R u+w .agents/skills",
       "white page, hairline cards, regular-weight Inter, one blue for actions, a purple gradient only on what a model made, a floating composer, and a left sidebar",
       "AGENTS.md",
       "/taste",
