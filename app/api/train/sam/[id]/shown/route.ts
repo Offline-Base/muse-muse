@@ -24,6 +24,6 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   const view = await getRunView(id);
   if (!view) return errorJson(404, "not_found");
   if (shown && (view.status !== "done" || !view.report)) return errorJson(409, "not_done");
-  const run = await markShown(id, shown);
-  return run ? Response.json({ run }) : errorJson(404, "not_found");
+  if (!(await markShown(id, shown))) return errorJson(409, "not_done");
+  return Response.json({ run: await getRunView(id, { full: true }) });
 });

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  */
 export const POST = route(async (req: Request) => {
   if (!env.samTune) return errorJson(404, "not_found");
-  await requireWorker(req);
+  requireWorker(req);
   const body = await readJson(req, 2048);
   const workerId = typeof body.workerId === "string" ? body.workerId : "";
   const freeMemMb = wholeNumber(body.freeMemMb, 1 << 30);

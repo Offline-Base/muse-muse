@@ -4,7 +4,7 @@
  */
 import { HttpError } from "@/lib/http";
 import { localFileKey } from "@/lib/local-files";
-import { SAM_TUNE_LIMITS, type SamData, type SamImage, type SamReport, type SamReportIn, type SamRunView } from "@/lib/train/sam/types";
+import { SAM_TUNE_LIMITS, type SamReport, type SamReportIn, type SamRunView } from "@/lib/train/sam/types";
 
 /**
  * Start reserves what a run has left to spend under the shared SAM tune day counter (types.ts SAM_TUNE_DAY_KEY, in
@@ -147,54 +147,6 @@ export function startProblem(view: Pick<SamRunView, "data" | "photos" | "distrac
     return `Keep ${L.distractorsMin} to ${L.distractorsMax} look-alikes (${kept} kept).`;
   }
   return null;
-}
-
-/**
- * COCO's license names a side-by-side may show (plan section 2.4): CC BY and CC BY-SA, with a credit line. A COCO photo
- * under "No known copyright restrictions" or "United States Government Work" may train but is never put on screen.
- */
-export const SHOWABLE_LICENSES = new Set([
-  "Attribution License", "Attribution-ShareAlike License", "CC BY", "CC BY-SA", "CC BY 2.0", "CC BY-SA 2.0",
-]);
-
-/**
- * Why the report's pictures can't be shown, or null when they can. Every picture of a built-in Muse run is a COCO photo
- * with a Muse pasted in, so each needs a showable license and a credit. On a run of the person's own photos a picture
- * with no license is theirs or a Muse Image look-alike; one with a license is COCO and is held to the same rule. Checked
- * on the server so a board bug or a leaked worker secret can't put an unlicensed photo on a shown report.
- */
-export function imageLicenseProblem(images: readonly SamImage[], data: SamData): string | null {
-  for (const [i, image] of images.entries()) {
-    const license = typeof image?.license === "string" ? image.license.trim() : null;
-    const credit = typeof image?.credit === "string" ? image.credit.trim() : "";
-    if (license === null || license === "") {
-      if (data === "builtin-muse") return `images[${i}] is a COCO photo with no license.`;
-      continue;
-    }
-    if (!SHOWABLE_LICENSES.has(license)) return `images[${i}] is under "${license.slice(0, 60)}", which can't be shown.`;
-    if (!credit || credit.length > 300) return `images[${i}] needs a credit line of at most 300 characters.`;
-  }
-  return null;
-}
-
-const RULE_CAPTION: Record<SamImage["rule"], (word: string, generic: string) => string> = {
-  tuned_top: (w, g) => `Meta SAM 3.1 asked "${g}" (left) and the tuned model asked "${w}" (right): a photo where the tune ranks ${w} first.`,
-  generic_top: (w, g) => `Meta SAM 3.1 asked "${g}" (left) and the tuned model asked "${w}" (right): a photo where Meta's word does best.`,
-  tuned_false_fire: (w, g) => `Meta SAM 3.1 asked "${g}" (left) and the tuned model asked "${w}" (right): a photo with no ${w} where the tune still fires.`,
-};
-
-/**
- * The report's pictures with the server's own captions in place of the board's text (the verdict rule: the board sends
- * numbers, never sentences a visitor reads), and credits trimmed. Pictures are otherwise kept as the board sent them.
- */
-export function withServerCaptions(images: readonly SamImage[], word: string, generic: string): SamImage[] {
-  return images.map((image) => ({
-    url: image.url,
-    rule: image.rule,
-    caption: (RULE_CAPTION[image.rule] ?? RULE_CAPTION.tuned_top)(word, generic),
-    credit: typeof image.credit === "string" ? image.credit.trim().slice(0, 300) : null,
-    license: typeof image.license === "string" ? image.license.trim() : null,
-  }));
 }
 
 /** True for bytes that start as a JPEG does (FF D8 FF). */

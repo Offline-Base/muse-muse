@@ -22,29 +22,32 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   await requireAdminOrAutomation(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
-  const view = await getRunView(id);
+  const view = await getRunView(id, { full: true });
   if (!view) return errorJson(404, "not_found");
   if (view.status !== "draft") return errorJson(409, "not_draft");
   const notReady = startProblem(view);
   if (notReady) return errorJson(400, "not_ready", { message: notReady });
 
-  const plan = planFor(view);
+  const plan = planFor({ data: view.data, photos: view.photos ?? [] });
   const cap = Math.min(view.maxUsd, env.samTuneMaxUsd);
-  if (plan.costUsd > cap) {
-    return errorJson(402, "over_run_cap", { message: `This run would cost about $${plan.costUsd.toFixed(2)}, over its $${cap.toFixed(2)} cap.` });
+  // The plan's estimate counts the labels a run on the person's photos has already paid for, so the run's total is the
+  // larger of the two; what it has left is held against today's cap.
+  const total = Math.max(plan.costUsd, view.costUsd);
+  if (total > cap) {
+    return errorJson(402, "over_run_cap", { message: `This run would cost about $${total.toFixed(2)}, over its $${cap.toFixed(2)} cap.` });
   }
-  const left = samMicros(Math.max(0, plan.costUsd - view.costUsd));
+  const left = samMicros(total - view.costUsd);
   const day = samTuneDayWindow(new Date());
   if ((await reserveCounter(SAM_TUNE_DAY_KEY, day, left, samMicros(env.samTuneDailyUsd))) === null) {
     return errorJson(402, "over_daily_cap", { message: "Today's spend cap for SAM tune runs is used up. Try again tomorrow." });
   }
-  const run = await queueRun(id).catch(async (err: unknown) => {
+  const queued = await queueRun(id).catch(async (err: unknown) => {
     await adjustCounter(SAM_TUNE_DAY_KEY, day, -left).catch(() => undefined);
     throw err;
   });
-  if (!run) {
+  if (!queued) {
     await adjustCounter(SAM_TUNE_DAY_KEY, day, -left).catch(() => undefined);
     return errorJson(409, "not_draft");
   }
-  return Response.json({ run, plan });
+  return Response.json({ run: await getRunView(id, { full: true }), plan });
 });

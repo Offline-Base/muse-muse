@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
-import type { SamReportIn, SamRunView, SamSettingScore } from "@/lib/train/sam/types";
+import type { SamReport, SamReportIn, SamRunView, SamSettingScore } from "@/lib/train/sam/types";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const savedEnv = { ...process.env };
@@ -40,7 +40,9 @@ let runs: Map<string, SamRunView>;
 let uploads: Map<string, number>;
 let calls: string[];
 let dayCount: number;
-let finished: SamReportIn | null;
+let finished: SamReport | null;
+/** Every URL the fake store's saveUpload handed out: the only links U1's validateReportIn lets a report use. */
+let saved: string[];
 
 function view(over: Partial<SamRunView> = {}): SamRunView {
   return {
@@ -78,7 +80,7 @@ function reportIn(over: Partial<SamReportIn> = {}): SamReportIn {
     seed: 7,
     setsSource: "nov3",
     settings: { meta_word: score(0.1, 2), meta_generic: score(0.5, 25), meta_toy: score(0.45, 20), tuned_word: score(0.62, 22) },
-    truck: { meta: { truck: 0.9, wheel: 0.8 }, tuned: { truck: 0.88, wheel: 0.79 } },
+    truck: { meta: { truck: 1, wheel: 4 }, tuned: { truck: 1, wheel: 4 } },
     images: [
       {
         url: `${BLOB}/samtune/${RUN_ID}/report/ab12-sbs1.jpg`,
@@ -125,13 +127,24 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
       },
     });
     ({ HttpError } = await import(at("lib/http.ts")));
+    const { validateReportIn, finishReport } = await import(at("lib/train/sam/logic.ts"));
+    const live = (id: string) => {
+      const r = runs.get(id);
+      return r && (r.status === "claimed" || r.status === "running") ? r : null;
+    };
+    // U1's worker-auth: 404 with the flag off, 401 for a wrong secret, 404 for a wrong job token or an ended run.
+    const requireWorker = (r: Request) => {
+      if (process.env.SAM_TUNE !== "1") throw new HttpError(404, "not_found");
+      if (r.headers.get("authorization") !== `Bearer ${SECRET}`) throw new HttpError(401, "unauthorized");
+    };
     mock.module(at("lib/train/sam/worker-auth.ts"), {
       namedExports: {
-        requireWorker: async (r: Request) => {
-          if (r.headers.get("authorization") !== `Bearer ${SECRET}`) throw new HttpError(401, "unauthorized");
-        },
-        requireRunToken: async (_r: Request, id: string, token: string) => {
-          if (!runs.has(id) || token !== JOB_TOKEN) throw new HttpError(401, "unauthorized");
+        JOB_TOKEN_HEADER: "x-job-token",
+        requireWorker,
+        requireRunToken: async (r: Request, id: string, token: unknown) => {
+          requireWorker(r);
+          if (!live(id) || token !== JOB_TOKEN) throw new HttpError(404, "not_found");
+          return runs.get(id);
         },
       },
     });
@@ -149,24 +162,29 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
         },
       },
     });
-    const live = (id: string) => {
-      const r = runs.get(id);
-      return r && (r.status === "claimed" || r.status === "running") ? r : null;
-    };
+    // U1's store (lib/train/sam/store.ts), in memory, with U1's signatures. finish runs U1's real validateReportIn and
+    // finishReport, so the done route is checked against the rules the real store applies.
     mock.module(at("lib/train/sam/store.ts"), {
       namedExports: {
-        createRun: async (input: { word: string; generic: string; data: SamRunView["data"]; maxUsd: number }) => {
+        createRun: async (input: { word: string; generic: string; data: SamRunView["data"]; maxUsd?: number }) => {
           calls.push(`create:${input.maxUsd}`);
-          const r = view({ ...input });
+          if (input.data === "builtin-muse" && input.word !== "muse") return { ok: false, problem: "The built-in photos teach the name muse." };
+          const r = view({ word: input.word, generic: input.generic, data: input.data, maxUsd: input.maxUsd ?? 1 });
           runs.set(r.id, r);
-          return r;
+          return { ok: true, run: r };
         },
-        getRunView: async (id: string) => runs.get(id) ?? null,
+        getRunView: async (id: string, opts: { full?: boolean } = {}) => {
+          const r = runs.get(id);
+          if (!r) return null;
+          if (opts.full) return r;
+          const { photos: _p, distractors: _d, ...rest } = r;
+          return rest;
+        },
         queueRun: async (id: string) => {
           const r = runs.get(id);
-          if (!r || r.status !== "draft") return null;
+          if (!r || r.status !== "draft") return false;
           r.status = "queued";
-          return r;
+          return true;
         },
         claimNext: async (input: { workerId: string }) => {
           calls.push(`claim:${input.workerId}`);
@@ -175,46 +193,51 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
           r.status = "claimed";
           return { id: r.id, word: r.word, generic: r.generic, data: r.data, photos: [], distractors: [], seed: 7, epochs: 3, jobToken: JOB_TOKEN };
         },
-        progress: async (id: string, p: { stage: string }) => {
+        progress: async (id: string, token: unknown, p: { stage: string }) => {
           const r = live(id);
-          if (!r) return null;
+          if (!r || token !== JOB_TOKEN) return null;
           r.status = "running";
           calls.push(`progress:${p.stage}`);
           return { stop: (r as SamRunView & { stopRequested?: boolean }).stopRequested === true };
         },
-        saveUpload: async (id: string, file: { name: string; body: Buffer }) => {
-          if (!live(id)) return null;
+        saveUpload: async (id: string, token: unknown, name: string, _type: string, _bytes: Uint8Array) => {
+          if (!live(id) || token !== JOB_TOKEN) return { ok: false, status: 404, error: "not_found" };
           const n = (uploads.get(id) ?? 0) + 1;
-          if (n > 10) return "too_many";
+          if (n > 10) return { ok: false, status: 429, error: "too_many_files" };
           uploads.set(id, n);
-          return { url: `${BLOB}/samtune/${id}/report/r${n}-${file.name}` };
+          const url = `${BLOB}/samtune/${id}/report/r${n}-${name}`;
+          saved.push(url);
+          return { ok: true, url };
         },
-        finish: async (id: string, report: SamReportIn) => {
+        finish: async (id: string, token: unknown, body: unknown, byteLength?: number) => {
           const r = live(id);
-          if (!r) return null;
+          if (!r || token !== JOB_TOKEN) return { ok: false, status: 404, error: "not_found" };
+          const checked = validateReportIn(body, { word: r.word, generic: r.generic, seed: 7, data: r.data, workerId: "jetson-03", uploads: saved }, byteLength);
+          if (!checked.ok) return { ok: false, status: checked.problem === "report_too_large" ? 413 : 400, error: checked.problem };
+          const report = finishReport(checked.report);
           finished = report;
           r.status = "done";
-          r.report = { ...report, verdict: { code: "mixed", text: "server's own" }, caveats: ["30 photos"] };
-          return r;
+          r.report = report;
+          return { ok: true, report };
         },
-        fail: async (id: string, _reason: string) => {
+        fail: async (id: string, token: unknown, _reason: unknown) => {
           const r = live(id);
-          if (!r) return null;
+          if (!r || token !== JOB_TOKEN) return null;
           r.status = (r as SamRunView & { stopRequested?: boolean }).stopRequested ? "stopped" : "failed";
-          return r;
+          return r.status;
         },
         requestStop: async (id: string) => {
           const r = runs.get(id);
           if (!r || ["done", "failed", "stopped"].includes(r.status)) return null;
           if (r.status === "draft" || r.status === "queued") r.status = "stopped";
           else (r as SamRunView & { stopRequested?: boolean }).stopRequested = true;
-          return r;
+          return r.status;
         },
         markShown: async (id: string, shown: boolean) => {
           const r = runs.get(id);
-          if (!r) return null;
+          if (!r || r.status !== "done") return false;
           r.shown = shown;
-          return r;
+          return true;
         },
       },
     });
@@ -246,6 +269,7 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     calls = [];
     dayCount = 0;
     finished = null;
+    saved = [reportIn().files.scores, reportIn().files.perImage, reportIn().images[0]!.url];
   });
 
   it("every route is a 404 with SAM_TUNE off, before any auth or store call", async () => {
@@ -291,14 +315,14 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     assert.deepEqual(calls, []);
   });
 
-  it("the id routes need the run's own job token too", async () => {
+  it("the id routes need the run's own job token too (404, as U1's requireRunToken answers)", async () => {
     runs.set(RUN_ID, view({ status: "running" }));
     for (const jobToken of [undefined, "", "wrong"]) {
-      assert.equal((await R.progress(req(`/x`, { headers: worker(), body: { jobToken, stage: "training" } }), ctx())).status, 401);
-      assert.equal((await R.done(req(`/x`, { headers: worker(), body: { jobToken, report: reportIn() } }), ctx())).status, 401);
-      assert.equal((await R.fail(req(`/x`, { headers: worker(), body: { jobToken, reason: "x" } }), ctx())).status, 401);
+      assert.equal((await R.progress(req(`/x`, { headers: worker(), body: { jobToken, stage: "training" } }), ctx())).status, 404);
+      assert.equal((await R.done(req(`/x`, { headers: worker(), body: { jobToken, report: reportIn() } }), ctx())).status, 404);
+      assert.equal((await R.fail(req(`/x`, { headers: worker(), body: { jobToken, reason: "x" } }), ctx())).status, 404);
       const h = worker({ "content-type": "application/json", ...(jobToken === undefined ? {} : { "x-job-token": jobToken }) });
-      assert.equal((await R.upload(req(`/x?name=a.json`, { headers: h, body: "{}" }), ctx())).status, 401);
+      assert.equal((await R.upload(req(`/x?name=a.json`, { headers: h, body: "{}" }), ctx())).status, 404);
     }
     assert.equal(runs.get(RUN_ID)!.status, "running");
   });
@@ -329,13 +353,16 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     assert.equal(res.status, 200);
     assert.match(((await res.json()) as { url: string }).url, new RegExp(`/samtune/${RUN_ID}/report/`));
 
-    res = await R.done(req("/d", { headers: worker(), body: { jobToken: JOB_TOKEN, report: reportIn() } }), ctx());
+    const boardSays = { ...reportIn(), verdict: { code: "better", text: "Perfect, tells Muse apart from every toy." }, caveats: [] };
+    res = await R.done(req("/d", { headers: worker(), body: { jobToken: JOB_TOKEN, report: boardSays } }), ctx());
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { status: "done" });
     assert.ok(finished);
-    assert.equal("verdict" in finished!, false, "the board's report goes to the store with no verdict");
+    assert.doesNotMatch(finished!.verdict.text, /Perfect|apart/, "the verdict is the server's, not the board's");
+    assert.ok(finished!.caveats.length >= 4, "the server writes the caveats");
     assert.doesNotMatch(finished!.images[0].caption, /perfect|apart/, "the board's caption is replaced by the server's");
-    assert.match(finished!.images[0].caption, /"plush toy".*"muse"/);
+    assert.match(finished!.images[0].caption, /"muse".*"plush toy"/);
+    assert.equal(finished!.images[0].license, "CC BY 2.0", "COCO's license name is kept in the short form");
 
     who = "visitor";
     assert.equal((await R.get(req(`/g`, { method: "GET" }), ctx())).status, 404, "not shown yet");
@@ -351,7 +378,7 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     const pub = ((await res.json()) as { run: Record<string, unknown> & { report: Record<string, unknown> } }).run;
     assert.deepEqual(Object.keys(pub).sort(), ["costUsd", "createdAt", "generic", "id", "report", "status", "word"]);
     assert.equal(pub.report.workerId, undefined);
-    assert.equal((pub.report.verdict as { text: string }).text, "server's own");
+    assert.equal((pub.report.verdict as { text: string }).text, finished!.verdict.text);
     for (const key of ["photos", "distractors", "maxUsd", "boardSeenAt", "stage", "queueAhead"]) assert.equal(key in pub, false, key);
   });
 
@@ -448,7 +475,7 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     assert.equal((await up("s11.json", "{}", "application/json")).status, 429);
 
     runs.set(OTHER_ID, view({ id: OTHER_ID, status: "done" }));
-    assert.equal((await R.upload(req(`/u?name=a.json`, { headers: worker({ "content-type": "application/json", "x-job-token": JOB_TOKEN }), body: "{}" }), ctx(OTHER_ID))).status, 409);
+    assert.equal((await R.upload(req(`/u?name=a.json`, { headers: worker({ "content-type": "application/json", "x-job-token": JOB_TOKEN }), body: "{}" }), ctx(OTHER_ID))).status, 404);
   });
 
   it("done: refuses links to anything but this run's uploads, another word, unshowable photos and big reports", async () => {
@@ -472,7 +499,7 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
     assert.equal(finished, null);
 
     runs.set(RUN_ID, view({ status: "queued" }));
-    assert.equal((await done(reportIn())).status, 409, "a run that wasn't claimed");
+    assert.equal((await done(reportIn())).status, 404, "a run that wasn't claimed");
   });
 
   it("next and progress check their fields", async () => {
@@ -484,8 +511,8 @@ describe("SAM tune routes", { skip: canMock ? false : "needs --experimental-test
       assert.equal((await R.progress(req("/p", { headers: worker(), body: { jobToken: JOB_TOKEN, ...extra } }), ctx())).status, 400, JSON.stringify(extra));
     }
     runs.set(RUN_ID, view({ status: "failed" }));
-    assert.equal((await R.progress(req("/p", { headers: worker(), body: { jobToken: JOB_TOKEN, stage: "training" } }), ctx())).status, 409);
-    assert.equal((await R.fail(req("/f", { headers: worker(), body: { jobToken: JOB_TOKEN, reason: "x" } }), ctx())).status, 409);
+    assert.equal((await R.progress(req("/p", { headers: worker(), body: { jobToken: JOB_TOKEN, stage: "training" } }), ctx())).status, 404);
+    assert.equal((await R.fail(req("/f", { headers: worker(), body: { jobToken: JOB_TOKEN, reason: "x" } }), ctx())).status, 404);
   });
 
   it("the cleanup sweep deletes old samtune uploads and keeps every report/ file", async () => {

@@ -22,11 +22,12 @@ const LINE_MAX = 300;
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!env.samTune) return errorJson(404, "not_found");
-  await requireWorker(req);
+  requireWorker(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
   const body = await readJson(req, 4096);
-  await requireRunToken(req, id, typeof body.jobToken === "string" ? body.jobToken : "");
+  const jobToken = typeof body.jobToken === "string" ? body.jobToken : "";
+  await requireRunToken(req, id, jobToken);
   const stage = body.stage as SamStage;
   const step = body.step === undefined ? undefined : wholeNumber(body.step, 1_000_000);
   const steps = body.steps === undefined ? undefined : wholeNumber(body.steps, 1_000_000);
@@ -34,7 +35,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!STAGES.includes(stage) || step === null || steps === null || line === null) {
     return errorJson(400, "bad_request", { message: "Send a known stage, and whole-number step and steps." });
   }
-  const answer = await progress(id, {
+  const answer = await progress(id, jobToken, {
     stage,
     ...(step === undefined ? {} : { step }),
     ...(steps === undefined ? {} : { steps }),

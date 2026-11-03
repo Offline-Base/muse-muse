@@ -21,7 +21,7 @@ export const POST = route(async (req: Request) => {
   const word = typeof body.word === "string" ? body.word.trim() : "";
   const generic = typeof body.generic === "string" ? body.generic.trim().replace(/\s+/g, " ") : "";
   const data = body.data as SamData;
-  const problem = wordProblem(word) ?? genericProblem(generic) ?? (DATA.includes(data) ? null : "Pick the built-in Muse set or your own photos.");
+  const problem = wordProblem(word) ?? genericProblem(generic, word) ?? (DATA.includes(data) ? null : "Pick the built-in Muse set or your own photos.");
   if (problem) return errorJson(400, "bad_request", { message: problem });
   if (word === generic) return errorJson(400, "bad_request", { message: "The name and the everyday word have to differ." });
   const ceiling = env.samTuneMaxUsd;
@@ -29,6 +29,7 @@ export const POST = route(async (req: Request) => {
   if (typeof asked !== "number" || !Number.isFinite(asked) || asked < 0) {
     return errorJson(400, "bad_request", { message: "maxUsd has to be a dollar amount of 0 or more." });
   }
-  const run = await createRun({ word, generic, data, createdBy: user.id, maxUsd: Math.min(asked, ceiling) });
-  return Response.json({ run }, { status: 201 });
+  const made = await createRun({ word, generic, data, createdBy: user.id, maxUsd: Math.min(asked, ceiling) });
+  if (!made.ok) return errorJson(400, "bad_request", { message: made.problem });
+  return Response.json({ run: made.run }, { status: 201 });
 });

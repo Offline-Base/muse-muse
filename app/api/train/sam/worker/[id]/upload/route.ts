@@ -2,7 +2,7 @@ import { env } from "@/lib/env";
 import { errorJson, isUuid, route } from "@/lib/http";
 import { looksLikeJpeg, readCapped, SAM_TUNE_LIMITS, uploadFile } from "@/lib/train/sam/route-helpers";
 import { saveUpload } from "@/lib/train/sam/store";
-import { requireRunToken, requireWorker } from "@/lib/train/sam/worker-auth";
+import { JOB_TOKEN_HEADER, requireRunToken, requireWorker } from "@/lib/train/sam/worker-auth";
 
 export const runtime = "nodejs";
 
@@ -16,10 +16,11 @@ type Ctx = { params: Promise<{ id: string }> };
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!env.samTune) return errorJson(404, "not_found");
-  await requireWorker(req);
+  requireWorker(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
-  await requireRunToken(req, id, req.headers.get("x-job-token")?.trim() ?? "");
+  const jobToken = req.headers.get(JOB_TOKEN_HEADER)?.trim() ?? "";
+  await requireRunToken(req, id, jobToken);
   const file = uploadFile(new URL(req.url).searchParams.get("name"), req.headers.get("content-type"));
   const body = await readCapped(req, SAM_TUNE_LIMITS.uploadMaxBytes);
   if (!body.length) return errorJson(400, "empty");
@@ -32,8 +33,9 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
       return errorJson(415, "bad_type");
     }
   }
-  const saved = await saveUpload(id, { ...file, body });
-  if (saved === "too_many") return errorJson(429, "too_many_uploads");
-  if (!saved) return errorJson(409, "not_running");
-  return Response.json({ url: saved.url });
+  const saved = await saveUpload(id, jobToken, file.name, file.contentType, body);
+  if (saved.ok) return Response.json({ url: saved.url });
+  if (saved.status === 429) return errorJson(429, "too_many_uploads");
+  if (saved.status === 404) return errorJson(409, "not_running");
+  return errorJson(saved.status, saved.error);
 });

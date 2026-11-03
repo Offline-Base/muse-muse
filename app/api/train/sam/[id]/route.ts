@@ -24,7 +24,8 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
   } catch (err) {
     if (!(err instanceof AuthError)) throw err;
   }
-  const view = await getRunView(id);
+  // Only an admin's view carries the run's photos and look-alikes.
+  const view = await getRunView(id, { full: admin });
   if (!view) return errorJson(404, "not_found");
   if (admin) return Response.json({ run: view });
   const shown = publicRun(view);

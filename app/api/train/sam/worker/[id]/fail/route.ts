@@ -15,14 +15,15 @@ const REASON_MAX = 500;
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!env.samTune) return errorJson(404, "not_found");
-  await requireWorker(req);
+  requireWorker(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
   const body = await readJson(req, 8192);
-  await requireRunToken(req, id, typeof body.jobToken === "string" ? body.jobToken : "");
+  const jobToken = typeof body.jobToken === "string" ? body.jobToken : "";
+  await requireRunToken(req, id, jobToken);
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, REASON_MAX) : "";
   if (!reason) return errorJson(400, "bad_request", { message: "Send a reason." });
-  const run = await fail(id, reason);
-  if (!run) return errorJson(409, "not_running");
-  return Response.json({ status: run.status });
+  const status = await fail(id, jobToken, reason);
+  if (!status) return errorJson(409, "not_running");
+  return Response.json({ status });
 });

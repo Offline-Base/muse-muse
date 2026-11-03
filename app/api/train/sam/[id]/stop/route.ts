@@ -17,7 +17,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   await requireAdminOrAutomation(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
-  const run = await requestStop(id);
-  if (run) return Response.json({ run });
+  const status = await requestStop(id);
+  if (status) return Response.json({ run: await getRunView(id, { full: true }) });
   return (await getRunView(id)) ? errorJson(409, "already_ended") : errorJson(404, "not_found");
 });
