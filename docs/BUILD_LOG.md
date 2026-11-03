@@ -3037,3 +3037,11 @@ Hussam's goal included a product that Muse Muse builds and that answers from the
 - **Found, not fixed (read in code, not run):** an edge brief whose only model isn't Muse Wonder (here `sam-3.1`) gives its product token no `muse-wonder-1.0` (`allowedModelsFor`, `lib/pipeline/logic.ts:118-135`). `respondJsonOrEdge` asks Muse Wonder first, gets 404 `model_not_found` (`lib/gateway/handler.ts:215-226`), and treats a 4xx as the cloud saying no (`template/lib/meta/edge.ts:98-100`). So a hosted product shows "turned this request down" and never asks the board. The drills miss it because the blackhole drops connections instead of answering 404, and the build's code-session token skips the allowlist.
 - **For the owner:** to make "built by Muse, answers on the board" true without a hand-written spec, the template needs a SAM board helper (say `EDGE_SAM_URL` in `lib/meta/edge.ts` and the muse-edge skill, shipped as edge extra files). It also needs SAM drills in `edge-fake.mjs` and `edge-drill.mjs`, and a forwarder so a hosted product can reach the board.
 - **Spend:** $0.061 on the preview. About 20 exec jobs on jetson-04 for the runs, plus read-only checks. Nothing on any board was changed.
+
+## Nov 2, 2026: Modal builder image made, then Modal turned off (owner)
+
+- **Builder image:** `scripts/dev/modal-builder-image.ts` ran once. Setup took 107 s, Muse Code 1.4.14. Image `im-01M6FGSPQRD2PRHRMED38G4MD0`.
+- **Preview test blocked:** Previews are protected, and a Modal sandbox can't add the Protection Bypass secret, so Muse Code on Modal can't reach a Preview's `/api/sandbox-meta` route (docs/MODAL_HOST.md, gap 4). Turning protection off was ruled out, since Previews act as admin.
+- **Owner decision:** "turn off the modal stuff for now". Removed from Vercel: `SANDBOX_HOST` (Preview) and `MODAL_BUILDER_IMAGE_ID` (Preview and Production). Left as they were: the two Modal token settings on Preview, added a day earlier for other work. Every build runs on Vercel Sandbox. The code from #83 stays, off by default.
+- **Not proven:** no Muse Code build has run on Modal. The SUBMISSION.md sentence ("smoke-tested on Modal with no full build there yet") stays accurate.
+- **Spend:** the image build, a few cents on Modal (not checked against the bill).
