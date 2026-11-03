@@ -230,3 +230,24 @@ test("the secret goes only to the host it is for, never to another platformHost"
   }
   assert.equal(platformRules(PREVIEW_HOST, { host: PREVIEW_HOST.toUpperCase(), secret: BYPASS }).length, 3, "hosts compare in any case");
 });
+
+// ---------- BUILD_SHARED_KEYS (docs/BUILD_KEYS.md) ----------
+
+test("a shared account's hosts are allowed only when passed, exact ones with Host pinned and wildcards with no rules", () => {
+  const without = builderNetworkPolicy({ modelApiKey: KEY, placeholderKey: PLACEHOLDER, platformHost: "muse-muse.vercel.app", blobUploads: true });
+  const empty = builderNetworkPolicy({ modelApiKey: KEY, placeholderKey: PLACEHOLDER, platformHost: "muse-muse.vercel.app", blobUploads: true, sharedHosts: [] });
+  assert.deepEqual(empty, without, "no shared hosts is today's policy");
+  const policy = builderNetworkPolicy({
+    modelApiKey: KEY,
+    placeholderKey: PLACEHOLDER,
+    platformHost: "muse-muse.vercel.app",
+    blobUploads: true,
+    sharedHosts: ["api.vercel.com", "*.hf.co", "api.meta.ai", "muse-muse.vercel.app"],
+  });
+  assert.ok(typeof policy === "object" && policy.allow && !Array.isArray(policy.allow));
+  assert.deepEqual(policy.allow["api.vercel.com"], [{ transform: [{ headers: { Host: "api.vercel.com" } }] }]);
+  assert.deepEqual(policy.allow["*.hf.co"], []);
+  assert.deepEqual(policy.allow["api.meta.ai"], (without as { allow: Record<string, unknown> }).allow["api.meta.ai"], "a shared host never replaces Meta's brokered routes");
+  assert.deepEqual(policy.allow["muse-muse.vercel.app"], [], "nor the platform's own rules");
+  assert.ok(!("api.vercel.com" in (without as { allow: Record<string, unknown> }).allow));
+});

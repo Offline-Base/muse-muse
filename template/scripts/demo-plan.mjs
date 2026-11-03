@@ -1203,6 +1203,36 @@ export function plainText(value, max) {
 export const captionText = (title) => plainText(title, RULES.captionChars);
 
 /**
+ * The owner's shared keys this build has (the platform's docs/BUILD_KEYS.md): the values of the names .env.local lists
+ * in MUSEMUSE_SHARED_KEYS, longest first. Read in memory only, so a caption can never show one, and never printed.
+ * Empty without them, which leaves every caption as it was.
+ * @param {string | null | undefined} envText the text of .env.local
+ * @returns {string[]}
+ */
+export function sharedKeyValues(envText) {
+  if (!envText) return [];
+  /** @type {Map<string, string>} */
+  const vars = new Map();
+  for (const line of envText.split(/\r?\n/)) {
+    const m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+    if (m) vars.set(m[1], m[2].trim());
+  }
+  const names = (vars.get("MUSEMUSE_SHARED_KEYS") ?? "").split(",").map((n) => n.trim()).filter(Boolean);
+  return [...new Set(names.map((n) => vars.get(n) ?? "").filter((v) => v.length >= 12))].sort((a, b) => b.length - a.length);
+}
+
+/**
+ * `text` with each value replaced by [redacted].
+ * @param {string} text
+ * @param {readonly string[]} values
+ */
+export function redactValues(text, values) {
+  let out = String(text ?? "");
+  for (const v of values) if (v && out.includes(v)) out = out.split(v).join("[redacted]");
+  return out;
+}
+
+/**
  * Step captions in output time: one per top-level step with a title, identical neighbours merged, each up until the
  * next one starts (the last until captionEnd before the main part ends), and any too short to read dropped in favour
  * of the one before.

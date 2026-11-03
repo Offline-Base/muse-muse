@@ -3,6 +3,7 @@ import { del } from "@vercel/blob";
 import { codeBlock } from "@/lib/caps/code/brief";
 import type { MuseCodeDeps } from "@/lib/caps/code/musecode/handler";
 import { secretValues } from "@/lib/caps/code/musecode/redact";
+import { sharedNeedles } from "@/lib/keys/shared";
 import { briefOfToken, codeSessionStore, familySpendToday, sessionSpendUsd } from "@/lib/caps/code/musecode/store";
 import { launchLongSession, openSession } from "@/lib/caps/code/session";
 import { capProduct, capToken } from "@/lib/caps/store";
@@ -38,7 +39,8 @@ export function museCodeDeps(): MuseCodeDeps {
     pepper: () => env.gatewayTokenPepper,
     testModel: buildTestModel,
     contributorBuilds: contributorBuildsOn,
-    secrets: (extra) => secretValues(extra),
+    // BUILD_SHARED_KEYS: the owner's shared keys, in their obvious encodings, are scanned for too (docs/BUILD_KEYS.md).
+    secrets: (extra) => secretValues([...extra, ...sharedNeedles().map((n) => n.text)]),
     briefAllows: async (token) => codeBlock((await briefOfToken(token)) as object | null)?.museCode === true,
     sessions: codeSessionStore,
     launch: launchLongSession,

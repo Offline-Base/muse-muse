@@ -45,6 +45,11 @@ export interface BuilderPolicyOptions {
    * platformHost the secret is left out, so it never goes to a host it isn't for.
    */
   platformBypass?: PlatformBypass | null;
+  /**
+   * BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): the API hosts of the owner's shared accounts this build has a key for
+   * (SharedGrant.hosts in lib/keys/shared.ts), with sharedHostRules. None for a build without them, so its policy is today's.
+   */
+  sharedHosts?: readonly string[];
 }
 
 /** A Protection Bypass for Automation secret, with the host it may be sent to. */
@@ -150,7 +155,19 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
   for (const host of opts.extraHosts ?? []) allow[host] = [];
   // A cap host never replaces a rule above: api.meta.ai keeps its brokered routes whatever a cap lists.
   for (const host of opts.capHosts ?? []) allow[host] ??= capHostRules(host);
+  // Nor does a shared account's host: each comes after everything above and only where nothing claimed it yet.
+  for (const host of opts.sharedHosts ?? []) allow[host] ??= sharedHostRules(host);
   return { allow };
+}
+
+/**
+ * The rules for a shared account's host (docs/BUILD_KEYS.md). The key is in the sandbox already, so nothing is added
+ * to a request. An exact host has its Host header pinned, as capHostRules does, so a request named for it can't be
+ * fronted to another site behind the same CDN (api.vercel.com shares an edge with every site on Vercel). A wildcard
+ * host can't be pinned to one name, so it is allowed with no rules.
+ */
+export function sharedHostRules(host: string): NetworkPolicyRule[] {
+  return host.includes("*") ? [] : [{ transform: [{ headers: { Host: host } }] }];
 }
 
 /**

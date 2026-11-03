@@ -586,6 +586,8 @@ const STEP_LABELS: Record<string, string> = {
   caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
   // ---------- end Wave 3, unit 2 ----------
   manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
+  // BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): only a build with the owner's shared accounts has this step.
+  keys: "Shared keys (no value of the owner's keys in the product's files, `public/` or `.next/static`; read them from `process.env` in server code)",
 };
 
 /** fix.md for a fix round, run with --session-id so Muse Code keeps its context. */
