@@ -31,6 +31,8 @@ import {
   planFrames,
   plainText,
   posterTime,
+  redactValues,
+  sharedKeyValues,
   zoompanExpressions,
 } from "./demo-plan.mjs";
 
@@ -629,7 +631,9 @@ async function render(mode, spec, raw, tmp) {
   const { tl: plan, box } = letterbox(shaped);
   const edit = planEdit(plan);
   const camera = studio ? (fit.trusted ? planCamera(plan, edit) : { keys: [{ t: 0, z: 1, cx: 0.5, cy: 0.5 }], shots: [], poster: posterTime(plan, edit, []) }) : null;
-  const captions = planCaptions(plan, edit);
+  // The owner's shared keys, when this build has them, never show in a caption. Read from .env.local in memory only.
+  const keys = sharedKeyValues(existsSync(".env.local") ? readFileSync(".env.local", "utf8") : null);
+  const captions = planCaptions(plan, edit).map((c) => (keys.length ? { ...c, text: redactValues(c.text, keys) } : c));
   const badges = edit.badges;
   const poster = camera ? camera.poster : posterTime(plan, edit, []);
   const geometry = screenGeometry(shaped, box, plan.viewport, fit.odd);

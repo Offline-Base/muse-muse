@@ -82,7 +82,26 @@ export interface StartDeployInput {
   projectId?: string | null;
   /** Given the exact files once they're known to deploy (docs/VERSIONS.md). Must not throw. */
   onFiles?: (files: Array<DeployFile & { content: Buffer }>) => Promise<unknown>;
+  /**
+   * Called with the files before anything is set or deployed. It throws (a FatalError) to stop the deploy, which is how
+   * a shared key's value in the product's files stops it (docs/BUILD_KEYS.md).
+   */
+  checkFiles?: (files: ReadonlyArray<DeployFile & { content: Buffer }>) => void;
+  /**
+   * BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): the owner's shared keys to set on the project as sensitive vars, and the
+   * names to take off it. Absent with the flag off, so the project's env is handled exactly as before.
+   */
+  sharedEnv?: SharedEnvSync;
 }
+
+/** The shared vars a deploy sets, and the shared names it removes when this build may not have them. */
+export interface SharedEnvSync {
+  set: Readonly<Record<string, string>>;
+  remove: readonly string[];
+}
+
+/** What a shared var says in the project's env list, so a person reading it there knows where it came from. */
+export const SHARED_ENV_COMMENT = "Muse Muse shared account key (docs/BUILD_KEYS.md). Removed by scripts/keys/revoke-shared.ts.";
 
 export class VercelApiError extends Error {
   constructor(
@@ -267,15 +286,38 @@ async function getOrCreateProject(name: string, projectId?: string | null): Prom
   }
 }
 
-async function configureProject(project: Project, vars: Record<string, string>): Promise<void> {
+async function configureProject(project: Project, vars: Record<string, string>, shared?: SharedEnvSync): Promise<void> {
   // Products are public: no Vercel Authentication and no password on any deployment.
   await vercel("PATCH", `/v9/projects/${project.id}`, { body: { framework: "nextjs", ssoProtection: null, passwordProtection: null } });
   const entries = Object.entries(vars);
-  if (!entries.length) return;
-  await vercel("POST", `/v10/projects/${project.id}/env`, {
-    query: { upsert: "true" },
-    body: entries.map(([key, value]) => ({ key, value, type: "encrypted", target: ["production", "preview"] })),
-  });
+  if (entries.length) {
+    await vercel("POST", `/v10/projects/${project.id}/env`, {
+      query: { upsert: "true" },
+      body: entries.map(([key, value]) => ({ key, value, type: "encrypted", target: ["production", "preview"] })),
+    });
+  }
+  if (shared) await syncSharedEnv(project.id, shared, vars);
+}
+
+/**
+ * Sets the shared keys as sensitive vars, which nobody can read back from Vercel, and deletes every shared name this
+ * build may not have, so a change that lost a key, or was asked for by someone who may not use them, takes it out of the
+ * live product. A platform var of the same name always wins. Only names travel in errors, never a value.
+ */
+export async function syncSharedEnv(projectId: string, shared: SharedEnvSync, platformVars: Readonly<Record<string, string>> = {}): Promise<void> {
+  const set = Object.entries(shared.set).filter(([k]) => !(k in platformVars));
+  if (set.length) {
+    await vercel("POST", `/v10/projects/${projectId}/env`, {
+      query: { upsert: "true" },
+      body: set.map(([key, value]) => ({ key, value, type: "sensitive", target: ["production", "preview"], comment: SHARED_ENV_COMMENT })),
+    });
+  }
+  const remove = new Set(shared.remove.filter((k) => !(k in shared.set) && !(k in platformVars)));
+  if (!remove.size) return;
+  const listed = await vercel<{ envs?: Array<{ id: string; key: string }> }>("GET", `/v9/projects/${projectId}/env`);
+  for (const e of listed.envs ?? []) {
+    if (remove.has(e.key)) await vercel("DELETE", `/v9/projects/${projectId}/env/${encodeURIComponent(e.id)}`);
+  }
 }
 
 /** The project's stable production URL: its .vercel.app domain, or the name-based default. */
@@ -303,7 +345,8 @@ export async function startDeployFromSandbox(
   // collectDeployFiles fails the deploy by name when a file, or all of them together, is too big (DeployFilesTooBigError).
   const [{ files }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
   if (!files.some((f) => f.file === "package.json")) throw new Error("The product has no package.json to deploy");
-  await configureProject(project, input.env);
+  input.checkFiles?.(files);
+  await configureProject(project, input.env, input.sharedEnv);
   await input.onFiles?.(files);
 
   const body = {

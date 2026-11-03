@@ -1,11 +1,22 @@
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
+import { redactShared, redactSharedValue } from "@/lib/keys/shared";
 import { proveRunning } from "@/lib/outputs/labels";
 import type { BuildEvent, BuildEventBody, BuildStatus } from "@/lib/types";
 
-/** Appends one event to a build's log. The build room picks it up through the SSE route. */
+/**
+ * Appends one event to a build's log. The build room picks it up through the SSE route. Every string in it has the
+ * owner's shared keys taken out first (docs/BUILD_KEYS.md), which changes nothing while none is set.
+ */
 export async function emit(buildId: string, body: BuildEventBody): Promise<void> {
-  await db().insert(schema.buildEvents).values({ buildId, type: body.type, payload: body });
+  const payload = redactSharedValue(body);
+  await db().insert(schema.buildEvents).values({ buildId, type: payload.type, payload });
+}
+
+/** The string columns of a status update with any shared key taken out. Other values, such as dates, are left alone. */
+function redactedSet<T extends Record<string, unknown>>(set: T | undefined): T | undefined {
+  if (!set) return set;
+  return Object.fromEntries(Object.entries(set).map(([k, v]) => [k, typeof v === "string" ? redactShared(v) : v])) as T;
 }
 
 /**
@@ -22,10 +33,11 @@ export async function setBuildStatus(
   } = {},
 ): Promise<void> {
   const terminal = status === "live" || status === "partial" || status === "failed" || status === "refused";
+  const message = opts.message === undefined ? undefined : redactShared(opts.message);
   await db()
     .update(schema.builds)
     .set({
-      ...opts.set,
+      ...redactedSet(opts.set),
       status,
       ...(opts.step !== undefined ? { step: opts.step } : {}),
       ...(terminal ? { finishedAt: new Date() } : {}),
@@ -35,7 +47,7 @@ export async function setBuildStatus(
     type: "status",
     status,
     ...(opts.step ? { step: opts.step } : {}),
-    ...(opts.message ? { message: opts.message } : {}),
+    ...(message ? { message } : {}),
   });
 }
 
@@ -47,7 +59,8 @@ export async function eventsAfter(buildId: string, afterId: number, limit = 200)
     .where(and(eq(schema.buildEvents.buildId, buildId), gt(schema.buildEvents.id, afterId)))
     .orderBy(asc(schema.buildEvents.id))
     .limit(limit);
-  return rows.map((r) => ({ ...r.payload, id: r.id, at: r.at.toISOString() }));
+  // Also on the way out, for events stored by another path (an imported product's) or before a key was added.
+  return rows.map((r) => ({ ...redactSharedValue(r.payload), id: r.id, at: r.at.toISOString() }));
 }
 
 /** Adds to a build's running cost and tells the build room. */
