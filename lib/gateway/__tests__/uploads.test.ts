@@ -12,7 +12,8 @@ import { UPLOAD_CONTENT_TYPES, handleGatewayUpload, type UploadDeps } from "@/li
 
 /** Stand-in for the per-issuance signing key the Blob API returns. Not a real one. */
 const FAKE_SIGNING_KEY = "test-client-signing-key";
-const NOW = new Date("2026-11-03T08:00:00Z");
+/** The real clock: @vercel/blob checks the delegation against it. */
+const NOW = new Date();
 const TOKEN: GatewayToken = { id: "tok_1", productId: "prod_1", scope: "product", allowedModels: null, dailyBudgetUsd: null } as unknown as GatewayToken;
 const b64url = (s: string) => Buffer.from(s).toString("base64url");
 

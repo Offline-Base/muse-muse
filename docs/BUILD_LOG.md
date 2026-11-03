@@ -3611,3 +3611,40 @@ From audits B and C of 12 overnight products. Template parts, recipe skills and 
 - **"How it was built" on product pages:** the raw tool log note (with `/vercel/.local/share/muse/sessions/...` paths) is left out, since the page already counts tool calls and edits. Other notes, and the log line itself in the build room, lose machine paths, session ids and lines like `{` or `<read-skill-result ...>` (`lib/pipeline/visitor-text.ts`).
 - **Tests:** ship-rules (12), build-steps scenario (64), workflow scenario (76), known-issues render, build-highlights, full builds, chain plan, engine, product page, steps feed, derive. Typecheck clean. Not pushed.
 - **Review fix:** the live check could call a read-only action with an input made from its schema, so a product's own 404 for a made-up id would have shipped a good build as partial. Now a 401, 403 or 404 in the product's own JSON, or a 409, neither passes nor fails; the host's 404 or 401 page (no route, a locked link) still fails. The path scrub no longer eats words that only start like a machine folder (`/runs`, `/variables`).
+
+## Nov 3, 2026, 5 AM ET: audits B and C fixes merged (workflow wf_d66062db-7fe)
+
+Five units, each built in its own ~/mm-wt worktree and checked by a second agent (4 fixed real problems, 1 was ready as is). Merged to main together.
+- **Root causes found:**
+  - sim-desk-agent-demo sent SVG screenshots; Meta refuses SVG (1.2 s), so the model never ran and a scripted "local plan" answered with `model: false`.
+  - fable-case-ledger's `file_memo` and `prove_item` routes cap output at 900 tokens. Meta counts reasoning against `max_output_tokens`, so long records came back cut off, the JSON parse failed, and the route answered 502. The gateway's calls all answered 200, so it wasn't a run cap.
+  - `liveCheck` was null on every build because ENGINE_LIVE_SMOKE is off; when on, it only did GET and OPTIONS.
+  - The legal build's 60-minute cap was its first round's cap; a full build's wall is 150 minutes, and the last fix round was cut to 8 minutes.
+- **Gateway:** structured (JSON) calls get a 4,000-token output floor, which also fixes products already live. Long-run recipe builds get 30 turns, 40 tool calls and $1.50 per run instead of 6, 8 and $0.40, so a real end-to-end smoke run fits. A run-limit refusal says plainly that the run hit its cap.
+- **Verify honesty (template):**
+  - Every action answer in the smoke run is recorded. A 200 with `model: false`, `fallback: true`, `estimate: true` or an `error` string on the built-in sample fails verify.
+  - `imagePart` refuses SVG and other non-raster images with a clear message.
+  - Model errors map to a cause (timeout, run limit, rate limit, refused, schema, upstream) with a matching status, instead of a generic 502.
+  - Static lints catch media in localStorage and client components reaching the model client.
+  - AGENTS.md: the main model action never has a local substitute.
+- **Judge:**
+  - Fallback copy means the requirement isn't working.
+  - Error copy on a working screen is a defect.
+  - Transitions need a screenshot after them.
+  - Raw ids, wrong plurals and counts that disagree are defects, and so are contradictory statements.
+  - The judge now sees up to 2 of the product's samples, so a "puppy" clip with no animal fails.
+  - The build prompt: follow-ups carry their run or record, model fields pre-fill the UI, and the final shot comes after gates.
+- **Skills and helpers:**
+  - IndexedDB `media-store`, a raster helper, and a `Tabs` component and `.tab-bar` that fit at 390 px.
+  - recipe-games: levels always end, and touch controls sit on the canvas.
+  - recipe-sam-media: a real made-up clip (a Muse Image still panned with ffmpeg), checked with SAM.
+  - recipe-simulated-loops: PNG screens, one model call per role, and plausible delete targets.
+  - recipe-case-agent: the memo is tested on the full record.
+- **Shipping:**
+  - A live action check (`LIVE_ACTION_CHECK`, on by default) makes one real call on the live link after deploy. A failure or a fallback shows as a known issue, not a clean Live.
+  - Time is held back inside the wall for the final checks.
+  - A judge-failed ship shows its mismatches.
+  - "How it was built" no longer shows sandbox paths.
+- **Also:** lib/gateway/__tests__/uploads.test.ts used a fixed clock, so its signed link expired once real time passed it. It now uses the real clock.
+- **Tests:** round 2 touched tests 339 of 339; brief, full and gateway suites 509 of 509 after the clock fix; pipeline, engine and outputs suites 499 of 499; typecheck clean.
+- **Needs a new builder snapshot:** the template parts (verify recording and lints, lib/meta errors and image checks, AGENTS.md, media-store, raster, Tabs, CSS, product-ui). The gateway floor, caps, judge, recipes, live check and shipping rules are live on deploy.
