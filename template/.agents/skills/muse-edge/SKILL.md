@@ -56,8 +56,36 @@ export async function POST(request: Request) {
 - `threshold` (default 0.5) is the lowest score that counts, on both sides.
 - `overlay: true` asks the board for its picture with the matches tinted (`seen.overlay`, a JPEG data URL). The cloud has none, so draw your own boxes either way.
 - When `ok` is false, show `seen.message` as it is, on the page: "Can't see right now..." when both sides are down, the cloud's refusal, or a photo it couldn't read. Never guess a count, and never `console.error` it.
+- Every photo the product offers as a sample (a door photo, say) lives in `public/samples/`: copy it there from `fixtures/`. Put a "Try the sample" button next to the photo picker that loads it with `fetch("/samples/door-open.jpg")`, then `resizeImage` and `blobToDataUrl` as for a picked photo, and sends it through the same route. Never fetch `/fixtures/` from the page: that folder isn't served. The smoke test clicks "Try the sample" and waits for the labeled result.
 - When the look is the main answer (is the door open?), turn the count into the status in code ("Door open" when the count is above 0), not with a model. Such a product needs no `respondJsonOrEdge` at all.
 - A camera button: `navigator.mediaDevices.getUserMedia({ video: true })` into a `<video>`, draw one frame on a canvas, `canvas.toBlob(cb, "image/jpeg", 0.85)`, then `resizeImage` and `blobToDataUrl`. Stop the camera's tracks after. Browsers open the camera only on https or `http://localhost`, so keep a photo picker (`FilePicker`, product-ui skill) beside it.
+
+## The board status line
+
+Every edge product shows whether it reaches a board, on its main screen, near the main answer. Render the template's `BoardStatus` from `components/BoardStatus.tsx`, and keep `app/api/board-status/route.ts` and `lib/meta/board-status.ts` as they are:
+
+```tsx
+import { BoardStatus } from "@/components/BoardStatus";
+
+<BoardStatus looks /> {/* `looks` only when the product looks at photos with segmentOrEdge */}
+```
+
+- It says "Connected to <board>" only when every board side this copy has set up answered its health check just now, and "Not connected to a board" otherwise, with a plain second line. It asks no model.
+- A hosted copy usually has no board: then it says "Not connected to a board", and that is the truth. Never hide it, restyle it into something that looks connected, or write your own wording for it.
+- Never say a board answered unless a reply's `by` says so. Never show a board name, a board model or "on the board" anywhere else on the page.
+
+## Board screens
+
+A screen, tab or mode that says it shows the board's answer ("Board", "Board mode", "Offline preview", "On the Jetson") must never call the cloud. Call the helpers with `boardOnly: true` there:
+
+```ts
+const answer = await respondJsonOrEdge({ schema: Status, schemaName: "status", instructions, input, request, boardOnly: true });
+const seen = await segmentOrEdge({ image: photo, prompt, request, boardOnly: true });
+```
+
+- With no board set up they return `ok: false` with "Not connected to a board. This screen asks only the board, so the cloud model wasn't asked." Show that message as it is, with the BoardStatus line beside it. That is the right result on a hosted copy.
+- An answer labeled "Answered in the cloud" or "Seen in the cloud" never goes on a board screen.
+- You don't need a board screen. The main screen with its label and the BoardStatus line is enough.
 
 ## Labels
 
@@ -103,6 +131,6 @@ These are set by whoever runs the product. Never put a value in code.
 ## Testing
 
 - Unit tests can fake `fetch` the way `scripts/__tests__/edge.test.mjs` does.
-- Write `edge-drill.json` at the product's root, naming the route that calls `respondJsonOrEdge` and a simulated body for it: `{ "path": "/api/actions/status", "method": "POST", "body": { ... } }`. The route's JSON reply must carry `label` on success and `message` when both sides fail.
-- A product that looks at photos also names its `segmentOrEdge` route under `sam`, with the string `SIMULATED_PHOTO` where the photo goes (the drill puts a small simulated photo there): `"sam": { "path": "/api/actions/look", "body": { "photo": "SIMULATED_PHOTO", "prompt": "open door" } }`. A product whose only answer is the look writes only `sam`.
-- `scripts/edge-drill.mjs` runs four simulated outage drills against a running product (cloud refused, cloud hung, both down, a tampered edge reply), and four more on the `sam` route (the same, with a tampered board reply), with `scripts/edge-fake.mjs` as the edge server and the board's SAM service and `scripts/edge-blackhole.mjs` as the gateway. Read the top of each file. None of them calls a real model.
+- Write `edge-drill.json` at the product's root, naming the route that calls `respondJsonOrEdge` and a simulated body for it: `{ "path": "/api/actions/status", "method": "POST", "body": { ... } }`. The route's JSON reply must carry `label` on success and `message` when both sides fail. Add `"page": "/board"` only when the BoardStatus line is on a page other than `/`.
+- A product that looks at photos also names its `segmentOrEdge` route under `sam`, with the string `SIMULATED_PHOTO` where the photo goes (the drill puts a small simulated photo there), and its sample photo under `sample`: `"sam": { "path": "/api/actions/look", "body": { "photo": "SIMULATED_PHOTO", "prompt": "open door" }, "sample": "/samples/door-open.jpg" }`. A product whose only answer is the look writes only `sam`.
+- `scripts/edge-drill.mjs` runs four simulated outage drills against a running product (cloud refused, cloud hung, both down, a tampered edge reply), two board status drills (the route says connected with the simulated board up and "Not connected to a board" with it down, and the page shows the BoardStatus line), and on the `sam` route four more (the same, with a tampered board reply) and one that loads the sample photo, with `scripts/edge-fake.mjs` as the edge server and the board's SAM service and `scripts/edge-blackhole.mjs` as the gateway. Read the top of each file. None of them calls a real model.

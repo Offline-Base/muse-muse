@@ -14,6 +14,10 @@ import { CLOUD_DECLINED_MESSAGE, respondJsonOrEdge, segmentOrEdge } from "../../
 import { startBlackhole } from "../edge-blackhole.mjs";
 import { DEFAULT_SAM_DRILL_IDS, runDrills, SAM_DOWN_PHRASE, samDrillTarget, SetupError, withSimulatedPhoto } from "../edge-drill.mjs";
 import { photoSize, samReply, SIMULATED_PHOTO, SIMULATED_PHOTO_PLACEHOLDER, startEdgeFake, TAMPER_MARK, TRUNCATE_MARK } from "../edge-fake.mjs";
+import { serveBoard } from "./edge-board-kit.mjs";
+
+/** The product's sample photo, as public/samples/ serves it. */
+const SAMPLE_PATH = "/samples/door-open.png";
 
 const saved = { ...process.env };
 after(() => {
@@ -84,7 +88,10 @@ describe("samDrillTarget", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "edge-sam-drill-"));
     assert.equal(samDrillTarget({}, dir), null);
     writeFileSync(path.join(dir, "edge-drill.json"), JSON.stringify({ sam: { path: "/api/actions/look", body: { photo: SIMULATED_PHOTO_PLACEHOLDER, prompt: "open door", more: [SIMULATED_PHOTO_PLACEHOLDER] } } }));
-    assert.deepEqual(samDrillTarget({}, dir), { path: "/api/actions/look", method: "POST", body: { photo: SIMULATED_PHOTO, prompt: "open door", more: [SIMULATED_PHOTO] } });
+    assert.deepEqual(samDrillTarget({}, dir), { path: "/api/actions/look", method: "POST", body: { photo: SIMULATED_PHOTO, prompt: "open door", more: [SIMULATED_PHOTO] }, sample: null });
+    writeFileSync(path.join(dir, "edge-drill.json"), JSON.stringify({ sam: { path: "/api/actions/look", sample: "/samples/door-open.jpg" } }));
+    assert.equal(samDrillTarget({}, dir).sample, "/samples/door-open.jpg");
+    assert.equal(samDrillTarget({ EDGE_DRILL_SAM_SAMPLE: "/samples/other.png" }, dir).sample, "/samples/other.png");
     assert.equal(samDrillTarget({ EDGE_DRILL_SAM_PATH: "/api/x", EDGE_DRILL_SAM_BODY: '{"image":"SIMULATED_PHOTO"}' }, dir).body.image, SIMULATED_PHOTO);
     assert.equal(withSimulatedPhoto("SIMULATED_PHOTO_NOT"), "SIMULATED_PHOTO_NOT", "only the exact string");
   });
@@ -113,6 +120,16 @@ describe("the photo drills and drill 11, against a product", () => {
     process.env.EDGE_TIMEOUT_MS = "2000";
     process.env.EDGE_SAM_TIMEOUT_MS = "2000";
     product = createServer(async (req, res) => {
+      if (req.url === SAMPLE_PATH) {
+        res.writeHead(200, { "content-type": "image/png" });
+        res.end(Buffer.from(SIMULATED_PHOTO.split(",")[1], "base64"));
+        return;
+      }
+      if (req.url?.startsWith("/samples/") || req.url?.startsWith("/fixtures/")) {
+        res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+        return;
+      }
+      if (await serveBoard(req, res)) return;
       let raw = "";
       for await (const c of req) raw += c;
       const out = await (req.url === "/api/actions/look" ? routes.look : routes.status)(raw ? JSON.parse(raw) : {});
@@ -130,7 +147,7 @@ describe("the photo drills and drill 11, against a product", () => {
 
   const Status = z.object({ status: z.enum(["normal", "watch", "alert"]), actions: z.array(z.string()).min(1) });
   const target = { path: "/api/actions/status", method: "POST", body: {} };
-  const samTarget = { path: "/api/actions/look", method: "POST", body: { photo: SIMULATED_PHOTO, prompt: "open door" } };
+  const samTarget = { path: "/api/actions/look", method: "POST", body: { photo: SIMULATED_PHOTO, prompt: "open door" }, sample: SAMPLE_PATH };
   /** What a product that follows the skill does with each helper. */
   const skill = {
     status: async () => {
@@ -144,7 +161,7 @@ describe("the photo drills and drill 11, against a product", () => {
   };
   const opts = (extra) => ({ baseUrl, target, samTarget, fake, hole, hangMaxMs: 4000, ...extra });
 
-  test("a product that follows the skill passes the four text drills and the four photo drills, in that order", async () => {
+  test("a product that follows the skill passes the four text drills, the four photo drills and the board and sample drills, in that order", async () => {
     routes = skill;
     const results = await runDrills(opts({}));
     assert.deepEqual(results.map((r) => [r.id, r.pass, r.why]), [
@@ -156,6 +173,9 @@ describe("the photo drills and drill 11, against a product", () => {
       [13, true, null],
       [14, true, null],
       [15, true, null],
+      [17, true, null],
+      [18, true, null],
+      [19, true, null],
     ]);
     assert.ok(results.find((r) => r.id === 13).ms >= 450, "the hung drill waited for the cloud deadline");
   });
@@ -168,13 +188,21 @@ describe("the photo drills and drill 11, against a product", () => {
       [16, true, null],
     ]);
     const textOnly = await runDrills(opts({ samTarget: null, only: undefined }));
-    assert.deepEqual(textOnly.map((r) => r.id), [1, 2, 3, 4]);
+    assert.deepEqual(textOnly.map((r) => r.id), [1, 2, 3, 4, 17, 18]);
+  });
+
+  test("the sample photo drill fails by name when edge-drill.json names none, it is outside public/samples/, or it isn't served", async () => {
+    routes = skill;
+    const why = async (sample) => (await runDrills(opts({ samTarget: { ...samTarget, sample }, only: [19] })))[0].why;
+    assert.match(await why(null), /names no sample photo: add "sample": "\/samples\/<file>\.jpg" under "sam"/);
+    assert.match(await why("/fixtures/door-open.png"), /isn't in public\/samples\//);
+    assert.match(await why("/samples/missing.png"), /\/samples\/missing\.png: status 404/);
   });
 
   test("a product that only looks runs the photo drills alone", async () => {
     routes = skill;
     const results = await runDrills(opts({ target: null }));
-    assert.deepEqual(results.map((r) => r.id), DEFAULT_SAM_DRILL_IDS);
+    assert.deepEqual(results.map((r) => r.id), [...DEFAULT_SAM_DRILL_IDS, 17, 18, 19]);
     assert.ok(results.every((r) => r.pass));
   });
 

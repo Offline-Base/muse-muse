@@ -20,6 +20,9 @@ import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
 import { extensionSlots } from "@/components/product/ExtensionPanel";
+import { DRILLS_SECTION_ID, edgeSlots } from "@/components/product/EdgeSlot";
+import { fleetSamSettings } from "@/lib/caps/fleet/sam";
+import { canReadCode } from "@/lib/versions/policy";
 import { extensionZipReady } from "@/lib/caps/extension/store";
 import { hardwareOwnerLink } from "@/lib/caps/hardware/owner-link";
 import { museCodeOwnerLink } from "@/lib/caps/code/musecode/owner-link";
@@ -110,6 +113,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     : null;
   // Where it ran: the devices it was recorded on, each playing its recording (docs/BRAND.md, "Device stage"). None, no stage.
   const deviceRuns = shipped ? stageDevices(product.slug, native.clips) : [];
+  // The Edge slot (components/product/EdgeSlot.tsx): only for a brief with the edge target while EDGE_ENABLED is on.
+  const edge = edgeSlots({
+    slug: product.slug,
+    edge: shipped && env.edgeEnabled && briefTargets(brief).includes("edge"),
+    looks: (brief?.capabilities ?? []).some((c) => c.model === "sam-3.1"),
+    drills,
+    fleetSam: env.fleetSam && fleetSamSettings() !== null,
+    fleetAllProducts: env.fleetAllProducts,
+    // getProductPage finds no product that was taken down.
+    codeReadable: canReadCode({ status: product.status, sourcePublic: product.sourcePublic === true, takenDownAt: null }, canEdit),
+  });
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
@@ -228,7 +242,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {deviceRuns.length ? <DeviceStage runs={deviceRuns} productName={product.name} /> : null}
 
         {shipped ? (
-          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
+          <GetItPanel slots={{ ...native.slots, ...edge, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}), ...(env.runtimeOutputs ? runtimeOutputSlots({ product, origin, isOwner }) : {}), ...(env.enabledCaps.includes("extension") ? extensionSlots({ product, origin, brief, ready: extensionReady }) : {}) }} initial={native.initial} />
         ) : null}
 
         {/* FULL_BUILDS: only a brief written with it has requirements. Nothing renders for any other product. */}
@@ -243,7 +257,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
         {/* EDGE_ENABLED: only a build that ran the simulated outage drill has these steps. Nothing renders for any other. */}
         {drills ? (
-          <section className="card section-card" aria-label={DRILL_GROUP_TITLE}>
+          <section className="card section-card" id={DRILLS_SECTION_ID} aria-label={DRILL_GROUP_TITLE}>
             <DrillGroup drills={drills.drills} note={drills.later ? DRILLS_EARLIER_NOTE : undefined} why={isOwner} />
           </section>
         ) : null}

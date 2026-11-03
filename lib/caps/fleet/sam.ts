@@ -261,24 +261,34 @@ function failure(err: unknown): Response {
   return gatewayError(502, "server_error", code, "The office board didn't answer. Try again in a moment.", { retry: false });
 }
 
+/**
+ * Who may reach the office board: the checks every fleet SAM route makes on the caller's token and product, in order.
+ * The token, or the gateway error to answer with. Shared with the board status route (lib/edge/fleet-status.ts).
+ */
+export async function fleetSamCaller(req: Request, deps: Pick<FleetSamDeps, "findToken" | "product" | "adminEmails" | "allProducts">): Promise<CapToken | Response> {
+  const raw = parseBearer(req.headers.get("authorization"));
+  const token = raw ? await deps.findToken(raw) : null;
+  if (!token) return gatewayError(401, "authentication_error", "invalid_token", 'Send the product\'s token as "Authorization: Bearer <PRODUCT_TOKEN>".', { retry: false });
+  const product = await deps.product(token.productId);
+  if (!product || product.status === "disabled" || product.status === "failed" || product.takenDownAt || product.ownerBannedAt) {
+    return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.", { retry: false });
+  }
+  if (!token.allowedModels.includes(FLEET_SAM_TOKEN_MODEL)) return gatewayError(403, "permission_error", "sam_not_allowed", "This product's brief doesn't use Meta SAM 3.1.", { retry: false });
+  // Builds and their drills never reach the board: to the product this is the board being down.
+  if (token.scope === "build") return gatewayError(503, "server_error", "fleet_sam_build", "Test builds don't reach the office board.", { retry: false });
+  if (token.scope !== "live") return gatewayError(403, "permission_error", "cap_not_allowed", "Only a product's own token can use this.", { retry: false });
+  const tier = builderTier({ email: product.ownerEmail, isAdmin: product.ownerIsAdmin && deps.adminEmails.includes(product.ownerEmail), bannedAt: product.ownerBannedAt });
+  if (!tierMayUseBuilderCaps(tier)) return gatewayError(403, "permission_error", "sign_in_required", "The office board needs a product made by someone signed in to Muse Muse.", { retry: false });
+  if (tier !== "admin" && !deps.allProducts()) return gatewayError(403, "permission_error", "sam_not_allowed", "The office board is open only to the platform's own products for now.", { retry: false });
+  return token;
+}
+
 export async function handleFleetSegment(req: Request, deps: FleetSamDeps): Promise<Response> {
   if (!deps.on()) return gatewayError(404, "not_found_error", "unknown_endpoint", `The gateway does not serve ${FLEET_SAM_ENDPOINT}.`, { retry: false });
   if (req.method !== "POST") return gatewayError(405, "invalid_request_error", "method_not_allowed", `Use POST for ${FLEET_SAM_ENDPOINT}.`, { retry: false, headers: { allow: "POST" } });
   try {
-    const raw = parseBearer(req.headers.get("authorization"));
-    const token = raw ? await deps.findToken(raw) : null;
-    if (!token) return gatewayError(401, "authentication_error", "invalid_token", 'Send the product\'s token as "Authorization: Bearer <PRODUCT_TOKEN>".', { retry: false });
-    const product = await deps.product(token.productId);
-    if (!product || product.status === "disabled" || product.status === "failed" || product.takenDownAt || product.ownerBannedAt) {
-      return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.", { retry: false });
-    }
-    if (!token.allowedModels.includes(FLEET_SAM_TOKEN_MODEL)) return gatewayError(403, "permission_error", "sam_not_allowed", "This product's brief doesn't use Meta SAM 3.1.", { retry: false });
-    // Builds and their drills never reach the board: to the product this is the board being down.
-    if (token.scope === "build") return gatewayError(503, "server_error", "fleet_sam_build", "Test builds don't reach the office board.", { retry: false });
-    if (token.scope !== "live") return gatewayError(403, "permission_error", "cap_not_allowed", "Only a product's own token can use this.", { retry: false });
-    const tier = builderTier({ email: product.ownerEmail, isAdmin: product.ownerIsAdmin && deps.adminEmails.includes(product.ownerEmail), bannedAt: product.ownerBannedAt });
-    if (!tierMayUseBuilderCaps(tier)) return gatewayError(403, "permission_error", "sign_in_required", "The office board needs a product made by someone signed in to Muse Muse.", { retry: false });
-    if (tier !== "admin" && !deps.allProducts()) return gatewayError(403, "permission_error", "sam_not_allowed", "The office board is open only to the platform's own products for now.", { retry: false });
+    const token = await fleetSamCaller(req, deps);
+    if (token instanceof Response) return token;
 
     const look = await readLook(req);
     if (look instanceof Response) return look;

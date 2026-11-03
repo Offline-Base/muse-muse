@@ -33,6 +33,26 @@ export const EDGE_SAM_DRILLS: ReadonlyArray<{ id: number; name: string; simulate
   { id: 15, name: "SAM, tampered board reply rejected", simulated: "A simulated board sent a look with the wrong types, and none of it was allowed into the product's reply." },
 ];
 
+/**
+ * The two board status drills (template/scripts/edge-drill.mjs, 17 and 18), run for every edge product: the product's
+ * board status route (app/api/board-status) says connected only while the simulated board answers, says "Not connected
+ * to a board" when it doesn't, and the page shows the line.
+ */
+export const EDGE_BOARD_DRILLS: ReadonlyArray<{ id: number; name: string; simulated: string }> = [
+  { id: 17, name: "board status, board up", simulated: "A simulated board answered its health check, so the product's board status line had to say it was connected, and the page had to show that line." },
+  { id: 18, name: "board status, board down", simulated: "The simulated board dropped every connection, so the product's board status line had to say \"Not connected to a board\"." },
+];
+
+/** The sample photo drill (19), for a product that looks at photos: its "Try the sample" photo must be served from public/samples/. */
+export const EDGE_SAMPLE_DRILL: { id: number; name: string; simulated: string } = {
+  id: 19,
+  name: "SAM, sample photo served",
+  simulated: "Not simulated: the product had to serve the sample photo its \"Try the sample\" button loads, from public/samples/.",
+};
+
+/** Every drill this version knows, by id. */
+export const ALL_EDGE_DRILLS: ReadonlyArray<{ id: number; name: string; simulated: string }> = [...EDGE_DRILLS, ...EDGE_SAM_DRILLS, ...EDGE_BOARD_DRILLS, EDGE_SAMPLE_DRILL];
+
 /** One drill's result as the build room and the product page show it. */
 export interface DrillRow {
   id: number;
@@ -69,7 +89,7 @@ export function splitDrillSteps<S extends Step>(steps: readonly S[]): { checks: 
       ok: s.ok,
       ...(typeof s.ms === "number" ? { ms: s.ms } : {}),
       ...(s.detail ? { detail: s.detail } : {}),
-      simulated: [...EDGE_DRILLS, ...EDGE_SAM_DRILLS].find((d) => d.id === id)?.simulated ?? "",
+      simulated: ALL_EDGE_DRILLS.find((d) => d.id === id)?.simulated ?? "",
     });
   }
   return { checks: drills.length ? checks : [...steps], drills };
