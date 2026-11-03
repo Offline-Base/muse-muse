@@ -3293,3 +3293,11 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - **When:** the plan still says start after judging.
 - **Fixed (lib/recipes/registry.ts):** recipe-image, recipe-voice and recipe-sam-media now add the models they always call (`muse-image-1.0`, `muse-voice-transcribe-1.0`, `sam-3.1`) to the product's allowed models, as the case agent already did. Before, a writer that left the model out of capabilities shipped a product whose own calls got 404. Test added in lib/recipes/__tests__/recipes.test.ts, 7 of 7 pass, typecheck clean. Nothing changes with `RECIPES_ENABLED` off.
 - Spend $0.
+
+## Nov 2, 2026, late night: Muse Code's `/taste` as a last UI pass, and Wonder stays off
+
+- **Owner question:** should Opus do a UI pass on each build? No: every model the project calls at runtime must be Meta's, and a Claude pass inside the build pipeline is the non-Meta helper the organizers ruled out. Opus improves the template and skills instead, which is development.
+- **Change (template/.agents/skills/product-ui/SKILL.md, owner: "use their taste skill and our meta ui skill in conjunction"):** before a screen is done, the build uses Muse Code's built-in `taste` skill as a last pass. That strips machine-made defaults (centered hero with two buttons, three identical cards, decorative gradients, one big radius everywhere). The look skill (meta-ui, or muse-app-ui) is the brand and wins where they disagree, since `taste` defers to a stated brand (content/meta-docs/pages/cookbook/bundled-skills.md). If `taste` isn't installed, the build checks the same list by hand.
+- **Reaches builds with the next builder snapshot.** It's a template file, and no platform prompt changed. Not yet seen in a real build: whether this Muse Code version ships `taste`, and whether a non-interactive build invokes it.
+- **Owner decision:** Wonder stays off for now. `BUILDS_ON_CONTRIBUTOR` stays on, and docs/HANDOFF.md says so.
+- **Tests:** template-source and range, 30 of 30. Spend $0.

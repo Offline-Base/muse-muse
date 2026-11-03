@@ -10,6 +10,7 @@ description: Use for every screen of a Muse Muse product, together with meta-ui.
 - Follow `.agents/skills/meta-ui` for how every screen looks: the Meta tokens, type, parts and patterns. Use the tokens and classes in `app/globals.css` for every color, radius, font, card, field, button, chip and table. Light and dark mode both come from the tokens.
 - At most one signature element: the surface that holds the result (meta-ui), never inspo artwork.
 - Never use Meta logos, wordmarks or marks, or the Meta name as branding. Keep `components/Footer.tsx`. It says "Built with Muse Muse. Not an official Meta product."
+- Before you call a screen done, use Muse Code's built-in `taste` skill (`/taste`) on it as a last pass: its checklist strips the defaults that make a UI look machine-made, such as a centered hero with a headline and two buttons, three identical feature cards, a stack of decorative gradients, and the same large radius on everything. The look skill above is the brand, and `taste` defers to a stated brand, so where they disagree the look skill wins: keep its tokens, fonts, radii and the one AI gradient. If `taste` isn't installed, check the screen against that list yourself.
 - Take layout ideas and mood from `inspo/`. The mood shows only in the copy, the samples and any images the product makes, never as decoration: use the tokens for every color and font (Meta blue is the only signature color), and never reuse a logo, name or artwork from it.
 
 ## Patterns
