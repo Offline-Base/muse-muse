@@ -19,9 +19,11 @@ const MAX_BODY_BYTES = 16 * 1024;
  * POST {focus?, again?, look?} -> 201 {buildId, model, maxUsd, roundSteps, fixRounds, look?}: the polish round
  * (lib/polish/logic.ts), one refinement of the live product this build made, with Muse Code on Muse Wonder and the fixed
  * polish note, plus `focus` (audit findings, say). `look: "meta"` switches the product to the Meta UI look (any other
- * value is a 400); left out, the product keeps its look. Admins, or a script with the AUTOMATION_SECRET bearer. 404 while POLISH_ENABLED is off or for an
- * unknown build, 409 not_shipped, busy (another build of the product runs) or already_polished (send again: true to run
- * another), 503 polish_budget_off with POLISH_MAX_USD at 0, and checkBuildAllowed's refusals (paused, no_storage).
+ * value is a 400); left out, the product keeps its look. Admins, or a script with the AUTOMATION_SECRET bearer. 404
+ * while POLISH_ENABLED is off or for an unknown build, 409 not_shipped, busy (another build of the product runs) or
+ * already_polished (send again: true to run another; either one says look "meta" when the polish it names switched the
+ * product to the Meta UI look), 503 polish_budget_off with POLISH_MAX_USD at 0, and checkBuildAllowed's refusals
+ * (paused, no_storage).
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!env.polishEnabled) return errorJson(404, "not_found");
@@ -63,7 +65,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
       },
       lastPolish: async (productId) => {
         const [row] = await db()
-          .select({ buildId: schema.builds.id, status: schema.builds.status })
+          .select({ buildId: schema.builds.id, status: schema.builds.status, message: schema.builds.message })
           .from(schema.builds)
           .where(and(eq(schema.builds.productId, productId), eq(schema.builds.kind, "refine"), sql`starts_with(${schema.builds.message}, ${POLISH_HEADER})`))
           .orderBy(desc(schema.builds.startedAt))

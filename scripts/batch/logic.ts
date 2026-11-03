@@ -207,7 +207,7 @@ export function polishBody(focus: string | null | undefined, pass: PolishPass = 
 export type PolishAnswer =
   | { kind: "started"; refineIds: string[]; maxUsd?: number }
   /** A 409 that names the product's polish already running or done: follow that one, start nothing. */
-  | { kind: "adopt"; refineIds: string[]; reason: string }
+  | { kind: "adopt"; refineIds: string[]; reason: string; look?: PolishBatchLook }
   /** --again: the product's earlier polish still runs. Try again after it, without counting a try. */
   | { kind: "wait"; reason: string; afterSeconds: number }
   | { kind: "route_missing"; message: string }
@@ -223,14 +223,30 @@ export type PolishAnswer =
  * Other 409s (busy with another build, not shipped yet), 429 and 503 come back later; 503 polish_budget_off
  * (POLISH_MAX_USD at 0) and 401 or 403 (a wrong key) stop the run, since every other build would hit them too.
  */
-export function parsePolishAnswer(status: number, json: Record<string, unknown>, site: string, opts: { again?: boolean; own?: readonly string[] } = {}): PolishAnswer {
+export function parsePolishAnswer(
+  status: number,
+  json: Record<string, unknown>,
+  site: string,
+  opts: { again?: boolean; own?: readonly string[]; look?: PolishBatchLook } = {},
+): PolishAnswer {
   const reason = String(json.message ?? json.error ?? `status ${status}`);
+  const other = status === 409 && isUuid(json.buildId) && !(opts.own ?? []).includes(json.buildId);
+  // --look: a polish the route says is in this pass's look already gives the product that look, and may be this pass's
+  // own start whose answer was lost, so it is followed rather than run twice.
+  if (other && opts.look && json.look === opts.look) return { kind: "adopt", refineIds: [json.buildId as string], reason: String(json.error ?? "busy"), look: opts.look };
   // --again: an earlier polish of the product is never followed in place of this pass. Only one this run started is.
-  if (opts.again && status === 409 && isUuid(json.buildId) && !(opts.own ?? []).includes(json.buildId)) {
+  if (other && opts.again) {
     if (json.error === "already_polished") {
       return { kind: "refused", reason: `409 already_polished although again: true was sent: ${site} has a polish route from before again. Deploy the current one, then run this again with --resume=<this file>.` };
     }
     return { kind: "wait", reason: `409 ${reason}: the product's earlier polish ${json.buildId} still runs, so this one starts after it`, afterSeconds: 300 };
+  }
+  // --look without --again: a polish in another look never stands in for this one, and the route won't run a second.
+  if (other && opts.look) {
+    if (json.error === "already_polished") {
+      return { kind: "refused", reason: `409 already_polished: the product's polish ${json.buildId} kept its look, and this pass didn't send again: true. Run with --again (and --resume=<this file>) to switch it to look ${opts.look}.` };
+    }
+    return { kind: "wait", reason: `409 ${reason}: the product's polish ${json.buildId} in another look still runs, so this pass asks again after it`, afterSeconds: 300 };
   }
   if (status >= 200 && status < 300) {
     const ids = new Set<string>();
@@ -290,6 +306,8 @@ export interface PolishItem {
   look?: PolishBatchLook;
   /** --again: the polishes an earlier pass started on this build, kept for the ledger and never followed. */
   earlierRefineIds?: string[];
+  /** One of earlierRefineIds still runs (readRound): the queue holds a reserve for it, as for a polish in flight. */
+  earlierInFlight?: boolean;
 }
 
 /**
@@ -298,8 +316,10 @@ export interface PolishItem {
  * any run without --again, is kept as it is, so a resumed file never polishes a build twice in the same pass.
  */
 export function resumedItem(prior: PolishItem, pass: PolishPass = {}): PolishItem {
-  const started = ["polishing", "polished", "polish_failed", "refused"].includes(prior.state);
-  if (!pass.again || !started || (prior.look ?? null) === (pass.look ?? null)) return { ...prior, state: prior.state === "ready" ? "waiting" : prior.state };
+  const started = ["polishing", "polished", "polish_failed"].includes(prior.state);
+  // A refused item started nothing, so with --again it is tried again whatever its look (its note may say to resume).
+  const again = pass.again && (prior.state === "refused" || (started && (prior.look ?? null) !== (pass.look ?? null)));
+  if (!again) return { ...prior, state: prior.state === "ready" ? "waiting" : prior.state };
   return {
     label: prior.label,
     buildId: prior.buildId,
@@ -355,12 +375,14 @@ export interface QueueMove {
 export function planStarts(items: readonly PolishItem[], limits: QueueLimits): QueueMove {
   const flyingItems = items.filter((i) => i.state === "polishing");
   const inFlight = flyingItems.length;
+  // An earlier pass's polish that still runs spends too, so it holds a reserve until it ends.
+  const earlierFlying = items.filter((i) => i.state !== "polishing" && i.earlierInFlight).length;
   const ready = items.filter((i) => i.state === "ready" && (!i.notBefore || new Date(i.notBefore) <= limits.now));
   if (!ready.length) return { start: [], inFlight };
   if (limits.pausedUntil && limits.pausedUntil > limits.now) return { start: [], inFlight, held: "paused" };
   const caps = items.map((i) => i.maxUsd).filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0);
   const perNext = Math.max(limits.reserveUsd, ...caps);
-  let held = flyingItems.reduce((s, i) => s + (i.maxUsd ?? perNext), 0);
+  let held = flyingItems.reduce((s, i) => s + (i.maxUsd ?? perNext), 0) + earlierFlying * perNext;
   const start: PolishItem[] = [];
   let flying = inFlight;
   for (const item of ready) {
@@ -375,7 +397,7 @@ export function planStarts(items: readonly PolishItem[], limits: QueueLimits): Q
 
 /** True when nothing can change any more: nothing waiting or in flight, and nothing ready that the budget allows. */
 export function queueDone(items: readonly PolishItem[], move: QueueMove): boolean {
-  if (items.some((i) => i.state === "waiting" || i.state === "polishing")) return false;
+  if (items.some((i) => i.state === "waiting" || i.state === "polishing" || i.earlierInFlight)) return false;
   const ready = items.some((i) => i.state === "ready");
   return !ready || move.held === "budget";
 }

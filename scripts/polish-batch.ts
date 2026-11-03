@@ -13,11 +13,13 @@
  *   --poll=60             seconds between rounds
  *   --focus-file=<path>   an audit file from scripts/audit-batch.ts (or {buildId or slug: text}); each failing product's
  *                         focus text goes with its polish
- *   --look=meta           switch each product to the Meta UI look (sent as look: "meta"); left out, each keeps its look
+ *   --look=meta           switch each product to the Meta UI look (sent as look: "meta"); left out, each keeps its look.
+ *                         A product already polished in another look is refused (add --again); a polish the route says
+ *                         is already meta is followed, never run twice
  *   --again               polish products that already had a polish (sent as again: true). A 409 already_polished is
  *                         then never followed as if it were this pass, and an earlier polish still running is waited out
  *   --resume=<path>       carry on from an earlier polish file (keeps what started, never polishes a build twice in the
- *                         same pass; with --again, a build the file polished in another look is polished again)
+ *                         same pass; with --again, a build the file polished in another look, or refused, is tried again)
  *   --max-hours=8         stop polling after this long (resume later)
  *   --url=<site>          another deployment
  * Uses AUTOMATION_SECRET from .env.local (scripts/automation.ts), sent only as the Authorization header and never printed.
@@ -98,6 +100,9 @@ export async function readRound(items: PolishItem[], builds: readonly BatchBuild
       i.slug = b.slug;
       i.liveUrl = b.liveUrl;
     } else if (b && i.state === "error") i.note = `build: ${b.error}`;
+    const earlierRunning = (i.earlierRefineIds ?? []).some((r) => { const v = cache.get(r); return Boolean(v && "terminal" in v && !v.terminal); });
+    if (earlierRunning) i.earlierInFlight = true;
+    else delete i.earlierInFlight;
     if (i.refineIds.length) i.refineStatus = Object.fromEntries(i.refineIds.map((r) => { const v = cache.get(r); return [r, v && "status" in v ? v.status : "unread"]; }));
   }
   const refineIds = new Map(items.map((i) => [i.buildId, [...(i.earlierRefineIds ?? []), ...i.refineIds]]));
@@ -113,7 +118,7 @@ export interface StartOutcome {
 
 /** Applies one polish answer to its item, for this pass (--look, --again). */
 export function applyAnswer(item: PolishItem, res: PostResult, site: string, now: Date, pass: PolishPass = {}): StartOutcome {
-  const a = parsePolishAnswer(res.status, res.json, site, { again: pass.again, own: item.refineIds });
+  const a = parsePolishAnswer(res.status, res.json, site, { again: pass.again, own: item.refineIds, ...(pass.look ? { look: pass.look } : {}) });
   item.attempts += 1;
   if (a.kind === "wait") {
     item.attempts -= 1;
@@ -126,6 +131,7 @@ export function applyAnswer(item: PolishItem, res: PostResult, site: string, now
     item.attempts -= 1;
     item.state = "polishing";
     item.refineIds = [...new Set([...item.refineIds, ...a.refineIds])];
+    if (a.look) item.look = a.look;
     item.notBefore = undefined;
     item.note = `${a.reason}: following the product's polish ${a.refineIds[0]}`;
     return {};

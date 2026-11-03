@@ -230,6 +230,15 @@ describe("POST /api/builds/{id}/polish", () => {
     assert.equal(done.calls.insert.length, 0);
     assert.equal((await startPolish(done.deps, BUILD, { again: true })).status, 201);
 
+    // A 409 naming a polish that switched the product to the Meta UI look says so, for polish-batch --look=meta.
+    const meta = polishNote(null, "meta");
+    assert.deepEqual((await startPolish(deps({ lastPolish: async () => ({ buildId: "p1", status: "building", message: meta }) }).deps, BUILD, { look: "meta" })).body, { error: "busy", buildId: "p1", look: "meta" });
+    const metaDone = await startPolish(deps({ lastPolish: async () => ({ buildId: "p1", status: "live", message: meta }) }).deps, BUILD, { look: "meta" });
+    assert.equal(metaDone.body.error, "already_polished");
+    assert.equal(metaDone.body.look, "meta");
+    const keptDone = await startPolish(deps({ lastPolish: async () => ({ buildId: "p2", status: "live", message: polishNote() }) }).deps, BUILD, { look: "meta" });
+    assert.equal("look" in keptDone.body, false);
+
     // insertRefineBuild's own check: another build of the product runs.
     const busy = deps({ insert: async () => null });
     assert.deepEqual((await startPolish(busy.deps, BUILD, {})).body, { error: "busy" });

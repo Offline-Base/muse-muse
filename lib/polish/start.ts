@@ -2,7 +2,7 @@
  * Starting a polish round (POST /api/builds/{buildId}/polish, lib/polish/logic.ts). Plain module: the route passes the real
  * database, quota and workflow start, and tests pass fakes, so nothing here spends or reaches Neon on its own.
  */
-import { POLISH_LOOKS, POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan, type PolishLook } from "@/lib/polish/logic";
+import { isMetaLookPolish, POLISH_LOOKS, POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan, type PolishLook } from "@/lib/polish/logic";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 export interface PolishProduct {
@@ -20,8 +20,11 @@ export interface PolishDeps {
   /** The product the build made, or null for an unknown build. `productId` null: the build hasn't shipped a product. */
   findBuild(buildId: string): Promise<{ productId: string | null } | null>;
   findProduct(productId: string): Promise<PolishProduct | null>;
-  /** The product's newest polish build, whatever its status, or null when it has had none. */
-  lastPolish(productId: string): Promise<{ buildId: string; status: string } | null>;
+  /**
+   * The product's newest polish build, whatever its status, or null when it has had none. With its message, a 409 that
+   * names it says look "meta" when it switched the product to the Meta UI look, so a script can tell it from another.
+   */
+  lastPolish(productId: string): Promise<{ buildId: string; status: string; message?: string | null } | null>;
   /** The same checks a new build or change gets (checkBuildAllowed): storage, setup, the spend pause, trust. */
   allowed(): Promise<{ ok: true } | { ok: false; status: number; error: string }>;
   /** insertRefineBuild: null while another build of the product runs. */
@@ -72,10 +75,11 @@ export async function startPolish(deps: PolishDeps, buildId: string, body: Recor
   if ((product.status !== "live" && product.status !== "partial") || !product.sandboxName || !product.museSessionId) return reply(409, { error: "not_shipped" });
 
   const last = await deps.lastPolish(product.id);
+  const lastLook = last && isMetaLookPolish(last.message) ? { look: "meta" } : {};
   // A polish still running is busy whatever `again` says; insert's own check covers every other build of the product.
-  if (last && !TERMINAL_STATUSES.includes(last.status as BuildStatus)) return reply(409, { error: "busy", buildId: last.buildId });
+  if (last && !TERMINAL_STATUSES.includes(last.status as BuildStatus)) return reply(409, { error: "busy", buildId: last.buildId, ...lastLook });
   if (last && !request.again) {
-    return reply(409, { error: "already_polished", buildId: last.buildId, status: last.status, message: "This product has had a polish. Send again: true to run another." });
+    return reply(409, { error: "already_polished", buildId: last.buildId, status: last.status, ...lastLook, message: "This product has had a polish. Send again: true to run another." });
   }
 
   const allowed = await deps.allowed();
