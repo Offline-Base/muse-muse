@@ -1,12 +1,14 @@
 // Platform file: don't edit. Take every judge screenshot with judgeShot(page, "02-result").
 // It waits for work in progress to finish, checks the screen for problems a judge marks down (text cut off, a page
 // or a box that scrolls sideways, a long headline, a wrapped choice, bar text that overlaps, em dashes, a button still
-// saying it is working, a control too small to tap on a phone, text too faint to read on its background), then saves
+// saying it is working, a control too small to tap on a phone, text too faint to read on its background, a tab or nav
+// link cut off at the edge of a phone), then saves
 // the full-page screenshot. In the demo video's runs it only waits and gives viewers a beat: verify already took the
 // screenshots and checked the screen at phone size, so a demo never fails on a check that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
 // and not be blank, and the 2D layout checks don't apply. In the smoke run it also records what every /api/actions/* (and the product's other /api/*)
 // route answered on this page (test-results/actions/responses.jsonl), and any photo, audio or video saved in the page's
-// storage, for verify's fallback and storage checks (scripts/smoke-report.mjs).
+// storage, and any sample or media file the page asked for that answered 404, for verify's fallback, storage and missing
+// file checks (scripts/smoke-report.mjs).
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page, type Request, type Response as PwResponse } from "@playwright/test";
@@ -38,8 +40,11 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
         ...(await page.evaluate(findScreenProblems)),
         ...tapTargetProblems(await page.evaluate(collectTapTargets)),
         ...contrastProblems(await page.evaluate(collectTextSamples)),
+        ...navClipProblems(await page.evaluate(collectNavItems)),
       ]
     : [];
+  // Files the page asked for and didn't get, like a sample under /fixtures/ that production never serves.
+  const missingFiles = smoke ? await watchMissingFiles(page) : [];
   if (problems.length && process.env.MUSEMUSE_SCREEN_CHECK === "warn") {
     console.log(`musemuse screen check, ${name}: ${problems.join(" | ")}`);
   } else {
@@ -56,7 +61,54 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   if (actions) await Promise.race([Promise.all([...actions]), new Promise<void>((r) => setTimeout(r, 10_000).unref())]);
   mkdirSync("test-results/judge", { recursive: true });
   await page.screenshot({ path: `test-results/judge/${name}.png`, fullPage: true });
-  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes, storedMedia })}\n`);
+  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes, storedMedia, missingFiles: [...missingFiles] })}\n`);
+}
+
+const missingByPage = new WeakMap<Page, string[]>();
+
+/**
+ * A path the page fetched or loaded that a visitor would miss too: a sample or media file on the product's own origin
+ * that answered 404. /fixtures/ and /samples/ always count; elsewhere only photos, audio, video, PDFs and CSVs do, so a
+ * browser's own guess at an icon never fails a build. Null for anything else.
+ */
+export function missingFileOf(url: string, status: number, pageUrl: string): string | null {
+  if (status !== 404) return null;
+  try {
+    const u = new URL(url);
+    if (u.origin !== new URL(pageUrl).origin) return null;
+    const p = u.pathname;
+    if (/^\/(?:fixtures|samples)\//.test(p)) return p;
+    if (/^\/(?:_next|api)\//.test(p) || /\/(?:favicon|apple-touch-icon)[^/]*$/i.test(p)) return null;
+    return /\.(?:jpe?g|png|webp|gif|svg|avif|heic|wav|mp3|m4a|ogg|oga|webm|mp4|mov|pdf|csv)$/i.test(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Starts listening for missing files once per page, and picks up what the page asked for before the first judgeShot
+ * (page.requests() keeps the last 100). Returns the list, which keeps growing as the page goes on.
+ */
+async function watchMissingFiles(page: Page): Promise<string[]> {
+  const known = missingByPage.get(page);
+  if (known) return known;
+  const missing: string[] = [];
+  missingByPage.set(page, missing);
+  const note = (response: PwResponse) => {
+    const file = missingFileOf(response.url(), response.status(), page.url());
+    if (file && !missing.includes(file)) missing.push(file);
+  };
+  page.on("response", note);
+  try {
+    const earlier = await page.requests();
+    await Promise.all(earlier.map(async (req) => {
+      const res = await Promise.race([req.response(), new Promise<null>((r) => setTimeout(() => r(null), 500))]);
+      if (res) note(res);
+    }));
+  } catch {
+    // An older Playwright without page.requests() notes from the first judgeShot on.
+  }
+  return missing;
 }
 
 /** True when musemuse.target.json lists vr. A product without that file is a web product. */
@@ -433,6 +485,101 @@ export function tapTargetProblems(samples: TapSample[]): string[] {
       `stands on its own, field and checkbox row at least ${TAP_MIN} px tall and wide. A small icon, dot or pin can keep its ` +
       `look inside a ${TAP_MIN} px box (padding plus background-clip: content-box). A link inside a sentence is fine ` +
       "(product-ui, Accessibility).",
+  ];
+}
+
+// ---------- Navigation cut off at the edge of a phone ----------
+
+/** A nav link or tab that isn't fully on screen, as the browser measured it. */
+export type NavSample = {
+  /** Its words, shortened. */
+  name: string;
+  tag: string;
+  width: number;
+  /** How much of its width shows, after every box that clips it and the screen's own edges. */
+  shown: number;
+  /** "edge": the item runs past the edge of the screen or of a box around it. "text": its own box cuts its words off. */
+  reason: "edge" | "text";
+  /** It sits in a row that scrolls sideways and shows a fade or shadow at its edge, so a person can tell there is more. */
+  cue: boolean;
+};
+
+/**
+ * Runs in the browser, at phone size only. Each visible nav link, tab or header control that is partly cut off: by the
+ * screen's edge or a box around it, or with its own words clipped inside it. A row that scrolls sideways on purpose
+ * (overflow-x auto or scroll) counts as having a cue when it, or a box just around it, fades or shades its edge: a
+ * mask, a gradient background, or a positioned ::before or ::after with one. data-allow-clip alone isn't a cue.
+ */
+export function collectNavItems(): NavSample[] {
+  const vw = document.documentElement.clientWidth;
+  if (vw > 480) return [];
+  const ITEMS = [
+    "nav a[href]", "nav button", '[role="navigation"] a[href]', '[role="navigation"] button', '[role="tablist"] [role="tab"]',
+    '[role="tablist"] a[href]', '[role="tablist"] button', ".tab-bar a[href]", ".tab-bar button", '[role="menubar"] [role="menuitem"]',
+    "header a[href]", "header button",
+  ].join(", ");
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 2 && r.height > 2 && el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+  };
+  const clean = (t: string | null | undefined) => (t ?? "").trim().replace(/\s+/g, " ");
+  const fades = (el: Element) => {
+    const s = getComputedStyle(el);
+    const mask = s.maskImage || s.getPropertyValue("-webkit-mask-image");
+    if (mask && mask !== "none") return true;
+    if (/gradient\(/.test(s.backgroundImage)) return true;
+    return ["::before", "::after"].some((at) => {
+      const p = getComputedStyle(el, at);
+      return !/^(none|normal)$/.test(p.content) && /^(absolute|fixed|sticky)$/.test(p.position) && /gradient\(/.test(p.backgroundImage);
+    });
+  };
+  const out: NavSample[] = [];
+  const seen = new Set<Element>();
+  for (const el of document.body.querySelectorAll(ITEMS)) {
+    if (seen.has(el) || el.closest('[inert], [aria-hidden="true"]') || !visible(el)) continue;
+    seen.add(el);
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    let left = Math.max(r.left, 0);
+    let right = Math.min(r.right, vw);
+    let scroller: Element | null = null;
+    for (let box = el.parentElement; box && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+      const s = getComputedStyle(box);
+      if (s.overflowX === "visible") continue;
+      const br = box.getBoundingClientRect();
+      left = Math.max(left, br.left);
+      right = Math.min(right, br.right);
+      if (!scroller && /auto|scroll/.test(s.overflowX) && box.scrollWidth > box.clientWidth + 1) scroller = box;
+    }
+    const shown = Math.max(0, right - left);
+    const name = clean((el as HTMLElement).innerText) || clean(el.getAttribute("aria-label"));
+    const sample = { name: name.length > 30 ? `${name.slice(0, 30)}...` : name, tag: el.tagName.toLowerCase(), width: Math.round(r.width), shown: Math.round(shown) };
+    // Partly shown, or wholly past the edge of a row that scrolls sideways. One wholly off screen anywhere else is a
+    // closed drawer or a slide, or a box check's to report.
+    if (shown < r.width - 2 && (shown > 0 || scroller)) {
+      let cue = false;
+      for (let box: Element | null = scroller, up = 0; box && box !== document.body && up < 3 && !cue; box = box.parentElement, up++) cue = fades(box);
+      out.push({ ...sample, reason: "edge", cue });
+      continue;
+    }
+    // Its own box cuts its words: "Board Mo". Text shortened with "..." is the screen check's to report.
+    if (style.overflowX !== "visible" && style.textOverflow !== "ellipsis" && el.scrollWidth > el.clientWidth + 1 && clean((el as HTMLElement).innerText)) {
+      out.push({ ...sample, reason: "text", cue: false });
+    }
+  }
+  return out;
+}
+
+/** One sentence naming up to 3 nav items cut off on a phone, or nothing. A row that scrolls with a visible fade is fine. */
+export function navClipProblems(samples: NavSample[]): string[] {
+  const bad = samples.filter((s) => s.reason === "text" || !s.cue);
+  if (!bad.length) return [];
+  const listed = bad.slice(0, 3).map((s) => (s.reason === "text" ? `<${s.tag}> "${s.name}" has its words clipped` : `<${s.tag}> "${s.name}" shows ${s.shown} of ${s.width}px`));
+  const more = bad.length > 3 ? ` and ${bad.length - 3} more` : "";
+  return [
+    `Navigation is cut off at the edge of a phone: ${listed.join(", ")}${more}. Every tab and nav link must show whole at ` +
+      "390 px: let them wrap to a second row (the Tabs component and .tab-bar do), or give them a word or two each. A row " +
+      "that scrolls sideways on purpose needs a visible fade at its edge so people can tell there is more (meta-ui).",
   ];
 }
 

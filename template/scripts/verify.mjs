@@ -7,7 +7,9 @@
 // a screenshot from inside VR that isn't blank; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
 // musemuse.schema.json, action routes and fixtures exist, and no model package in package.json or requirements.txt: every
 // model the product calls is a Meta model through the gateway, see modelPackageProblems; no media saved in localStorage
-// and no client component that reaches the model client, see storageMediaProblems and clientModelImportProblems). The smoke
+// and no client component that reaches the model client, see storageMediaProblems and clientModelImportProblems; samples
+// load from public/samples/, never /fixtures/, and the smoke test presses the product's own "Try the sample" control, see
+// fixtureUrlProblems, sampleFileProblems and sampleClickProblems). The smoke
 // step also fails an action that answered the built-in sample with a fallback (actionFallbackProblems in smoke-report.mjs). A product with platform services (musemuse.caps.json) also
 // gets a caps step after smoke: the platform's caps check runs each cap's fixed checks against what the smoke test
 // recorded and what the gateway saw.
@@ -18,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ACTION_LOG, actionFallbackProblems, browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, onlyRequirementTestsFailed, readCapsFile, readRequirementsFile, requirementResults, smokeReportProblems, storedMediaProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
+import { ACTION_LOG, actionFallbackProblems, browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, missingFileProblems, onlyRequirementTestsFailed, readCapsFile, productTargets, readRequirementsFile, requirementResults, smokeReportProblems, storedMediaProblems, verifyStepNames, xrGateProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -294,6 +296,8 @@ async function main() {
           ...judgeShotProblems(shots),
           ...glassesGateProblems(readText, { since: smokeStarted }),
           ...xrGateProblems(readText, shots, read),
+          // A sample that 404s isn't a matter of layout, so it fails even on the platform's last round.
+          ...missingFileProblems(shots, read),
         ];
         // An action that answered the sample with a fallback hid a model call that failed. Never only a warning.
         const fallbacks = actionFallbackProblems(readText(ACTION_LOG), { since: smokeStarted });
@@ -443,6 +447,8 @@ async function checkManifest() {
   problems.push(...modelPackageProblems(readRootText));
   const sources = readSources();
   problems.push(...storageMediaProblems(sources), ...clientModelImportProblems(sources));
+  problems.push(...fixtureUrlProblems(sources), ...sampleFileProblems(sources, (p) => existsSync(path.join(ROOT, "public", p))));
+  problems.push(...sampleClickProblems(sources, readText("tests/smoke.spec.ts"), productTargets(readText)));
   return problems.length
     ? { ok: false, detail: `${problems.length} problem(s): ${problems[0]}`, output: problems.join("\n") }
     : { ok: true, detail: `valid, ${manifest.actions.length} action(s), ${manifest.fixtures.length} fixture(s)` };
@@ -581,6 +587,99 @@ export function storageMediaProblems(sources) {
     }
   }
   return out;
+}
+
+/** A file's code with its comments taken out. A "//" just after a colon or a quote is a web address, so it stays. */
+function withoutComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1");
+}
+
+/** Folders whose files are the product's screens and their parts. */
+const isScreenCode = (file) => /^(?:app|components)\//.test(file);
+
+/**
+ * Code that asks the browser for a file under fixtures/: a string that starts with "/fixtures/" anywhere in app/ or
+ * components/ (or in a "use client" file), or one that starts with "fixtures/" in a "use client" file. next start and
+ * production serve only public/, so that sample works in tests that use setInputFiles and for no visitor (the Nov 3
+ * aisle build's "Try the sample shelf photo" got a 404). A server route that reads fixtures/ from disk is left alone:
+ * its path never starts with a slash. One line per file, or none. `sources` is [{ path, text }].
+ */
+export function fixtureUrlProblems(sources) {
+  const out = [];
+  for (const { path: file, text } of sources) {
+    const client = USE_CLIENT.test(text);
+    if (!isScreenCode(file) && !client) continue;
+    const code = withoutComments(text);
+    const hits = new Set();
+    for (const m of code.matchAll(/["'`](\.?\/?fixtures\/[^"'`\s]*)/g)) {
+      if (m[1].startsWith("/fixtures/") || client) hits.add(m[1]);
+    }
+    if (hits.size) {
+      out.push(
+        `${file} loads ${[...hits].slice(0, 2).map((h) => `"${h}"`).join(" and ")} in the browser, but fixtures/ is never served: ` +
+          "a visitor gets a 404. Copy the sample to public/samples/ and load it from \"/samples/<name>\". Keep fixtures/ for the tests (AGENTS.md, The product).",
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * Sample files the code names under /samples/ that public/samples/ doesn't have, so the page would get a 404. Only whole
+ * names with an extension count, not ones built from a variable. `exists(p)` says whether public/<p> is there. One line
+ * per file, or none.
+ */
+export function sampleFileProblems(sources, exists) {
+  const out = [];
+  for (const { path: file, text } of sources) {
+    if (!isScreenCode(file) && !USE_CLIENT.test(text) && !file.startsWith("lib/")) continue;
+    const missing = new Set();
+    for (const m of withoutComments(text).matchAll(/["'`](\/samples\/[\w\-./]+\.[A-Za-z0-9]{2,5})["'`]/g)) {
+      if (!m[1].includes("..") && !exists(m[1].slice(1))) missing.add(m[1]);
+    }
+    if (missing.size) out.push(`${file} loads ${[...missing].slice(0, 3).map((m) => `"${m}"`).join(", ")}, but public${[...missing][0]} isn't there, so a visitor gets a 404. Copy the sample from fixtures/ to public/samples/.`);
+  }
+  return out;
+}
+
+/** A button or link that offers the built-in sample: "Try the sample", "Use a sample photo", "Load the sample". */
+const SAMPLE_CONTROL = /\b(?:try|use|load)\s+(?:the\s+|a\s+|our\s+|this\s+)?(?:built-in\s+)?sample\b/i;
+
+/**
+ * When the product's screens offer a "Try the sample" control, tests/smoke.spec.ts must press it (a click on a locator
+ * that names a sample), not only hand the file to the input with setInputFiles: only the button shows the sample loads
+ * for a visitor. Glasses and VR products are left out, since their smoke tests take a set path through the headset or
+ * the glasses. `smokeText` is the spec's text or null. One line, or none.
+ */
+export function sampleClickProblems(sources, smokeText, targets = []) {
+  if (smokeText === null || targets.includes("glasses") || targets.includes("vr")) return [];
+  const offer = sources.find((s) => isScreenCode(s.path) && /\.[jt]sx$/.test(s.path) && SAMPLE_CONTROL.test(withoutComments(s.text)));
+  if (!offer) return [];
+  if (smokeClicksSample(smokeText)) return [];
+  const label = SAMPLE_CONTROL.exec(withoutComments(offer.text))?.[0] ?? "Try the sample";
+  return [
+    `${offer.path} offers "${label}", but tests/smoke.spec.ts never presses it. Press it in the smoke test the way a visitor ` +
+      `does, like await page.getByRole("button", { name: /${label.replace(/\s+/g, " ").toLowerCase()}/i }).click(), and wait for the ` +
+      "sample to show. setInputFiles skips the button, so a sample that only loads in tests goes unnoticed (verify skill, Smoke test).",
+  ];
+}
+
+/** True when a spec clicks a locator that names a sample, directly or through a variable it set up. */
+export function smokeClicksSample(specText) {
+  const code = withoutComments(String(specText ?? ""));
+  for (const m of code.matchAll(/\.(?:click|tap|dblclick)\s*\(/g)) {
+    const before = code.slice(Math.max(0, m.index - 400), m.index);
+    // The statement the click ends: from its own await, or from the end of the one before it.
+    const awaited = before.lastIndexOf("await ");
+    const ended = before.lastIndexOf(";");
+    const statement = awaited > ended ? before.slice(awaited + 6) : before.slice(ended + 1);
+    if (/sample/i.test(statement)) return true;
+    const name = /^\s*([A-Za-z_$][\w$]*)\s*$/.exec(statement)?.[1];
+    if (!name) continue;
+    const set = new RegExp(`\\b(?:const|let|var)\\s+${name.replace(/\$/g, "\\$")}\\s*=([^;]*)`).exec(code);
+    if (set && /sample/i.test(set[1])) return true;
+  }
+  return false;
 }
 
 /** Imports in a file: { spec, typeOnly }, side-effect and dynamic imports included. Comments are left out. */

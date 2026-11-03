@@ -232,6 +232,11 @@ describe("describeResult", () => {
     const refused = describeResult("gadget", result(true, { commands: 1, called: null, refused: "picky", downloaded: true }));
     assert.match(refused.detail ?? "", /^picky refused the sample input/);
     assert.equal(describeResult("gadget", result(false, { error: "FAILED x" })).title, "Muse gadget commands: didn't work");
+    // An action that outlasts the command's timeout is skipped, and says so, rather than failing the pack or passing.
+    const slow = describeResult("gadget", result(true, { commands: 1, called: null, tooLong: { action: "plan_weekend", seconds: 30 }, downloaded: true }));
+    assert.equal(slow.state, "skipped");
+    assert.equal(slow.title, "Muse gadget commands: 1 command check out, and the call was skipped");
+    assert.match(slow.detail ?? "", /^Skipped: plan_weekend runs longer than a gadget command allows \(30 s\), so it couldn't finish there\./);
   });
 
   it("says when one failed, or never finished", () => {
@@ -464,7 +469,7 @@ describe("the runner", () => {
   let base: string;
   let dir: string;
   /** What the fake MCP server does differently per test. */
-  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean; helpOnlyCli?: boolean; badGadget?: boolean } = {};
+  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean; helpOnlyCli?: boolean; badGadget?: boolean; slowGadgetMs?: number } = {};
   /** What each test's product has, and what its actions do. */
   let liveActions: Manifest["actions"] = [];
   let liveReply: (name: string) => { status: number; body: unknown } = () => ({ status: 200, body: { done: true } });
@@ -499,6 +504,7 @@ describe("the runner", () => {
           reached.push(`${caller}:${name}`);
           bodies.push(`${caller}:${name}:${text}`);
           const reply = liveReply(name);
+          if (mode.slowGadgetMs && caller === "gadget") return void setTimeout(() => json(reply.body, reply.status), mode.slowGadgetMs);
           return json(reply.body, reply.status);
         }
         if (url === "/api/actions/go") {
@@ -632,6 +638,20 @@ describe("the runner", () => {
     assert.equal(gadget.ok, false);
     assert.match(String(gadget.facts.error), /FAILED system\.go: .*reserved prefix/);
     assert.ok(!reached.some((r) => r.startsWith("gadget:")));
+  });
+
+  it("skips the gadget call, and says why, when the action runs past the command's timeout", async () => {
+    // The shortest timeout the pack allows, so the runner stops the call in half a second.
+    useActions([{ ...action({ name: "plan", ...READ_ONLY }), timeoutMs: 2_000 } as Manifest["actions"][number]]);
+    mode = { slowGadgetMs: 1_500 };
+    const gadget = (await runIt()).outputs.gadget!;
+    assert.equal(gadget.ok, true);
+    assert.deepEqual(gadget.facts.tooLong, { action: "plan", seconds: 2 });
+    assert.equal(gadget.facts.called, null);
+    assert.equal(gadget.steps.at(-1)!.ok, false);
+    const said = describeResult("gadget", gadget);
+    assert.equal(said.state, "skipped");
+    assert.match(said.detail ?? "", /^Skipped: plan runs longer than a gadget command allows \(2 s\)/);
   });
 
   it("checks the gadget pack without a call when another wouldn't fit the budget", async () => {

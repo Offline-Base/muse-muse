@@ -6,7 +6,7 @@ import { Markdown } from "@/components/Markdown";
 import { ModelChip } from "@/components/ModelChip";
 import { Skeleton } from "@/components/Skeleton";
 import { UsageStrip, type Usage } from "@/components/UsageStrip";
-import { stopMessage, type AgentStep } from "@/lib/agent/events";
+import { stopMessage, withoutToolNames, type AgentStep } from "@/lib/agent/events";
 import type { UseAgent } from "@/lib/agent/client";
 import { ConfirmCard } from "./ConfirmCard";
 import { ConnectCard } from "./ConnectCard";
@@ -26,10 +26,18 @@ const STATE_WORDS: Record<AgentStep["state"], string> = {
   waiting: "Waiting",
 };
 
+/** What to try when a run fails and can pick up where it stopped. */
+function withKeepGoing(message: string): string {
+  return /Try again in a minute\.$/.test(message)
+    ? message.replace(/Try again in a minute\.$/, "Try again in a minute, or press Keep going to pick up where it stopped.")
+    : `${message} Press Keep going to pick up where it stopped.`;
+}
+
 /**
  * One run on screen: the steps, then the answer with its sources, or what it's waiting for. Pass what useAgent returns.
  * The answer card has data-result, each step data-step-state, and the buttons are named Stop and Keep going, so tests
- * can find them. `children` draws a structured answer. Without it, the text answer is shown as markdown.
+ * can find them. `children` draws a structured answer. Without it, the text answer is shown as markdown. Tool ids
+ * (submit_answer, GMAIL_SEND_EMAIL) never show: they become plain words, and a failed run says what to try next.
  */
 export function AgentRun<T>({
   agent,
@@ -60,8 +68,9 @@ export function AgentRun<T>({
   const answer = finished ? view.answer : null;
   const working = view.steps.findLast((s) => s.state === "running");
   // While it runs and when it stops short, the words so far are all there is. A structured answer draws itself.
-  const text = !children || !finished ? view.text.trim() : "";
-  const problem = view.status === "stopped" || view.status === "failed" ? (view.message ?? stopMessage(view.reason)) : view.status === "waiting" ? view.message : null;
+  const text = !children || !finished ? withoutToolNames(view.text).trim() : "";
+  const said = view.status === "stopped" || view.status === "failed" ? (view.message ?? stopMessage(view.reason)) : view.status === "waiting" ? view.message : null;
+  const problem = said ? (view.status === "failed" && canGoOn ? withKeepGoing(withoutToolNames(said)) : withoutToolNames(said)) : null;
 
   const connect = async (toolkit: string) => {
     setConnecting(true);
@@ -82,8 +91,8 @@ export function AgentRun<T>({
               <Icon name={STEP_ICON[step.state]} label={STATE_WORDS[step.state]} />
             </span>
             <span className="list-text">
-              <span className="list-title">{step.title}</span>
-              {step.description ? <span className="meta">{step.description}</span> : null}
+              <span className="list-title">{withoutToolNames(step.title) || "Working"}</span>
+              {step.description ? <span className="meta">{withoutToolNames(step.description)}</span> : null}
             </span>
           </li>
         ))}
@@ -103,7 +112,7 @@ export function AgentRun<T>({
 
         {running ? (
           <p className="working" role="status">
-            {working ? `${working.title}…` : "Working on it…"}
+            {working ? `${withoutToolNames(working.title) || "Working"}…` : "Working on it…"}
           </p>
         ) : null}
 
@@ -120,7 +129,7 @@ export function AgentRun<T>({
 
         {finished ? (
           <div data-result>
-            {answer !== null && children ? children(answer) : <Markdown text={typeof answer === "string" ? answer : view.text} />}
+            {answer !== null && children ? children(answer) : <Markdown text={withoutToolNames(typeof answer === "string" ? answer : view.text)} />}
           </div>
         ) : text ? (
           <Markdown text={text} />

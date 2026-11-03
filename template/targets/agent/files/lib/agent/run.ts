@@ -5,7 +5,7 @@ import type { RequestLike } from "@/lib/meta/client";
 import { plain, plainDeep } from "@/lib/meta/text";
 import { identityHeaders, ownerSubject } from "@/lib/platform/identity";
 import type { AgentConfirm, AgentConnect, AgentEvent, AgentReason, AgentSource, AgentStep, AgentStatus } from "./events";
-import { reduceAgent, stopMessage, IDLE_VIEW, type AgentView } from "./events";
+import { reduceAgent, stopMessage, withoutToolNames, IDLE_VIEW, type AgentView } from "./events";
 import { actionResponse, streamResponse } from "./respond";
 import { AgentStateError, openState, sealToResume } from "./state";
 import { executeTool, listTools, ToolError, type AgentToolId, type ToolFunction } from "./tools";
@@ -140,6 +140,8 @@ interface RunState {
   stretchStartUsd: number;
   nudged: boolean;
   submitRetries: number;
+  /** Turns tried again after a gateway or transient error, in this stretch. At most one. */
+  turnRetries?: number;
   pending: PendingCall[];
   outputs: unknown[];
   sources: AgentSource[];
@@ -331,6 +333,7 @@ function freshState(input: AgentOptions["input"], continues: AgentOptions["conti
     stretchStartUsd: 0,
     nudged: false,
     submitRetries: 0,
+    turnRetries: 0,
     pending: [],
     outputs: [],
     sources: [],
@@ -377,6 +380,7 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
       state.runId = newRunId();
       state.turns = 0;
       state.toolCalls = 0;
+      state.turnRetries = 0;
       state.stretchStartUsd = state.costUsd;
     }
   } else {
@@ -387,6 +391,9 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
   const book = new SourceBook(run.sources);
   const seal = (over: Partial<RunState> = {}) => sealToResume({ ...run, sources: book.list(), ...over }, { scope });
   const headers = identityHeaders(o.request, o.visitor);
+  // Tool ids never reach the page: the kit's own, the product's, and a connected app's (GMAIL_SEND_EMAIL).
+  const localNames = (o.tools?.local ?? []).map((t) => t.name);
+  const forScreen = (text: string) => withoutToolNames(text, localNames);
   let lastText = "";
   const done = (status: AgentStatus, reason?: AgentReason, extra: { answer?: unknown; message?: string; noResume?: boolean } = {}): AgentEvent => {
     let resume: string | undefined;
@@ -405,7 +412,7 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
       status,
       ...(reason ? { reason } : {}),
       ...(extra.answer !== undefined ? { answer: extra.answer } : {}),
-      text: plain(lastText),
+      text: forScreen(plain(lastText)),
       costUsd: run.costUsd,
       ...(resume ? { resume } : {}),
       ...(extra.message || tooBig ? { message: extra.message ?? TOO_BIG } : {}),
@@ -531,7 +538,7 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
           } else {
             if (!(failure instanceof ToolError)) console.error("[agent] a tool failed:", failure);
             const message = failure instanceof ToolError ? failure.message : "That tool failed.";
-            yield { type: "step", step: stepFor(call, "failed", message) };
+            yield { type: "step", step: stepFor(call, "failed", forScreen(message)) };
             run.outputs.push(functionOutput(call.callId, `That tool didn't work: ${message} Go on without it, and say what's missing.`));
           }
         } else if (end?.kind === "paused") {
@@ -641,6 +648,17 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
       if (outcome.kind === "failed") {
         lastText = outcome.text;
         const reason = reasonOfFailure(outcome.code, outcome.status);
+        // A gateway hiccup or a stream cut short: the same turn once more, from the same place, before the run gives up.
+        // This is what saves a run at its last step, the one that hands over the answer.
+        if (reason === "error" && isTransientFailure(outcome.code, outcome.status) && (run.turnRetries ?? 0) < 1 && !signal.aborted) {
+          run.turnRetries = (run.turnRetries ?? 0) + 1;
+          console.warn(`[agent] a model call failed (${outcome.code}), so the turn runs once more`);
+          yield { type: "note", message: `A model call failed (${outcome.code}), so the turn ran once more.` };
+          // A new text turn, so the page drops the words of the one that failed.
+          run.turnNumber++;
+          lastText = "";
+          continue;
+        }
         if (reason === "limit" || reason === "busy") {
           yield done("stopped", reason);
         } else {
@@ -728,7 +746,7 @@ export async function* runAgent<T = unknown>(o: AgentOptions<T>): AsyncGenerator
         if (source) yield { type: "source", source };
       }
       lastText = taken.text;
-      if (taken.text.trim()) yield done("completed", undefined, { answer: plain(taken.text) });
+      if (forScreen(taken.text).trim()) yield done("completed", undefined, { answer: forScreen(plain(taken.text)) });
       else yield done("failed", "no_answer", { message: stopMessage("no_answer") });
       return;
     }
@@ -755,6 +773,16 @@ function parseArguments(text: string): unknown {
 function isBuiltInToolDefinition(tool: unknown): boolean {
   const type = (tool as { type?: unknown } | null)?.type;
   return type === "web_search" || type === "tool_search";
+}
+
+/**
+ * A failed model call worth one more try: the gateway or Meta's servers answered 5xx or 408, or the stream broke off with
+ * no status. A refused or malformed request (4xx) would fail the same way again.
+ */
+export function isTransientFailure(code: string, status: number | null): boolean {
+  if (/invalid|refus|filter|policy|safety|context_length|unsupported|not_found|unauthor|forbidden/i.test(code)) return false;
+  if (status === null) return true;
+  return status >= 500 || status === 408;
 }
 
 /** What a failed model call means for the run. */

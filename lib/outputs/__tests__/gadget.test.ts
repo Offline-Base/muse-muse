@@ -14,6 +14,7 @@ import path from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { GADGET_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
 import {
+  GADGET_AGENT_TIMEOUT_MS,
   GADGET_MAX_NAME,
   GADGET_NAME_RE,
   GADGET_REGISTRATION_BUDGET,
@@ -184,6 +185,17 @@ describe("the gadget pack's command files", () => {
     assert.equal(gadgetTimeoutMs({ ...act("a"), timeoutMs: 10 } as OutputAction), 2_000);
     assert.equal(gadgetTimeoutMs({ ...act("a"), timeoutMs: "60000" } as unknown as OutputAction), 30_000);
     assert.equal(gadgetTimeoutMs({ ...act("a"), timeoutMs: Number.NaN } as OutputAction), 30_000);
+  });
+
+  it("gives an agent product's commands the agent's whole budget, not 30 s (the Nov 3 audit's 34 s Austin run)", () => {
+    assert.equal(GADGET_AGENT_TIMEOUT_MS, 110_000);
+    assert.equal(gadgetTimeoutMs(act("plan"), { agent: true }), GADGET_AGENT_TIMEOUT_MS);
+    assert.equal(gadgetTimeoutMs({ ...act("plan"), timeoutMs: 60_000 } as OutputAction, { agent: true }), 60_000);
+    const agent = { task: "Plans a weekend", tools: [{ id: "web_search", usedFor: "prices" }], connections: "none" as const };
+    const withAgent = product([act("plan")]);
+    withAgent.manifest = { ...withAgent.manifest!, agent };
+    assert.deepEqual(gadgetPack(withAgent).commands.map((c) => c.spec.timeout_ms), [110_000]);
+    assert.deepEqual(gadgetPack(product([act("plan")])).commands.map((c) => c.spec.timeout_ms), [30_000]);
   });
 
   it("keeps hostile manifest text as data: JSON strings, never in the scripts or the runner", () => {

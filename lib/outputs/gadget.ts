@@ -30,6 +30,11 @@ export const GADGET_DEFAULT_TIMEOUT_MS = 30_000;
 export const GADGET_MAX_TIMEOUT_MS = 600_000;
 /** The runner keeps 1.5 s to say why it stopped, so a shorter timeout leaves no time for the call. */
 export const GADGET_MIN_TIMEOUT_MS = 2_000;
+/**
+ * An agent product's actions run its agent loop for up to 100 s (actionBudget in the agent kit, under the MCP connector's
+ * 120 s), so its commands wait that long plus a little, instead of the 30 s default that cuts every run short.
+ */
+export const GADGET_AGENT_TIMEOUT_MS = 110_000;
 /** What the SDK adds to each command's timeout when it registers it with Muse. */
 export const GADGET_TIMEOUT_GRACE_MS = 5_000;
 /** All of a gadget's registrations together, built-ins included, may be at most this. */
@@ -122,10 +127,13 @@ export function gadgetPrefix(slug: string): string {
   return `mm${core}_${shortHash(slug)}`;
 }
 
-/** How long the gadget lets a command run: the action's own `timeoutMs` when its manifest has one, within the SDK's limits. */
-export function gadgetTimeoutMs(action: OutputAction): number {
+/**
+ * How long the gadget lets a command run: the action's own `timeoutMs` when its manifest has one, within the SDK's limits,
+ * else GADGET_AGENT_TIMEOUT_MS for an agent product (its manifest has an `agent` block) and the SDK's 30 s for the rest.
+ */
+export function gadgetTimeoutMs(action: OutputAction, { agent = false }: { agent?: boolean } = {}): number {
   const raw = (action as { timeoutMs?: unknown }).timeoutMs;
-  if (typeof raw !== "number" || !Number.isFinite(raw)) return GADGET_DEFAULT_TIMEOUT_MS;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return agent ? GADGET_AGENT_TIMEOUT_MS : GADGET_DEFAULT_TIMEOUT_MS;
   return Math.min(GADGET_MAX_TIMEOUT_MS, Math.max(GADGET_MIN_TIMEOUT_MS, Math.round(raw)));
 }
 
@@ -200,6 +208,7 @@ export function gadgetPack(product: Pick<OutputProduct, "slug" | "name" | "manif
   const prefix = gadgetPrefix(product.slug);
   const libDir = gadgetLibDir(prefix);
   const productName = oneLine(product.name, 80);
+  const agent = !!product.manifest?.agent;
   const leftOut: GadgetPack["leftOut"] = [];
   const seen = new Set<string>();
   const actions: OutputAction[] = [];
@@ -236,7 +245,7 @@ export function gadgetPack(product: Pick<OutputProduct, "slug" | "name" | "manif
         description: oneLine(`${productName}: ${what}`, MAX_COMMAND_DESCRIPTION),
         exec: [`${libDir}/node`, `${libDir}/runner.cjs`, action.name],
         ...gadgetParams(action.input),
-        timeout_ms: gadgetTimeoutMs(action),
+        timeout_ms: gadgetTimeoutMs(action, { agent }),
       },
     };
   });

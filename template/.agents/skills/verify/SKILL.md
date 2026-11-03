@@ -13,8 +13,8 @@ description: Use before finishing any build. Explains what npm run verify checks
 | build | `next build` |
 | start | `next start` on port 3100 (or the next free port), and `GET /` returns 200 |
 | console | Chromium loads `/` at phone size with no `console.error` and no uncaught page errors |
-| smoke | `playwright test --project=smoke`: every spec in `tests/`, at phone size, with real model calls. Fails on `test.only`, on any test that didn't run (skipped or fixme) or is marked `test.fail`, when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests, and when the last judge screenshot shows an error, a field marked invalid or an empty state, starts its result more than 1,000 px down the page, or is over 4,000 px tall |
-| manifest | `musemuse.json` is valid against `musemuse.schema.json`, every action has `app/api/actions/<name>/route.ts`, every fixture file exists |
+| smoke | `playwright test --project=smoke`: every spec in `tests/`, at phone size, with real model calls. Fails on `test.only`, on any test that didn't run (skipped or fixme) or is marked `test.fail`, when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests, when the page asked for a sample or media file that answered 404, and when the last judge screenshot shows an error, a field marked invalid or an empty state, starts its result more than 1,000 px down the page, or is over 4,000 px tall |
+| manifest | `musemuse.json` is valid against `musemuse.schema.json`, every action has `app/api/actions/<name>/route.ts`, every fixture file exists, no page loads `/fixtures/...`, every `/samples/...` the code names is in `public/samples/`, and when the page offers a "Try the sample" button, `tests/smoke.spec.ts` presses it |
 
 A VR product (`.agents/skills/muse-vr`) runs at 1280x720 with software graphics, and its smoke step also fails unless a judge screenshot taken inside VR isn't blank and the last one has no alert. A glasses product (`.agents/skills/muse-glasses`) must take a photo through the glasses.
 
@@ -23,6 +23,8 @@ It exits 0 only when every step passes. When a step fails it prints that step's 
 ## Smoke test
 
 `tests/smoke.spec.ts` runs the brief's primary flow the way a user would, with the files in `fixtures/` and real model calls through the gateway.
+
+When the start screen has a "Try the sample" button, press it in the smoke test, as a visitor would: `await page.getByRole("button", { name: "Try the sample" }).click()`. The button loads its copy from `public/samples/`, and only pressing it shows that the sample works on the live site. `setInputFiles` is for a flow with no sample button, like the example below, or for a second file after the sample.
 
 ```ts
 import { test, expect } from "@playwright/test";
@@ -70,7 +72,7 @@ After checks pass, the platform replays the first test in `tests/smoke.spec.ts` 
 
 Take 2 to 4 screenshots with `judgeShot(page, "NN-name")` from `tests/judge-shot.ts`, numbered in order: `01-start`, then each key step, ending with the final result. verify fails any screenshot in `test-results/judge/` taken another way. Don't edit `tests/judge-shot.ts`.
 
-judgeShot waits for `aria-busy="true"` to clear, then fails the test when the screen has text cut off at the side of its box, a page that scrolls sideways, a box that scrolls sideways (a table, a chart) unless it sits in `data-allow-clip`, an `h1` over 2 lines, a segmented choice that wraps or runs out of its pill, bar text that runs into the next bar's, text shortened with "...", a one-line field hiding part of its text or placeholder, a text box hiding part of its text, a disabled button still saying it is working ("…"), a loading bar, an em dash, a control under 44 by 44 px on a phone (a link inside a sentence is fine), or text under 4.5:1 against what is behind it (3:1 from 24 px, or 18.66 px bold; text over a photo or a gradient is left out). Fix the product, not the check. Text the user typed or uploaded may be shortened and may hold em dashes when it sits inside an element with `data-user-text`.
+judgeShot waits for `aria-busy="true"` to clear, then fails the test when the screen has text cut off at the side of its box, a page that scrolls sideways, a box that scrolls sideways (a table, a chart) unless it sits in `data-allow-clip`, an `h1` over 2 lines, a segmented choice that wraps or runs out of its pill, bar text that runs into the next bar's, text shortened with "...", a one-line field hiding part of its text or placeholder, a text box hiding part of its text, a disabled button still saying it is working ("…"), a loading bar, an em dash, a control under 44 by 44 px on a phone (a link inside a sentence is fine), a tab or nav link cut off at the edge of a phone (a row that scrolls sideways on purpose needs a visible fade at its edge), or text under 4.5:1 against what is behind it (3:1 from 24 px, or 18.66 px bold; text over a photo or a gradient is left out). Fix the product, not the check. Text the user typed or uploaded may be shortened and may hold em dashes when it sits inside an element with `data-user-text`.
 
 Plan the screenshots so together they prove the tagline:
 

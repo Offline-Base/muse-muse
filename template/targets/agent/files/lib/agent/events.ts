@@ -196,3 +196,59 @@ export function stopMessage(reason: AgentReason | null): string {
       return "Something went wrong. Try again in a minute.";
   }
 }
+
+// ---------- Tool names never reach the screen ----------
+
+/** Names the kit gives its own tools, with the words a person sees instead. */
+const KIT_TOOL_LABELS: Record<string, string> = {
+  submit_answer: "the answer",
+  web_search: "web search",
+  tool_search: "picking a tool",
+  read_page: "reading a page",
+};
+
+/** A connected app's tool id, like GMAIL_SEND_EMAIL. */
+const SHOUTED_TOOL = "[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+";
+
+/**
+ * Plain words for a tool's name: "the answer" for submit_answer, "Gmail send email" for GMAIL_SEND_EMAIL, "look up
+ * stock" for look_up_stock. Never the raw id.
+ */
+export function toolLabel(name: string): string {
+  const known = KIT_TOOL_LABELS[name];
+  if (known) return known;
+  const words = name.split(/[_.\s]+/).filter(Boolean);
+  if (!words.length) return "a tool";
+  if (/^[A-Z0-9_]+$/.test(name)) {
+    const [app, ...rest] = words.map((w) => w.toLowerCase());
+    return [app.charAt(0).toUpperCase() + app.slice(1), ...rest].join(" ");
+  }
+  return words.join(" ").toLowerCase();
+}
+
+/**
+ * Text for the screen with tool ids swapped for plain words (toolLabel): the kit's own, any in `names` (a product's own
+ * tools), and any connected app's GMAIL_SEND_EMAIL. Code blocks are left as they are. Text that is nothing but a tool
+ * id, like a model writing "submit_answer" instead of calling it, comes back empty: it isn't words for a person.
+ */
+export function withoutToolNames(text: string, names: readonly string[] = []): string {
+  if (!text) return text;
+  // A product's own tool counts when its name reads as an id (look_up_stock), not as a word a sentence might use.
+  const own = [...new Set([...Object.keys(KIT_TOOL_LABELS), ...names.filter((n) => /^[\w.-]+$/.test(n) && /[_.]/.test(n))])];
+  const lone = new RegExp(`^[\\s\`"'*(]*(?:${[...own.map(escapeRe), SHOUTED_TOOL].join("|")})(?:\\s*\\([\\s\\S]*\\))?[\\s\`"'*).]*$`);
+  if (lone.test(text)) return "";
+  const named = own.length ? new RegExp(`\`?\\b(?:${own.map(escapeRe).join("|")})\\b\`?`, "g") : null;
+  return text
+    .split(/(```[\s\S]*?(?:```|$))/)
+    .map((part, i) => {
+      if (i % 2 === 1) return part;
+      let out = named ? part.replace(named, (m) => toolLabel(m.replace(/`/g, ""))) : part;
+      out = out.replace(new RegExp(`\`?\\b${SHOUTED_TOOL}\\b\`?`, "g"), (m) => toolLabel(m.replace(/`/g, "")));
+      return out;
+    })
+    .join("");
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

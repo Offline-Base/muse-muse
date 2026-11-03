@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { z } from "zod";
 import { call, collect, doneOf, errorReply, fakeGateway, FILES, hit, message, ofType, search, sseBody, TARGET, TEMPLATE, toolList, turn, usage, useEnv } from "./agent-kit.mjs";
 
-const { actionBudget, agentAction, agentResponse, collectRun, reasonOfFailure, runAgent, runAgentToEnd, untrusted } = await import("../../targets/agent/files/lib/agent/run.ts");
+const { actionBudget, agentAction, agentResponse, collectRun, isTransientFailure, reasonOfFailure, runAgent, runAgentToEnd, untrusted } = await import("../../targets/agent/files/lib/agent/run.ts");
 const { deepResearch, deepResearchAction, findingsText, parsePlan } = await import("../../targets/agent/files/lib/agent/research.ts");
-const { IDLE_VIEW, reduceAgent, stopMessage } = await import("../../targets/agent/files/lib/agent/events.ts");
+const { IDLE_VIEW, reduceAgent, stopMessage, toolLabel, withoutToolNames } = await import("../../targets/agent/files/lib/agent/events.ts");
 const { AnswerStream, SourceBook, safeUrl, takeSourcesLine, turnCostUsd } = await import("../../targets/agent/files/lib/agent/turn.ts");
 
 const instructions = "Help the person.";
@@ -554,11 +554,13 @@ describe("limits", () => {
     assert.equal(done.message, stopMessage("budget"));
   });
 
-  test("a model failure mid-stream ends the run in plain words, and can be retried", async () => {
-    gateway = fakeGateway({ turns: [turn("r1", [], { terminal: "response.failed", response: { status: "failed", error: { code: "server_error", message: "internal details" } } }), turn("r2", [message("Done.")])] });
+  test("a model failure mid-stream that fails again ends the run in plain words, and can be retried", async () => {
+    const failed = () => turn("r1", [], { terminal: "response.failed", response: { status: "failed", error: { code: "server_error", message: "internal details" } } });
+    gateway = fakeGateway({ turns: [failed(), failed(), turn("r2", [message("Done.")])] });
     const events = await run({});
     const done = doneOf(events);
     assert.equal(done.status, "failed");
+    assert.equal(gateway.model().length, 2, "tried once more, then gave up");
     assert.ok(!JSON.stringify(events).includes("internal details"));
     assert.equal(doneOf(await run({ resume: done.resume })).answer, "Done.");
   });
@@ -1614,5 +1616,97 @@ describe("a test build", () => {
       else process.env.TEST_MODEL = saved;
     }
     assert.deepEqual(models, [["muse-wonder-1.0"], ["muse-spark-1.3-contributor"], ["muse-wonder-1.0"], ["muse-wonder-1.0"]]);
+  });
+});
+
+describe("a sturdier finish (the Nov 3 targets audit, issue 6)", () => {
+  const brokenTurn = (id) => turn(id, [], { terminal: "response.failed", response: { status: "failed", error: { code: "server_error", message: "upstream" } } });
+
+  test("a gateway error on the submit turn runs that turn once more and the answer goes through", async () => {
+    gateway = fakeGateway({
+      turns: [
+        turn("r1", [search("ws_1", "austin hotels", [hit("https://a.example/", "A")])]),
+        errorReply(502, "bad_gateway", "Bad gateway"),
+        turn("r2", [call("c1", "submit_answer", { answer: { summary: "Three plans." }, cited_urls: ["https://a.example/"] })]),
+      ],
+    });
+    const events = await run({ output: Answer, tools: { webSearch: true } });
+    const done = doneOf(events);
+    assert.equal(done.status, "completed");
+    assert.deepEqual(done.answer, { summary: "Three plans." });
+    const [first, second, third] = gateway.model().map((r) => r.body);
+    // The retry asks for the same turn from the same place: the same chain and input as the failed one.
+    assert.equal(second.previous_response_id, "r1");
+    assert.equal(third.previous_response_id, "r1");
+    assert.deepEqual(third.input, second.input);
+    assert.ok(first);
+    assert.match(ofType(events, "note").map((n) => n.message).join(" "), /ran once more/);
+  });
+
+  test("a stream that breaks off is tried once more; a refused request and a busy gateway aren't", async () => {
+    const cut = turn("r1", [message("Half")]);
+    gateway = fakeGateway({ turns: [{ ...cut, events: cut.events.slice(0, -1) }, turn("r2", [message("Whole answer.")])] });
+    const events = await run({});
+    assert.equal(doneOf(events).answer, "Whole answer.");
+    // The page drops the words of the turn that broke off.
+    assert.equal(events.reduce(reduceAgent, IDLE_VIEW).text, "Whole answer.");
+    gateway.restore();
+    gateway = fakeGateway({ turns: [errorReply(400, "invalid_request_error", "Bad input"), turn("r2", [message("Never.")])] });
+    assert.equal(doneOf(await run({})).status, "failed");
+    assert.equal(gateway.model().length, 1);
+    gateway.restore();
+    gateway = fakeGateway({ turns: [errorReply(429, "rate_limited", "Slow down"), turn("r2", [message("Never.")])] });
+    assert.equal(doneOf(await run({})).reason, "busy");
+    assert.equal(gateway.model().length, 1);
+  });
+
+  test("only one retry per stretch, and Keep going gets a fresh one", async () => {
+    gateway = fakeGateway({ turns: [brokenTurn("a"), brokenTurn("b"), brokenTurn("c"), turn("r2", [message("Done.")])] });
+    const first = doneOf(await run({}));
+    assert.equal(first.status, "failed");
+    assert.equal(gateway.model().length, 2);
+    assert.equal(doneOf(await run({ resume: first.resume })).answer, "Done.");
+    assert.equal(gateway.model().length, 4);
+  });
+
+  test("isTransientFailure: 5xx, 408 and a broken stream; never a refused or malformed request", () => {
+    assert.equal(isTransientFailure("server_error", null), true);
+    assert.equal(isTransientFailure("stream_cut_off", null), true);
+    assert.equal(isTransientFailure("bad_gateway", 502), true);
+    assert.equal(isTransientFailure("timeout", 408), true);
+    assert.equal(isTransientFailure("invalid_request_error", 400), false);
+    assert.equal(isTransientFailure("content_filter", null), false);
+    assert.equal(isTransientFailure("not_found", 404), false);
+  });
+
+  test("a model that writes a tool's name instead of calling it never shows that name", async () => {
+    gateway = fakeGateway({ turns: [turn("r1", [message("submit_answer")]), brokenTurn("x"), brokenTurn("y")] });
+    const events = await run({ output: Answer });
+    const done = doneOf(events);
+    assert.equal(done.status, "failed");
+    assert.equal(done.text, "");
+    assert.ok(!/submit_answer/.test(JSON.stringify(ofType(events, "done"))));
+  });
+
+  test("tool ids in a plain answer become plain words", async () => {
+    gateway = fakeGateway({
+      tools: toolList([["gmail_send", "write", "GMAIL_SEND_EMAIL"]]),
+      turns: [turn("r1", [message("I used GMAIL_SEND_EMAIL and then `submit_answer`.")])],
+    });
+    const done = doneOf(await run({ tools: { platform: ["gmail_send"] } }));
+    assert.equal(done.answer, "I used Gmail send email and then the answer.");
+  });
+
+  test("toolLabel and withoutToolNames", () => {
+    assert.equal(toolLabel("submit_answer"), "the answer");
+    assert.equal(toolLabel("GMAIL_SEND_EMAIL"), "Gmail send email");
+    assert.equal(toolLabel("look_up_stock"), "look up stock");
+    assert.equal(withoutToolNames("submit_answer"), "");
+    assert.equal(withoutToolNames('  `submit_answer({"answer": 1})`  '), "");
+    assert.equal(withoutToolNames("GMAIL_SEND_EMAIL"), "");
+    assert.equal(withoutToolNames("Checked look_up_stock first.", ["look_up_stock", "stock"]), "Checked look up stock first.");
+    assert.equal(withoutToolNames("Plain words stay. USA and NASA too."), "Plain words stay. USA and NASA too.");
+    assert.equal(withoutToolNames("Run this:\n```\nMY_VAR=1 submit_answer\n```"), "Run this:\n```\nMY_VAR=1 submit_answer\n```");
+    assert.equal(withoutToolNames(""), "");
   });
 });

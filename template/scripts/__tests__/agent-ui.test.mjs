@@ -151,3 +151,25 @@ test("readAgentEvents puts lines back together across chunks, and skips one it c
   await readAgentEvents(new Response(body), (e) => seen.push(e));
   assert.deepEqual(seen, [{ type: "cost", costUsd: 1 }, { type: "note", message: "a" }, { type: "note", message: "b" }]);
 });
+
+test("a failed run says what to try, and never shows a tool's id (the Nov 3 audit's Austin run)", () => {
+  const html = render({
+    status: "failed",
+    reason: "error",
+    message: "Something went wrong. Try again in a minute.",
+    text: "submit_answer",
+    resume: "sealed",
+    steps: [
+      { id: "s1", title: "Searching the web", state: "done", kind: "search" },
+      { id: "c1", title: "GMAIL_SEND_EMAIL", state: "failed", kind: "tool", description: "GMAIL_SEND_EMAIL refused the address." },
+    ],
+  });
+  assert.doesNotMatch(html, /submit_answer|GMAIL_SEND_EMAIL/);
+  assert.match(html, /role="alert"[^>]*>.*Something went wrong\. Try again in a minute, or press Keep going to pick up where it stopped\./);
+  assert.match(html, /Gmail send email refused the address\./);
+  assert.match(html, /Keep going/);
+  // Without a state to pick up from, it doesn't offer Keep going in words either.
+  const ended = render({ status: "failed", reason: "error", message: "Something went wrong. Try again in a minute.", resume: null });
+  assert.match(ended, /Something went wrong\. Try again in a minute\.</);
+  assert.doesNotMatch(ended, /Keep going/);
+});
