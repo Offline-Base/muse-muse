@@ -27,7 +27,9 @@ export default async function NewFineTunePage({ searchParams }: { searchParams?:
   await connection();
   if (!env.tuneComposer) notFound();
   // MAKE_CHAT_ALL: the Make box is where everything starts. A plan for a build's own model still opens here.
-  if (makeChatAllOn() && !(await searchParams)?.[FROM_BUILD_PARAM]) redirect("/");
+  // SAM_TUNE: ?sam=1 opens the page anyway, for the "Teach SAM 3.1 a new object" card (admins only, below).
+  const params = await searchParams;
+  if (makeChatAllOn() && !params?.[FROM_BUILD_PARAM] && !(env.samTune && params?.sam)) redirect("/");
   const user = await pageViewer();
   if (!user?.isAdmin) {
     if (!env.openTrain) redirect("/fine-tuning");
