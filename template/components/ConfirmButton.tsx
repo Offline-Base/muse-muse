@@ -31,11 +31,18 @@ export function ConfirmButton({
   disabled?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const close = () => dialog.current?.close();
+  // React doesn't put autoFocus on the element in the browser, so showModal() would focus the first button, the
+  // one that clears. Move focus to "Keep it" by hand.
+  const open = () => {
+    dialog.current?.showModal();
+    keepRef.current?.focus();
+  };
   return (
     <>
-      <button type="button" className="text" data-destructive onClick={() => dialog.current?.showModal()} disabled={disabled}>
+      <button type="button" className="text" data-destructive onClick={open} disabled={disabled}>
         <Icon name="trash" size={18} /> {label}
       </button>
       <dialog ref={dialog} aria-labelledby={headingId}>
@@ -52,7 +59,7 @@ export function ConfirmButton({
           >
             {confirm ?? label}
           </button>
-          <button type="button" className="secondary" autoFocus onClick={close}>
+          <button ref={keepRef} type="button" className="secondary" onClick={close}>
             {keep}
           </button>
         </div>

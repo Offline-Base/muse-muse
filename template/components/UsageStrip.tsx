@@ -25,7 +25,11 @@ const count = (n: number) => Math.round(n).toLocaleString("en-US");
 /** The strip's words, like "About $0.084 in model costs · 1,185 tokens · 0 from cache". Empty when there is nothing. */
 export function usageText(usage: Usage, what = "in model costs"): string {
   const parts: string[] = [];
-  if (typeof usage.costUsd === "number" && usage.costUsd > 0) parts.push(`About ${formatUsd(usage.costUsd)} ${what}`.trim());
+  if (typeof usage.costUsd === "number" && usage.costUsd > 0) {
+    const money = formatUsd(usage.costUsd);
+    // "Under $0.001", never "About under $0.001".
+    parts.push((money.startsWith("under ") ? `Under ${money.slice(6)} ${what}` : `About ${money} ${what}`).trim());
+  }
   const tokens = (usage.input ?? 0) + (usage.output ?? 0);
   if (usage.input !== undefined || usage.output !== undefined) parts.push(`${count(tokens)} tokens`);
   if (usage.cached !== undefined) parts.push(`${count(usage.cached)} from cache`);

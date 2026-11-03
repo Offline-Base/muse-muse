@@ -26,6 +26,7 @@ test("the strip puts cost, tokens and cached tokens on one line, and a cache cou
   assert.equal(usageText({ costUsd: 0.04 }, "in model and tool costs"), "About $0.040 in model and tool costs");
   assert.equal(usageText({ input: 2000, cached: 1500 }), "2,000 tokens · 1,500 from cache");
   assert.equal(usageText({ costUsd: 0 }), "");
+  assert.equal(usageText({ costUsd: 0.0004 }), "Under $0.001 in model costs", "never 'About under $0.001'");
   const html = renderToStaticMarkup(h(UsageStrip, { usage: { costUsd: 0.2, input: 10, output: 5 } }));
   assert.equal(html, '<p class="meta" data-usage="true">About $0.20 in model costs · 15 tokens</p>');
   assert.equal(renderToStaticMarkup(h(UsageStrip, { usage: {} })), "", "nothing to show, no empty line");
@@ -49,5 +50,6 @@ test("a destructive action is a small text button that only opens a dialog, with
   assert.match(dialog, /<p>Its groups go too\. This can&#x27;t be undone\.<\/p>/);
   assert.match(dialog, /class="primary">Clear saved run<\/button>/);
   assert.match(dialog, /class="secondary"[^>]*>Keep it<\/button>/);
+  assert.doesNotMatch(dialog, /autofocus/i, "focus moves to Keep it in code when the dialog opens, the same with or without SSR");
   assert.doesNotMatch(dialog, /<dialog[^>]* open/, "closed until the button is pressed");
 });
