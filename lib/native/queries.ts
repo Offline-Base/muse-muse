@@ -2,8 +2,9 @@
  * The queries behind the "Get it" panel, the download route and the Quest links (docs/NATIVE.md). Runs an agent started
  * checked a preview, not the live product, so nothing here reads them.
  */
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
+import { HIDDEN_FROM_GALLERY } from "@/lib/gallery/hidden";
 import { briefTargets } from "@/lib/native/targets";
 import { buildProductNativeView, type ProductNativeView } from "@/lib/native/product-view";
 import { NATIVE_DOWNLOADS } from "@/lib/native/types";
@@ -130,7 +131,10 @@ export interface VrProductView {
   tagline: string;
 }
 
-/** Shipped VR products, newest first, for the list people bookmark on their Quest. Their newest brief says where they run. */
+/**
+ * Shipped VR products, newest first, for the list people bookmark on their Quest. Their newest brief says where they run.
+ * Like the gallery, it leaves out the products hidden from it (lib/gallery/hidden.ts).
+ */
 export async function listVrProducts(limit = 48): Promise<VrProductView[]> {
   return db()
     .select({ slug: schema.products.slug, name: schema.products.name, tagline: schema.products.tagline })
@@ -139,6 +143,7 @@ export async function listVrProducts(limit = 48): Promise<VrProductView[]> {
       and(
         inArray(schema.products.status, [...SHIPPED]),
         sql`${schema.products.liveUrl} is not null`,
+        notInArray(schema.products.slug, [...HIDDEN_FROM_GALLERY]),
         sql`coalesce((select ${schema.builds.brief} -> 'targets' from ${schema.builds} where ${schema.builds.productId} = ${schema.products.id} and ${schema.builds.brief} is not null order by ${schema.builds.startedAt} desc limit 1), '[]'::jsonb) @> '[{"id":"vr"}]'::jsonb`,
       ),
     )

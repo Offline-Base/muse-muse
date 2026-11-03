@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { requirementTestsText } from "@/lib/full/prompts";
 import { buildableRequirements, briefRequirements, requirementResults, type RequirementTest, unmetLines } from "@/lib/full/requirements";
 import { judgeInstructions } from "@/lib/prompts/judge";
+import { redactShared } from "@/lib/keys/shared";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
 
 /**
@@ -196,7 +197,8 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
     add(shot.url, `screenshot-${i + 1}.png`);
   });
   content.push(textPart("Judge the product now."));
-  return { content, sources };
+  // BUILD_SHARED_KEYS: no key's value reaches the judge model in any text it reads. The same parts when none is set.
+  return { content: content.map((p) => (p.type === "input_text" ? { ...p, text: redactShared(p.text) } : p)), sources };
 }
 
 function guessImageType(url: string): string {

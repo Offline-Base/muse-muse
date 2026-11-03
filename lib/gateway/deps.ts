@@ -9,6 +9,7 @@ import { liveCaptionDeps } from "@/lib/caps/live/caption-deps";
 import { buildTestModel, contributorBuildsOn, env } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
+import { sparkOpenUpstream } from "@/lib/gateway/spark-open";
 import {
   acquireInFlight,
   adjustCounter,
@@ -59,9 +60,16 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     buildTestModel: buildTestModel(),
     contributorRuntime: contributorBuildsOn(),
     upstreamBaseUrl: UPSTREAM_BASE_URL,
+    // SPARK_OPEN_PRODUCTS: only while it is on, so the deps are today's without it.
+    ...sparkOpenDeps(),
     gatewayUrl: env.gatewayUrl,
     defer,
   };
+}
+
+/** Muse Spark Open's provider and key, read per call, only while SPARK_OPEN_PRODUCTS is on. */
+function sparkOpenDeps(): Pick<GatewayDeps, "sparkOpen"> {
+  return env.sparkOpenProducts ? { sparkOpen: () => sparkOpenUpstream() } : {};
 }
 
 /** A job's model calls, only while the jobs cap is served. */

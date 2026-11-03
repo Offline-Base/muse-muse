@@ -16,6 +16,7 @@ import { agentCapacity } from "@/lib/sandbox/agent-capacity";
 import { snapshotCapOverlays } from "@/lib/sandbox/snapshots";
 import { type PlatformBypass, publicHost } from "@/lib/sandbox/policy";
 import { contributorSwitchOn, RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { SPARK_OPEN_OVERLAY } from "@/lib/meta/spark-open";
 import { parseGeoCountries } from "@/lib/trust/geo";
 
 /**
@@ -414,8 +415,8 @@ export const env = {
     return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
   },
   /**
-   * QUANT_TARGETS: local files for small bases and one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts,
-   * docs/TRAINING.md "Device targets"). Off when unset: quantizing stays r30b's three builds, and Llama adapters are refused.
+   * QUANT_TARGETS: local files for one-bit Muse Glimmer, and the device targets (lib/train/quant-targets.ts, docs/TRAINING.md
+   * "Device targets"). Off when unset: quantizing stays r30b's three builds. No small base is offered, since only Meta models run.
    */
   get quantTargets(): boolean {
     return flag("QUANT_TARGETS");
@@ -567,7 +568,7 @@ export const env = {
   },
 
   /**
-   * TUNE_ANY_BASE: admins may fine-tune any allowed Meta base, Llama or Glimmer (docs/TRAINING.md "Any Meta base"). Off:
+   * TUNE_ANY_BASE: admins may fine-tune another Muse Glimmer base (docs/TRAINING.md "Any Meta base"); no other family is allowed. Off:
    * every job trains on r30b, and a base in a request is refused.
    */
   get tuneAnyBase(): boolean {
@@ -1286,7 +1287,7 @@ export const env = {
    * whatever the builder snapshot has, so a live product never breaks when the snapshot changes.
    */
   get servedCaps(): CapId[] {
-    // Unit 8: media is on only with at least one of its parts on (MEDIA_SPEECH and the rest), so MEDIA_ENABLED alone
+    // Unit 8: media is on only with at least one of its parts on (MEDIA_VIDEO and the rest), so MEDIA_ENABLED alone
     // behaves exactly like MEDIA_ENABLED off.
     const partsOn = (c: CapId) => c !== "media" || mediaPartsFromEnv().length > 0;
     return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && partsOn(c));
@@ -1435,7 +1436,7 @@ export const env = {
 
   /**
    * The media cap's parts (lib/caps/media), each its own switch on top of MEDIA_ENABLED, which is CAP_FLAG.media, read
-   * through enabledCaps above: MEDIA_SPEECH (speech in the page), MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
+   * through enabledCaps above: MEDIA_VIDEO (video from pictures), MEDIA_MUSIC (MIDI)
    * and MEDIA_SAM_TILING (SAM past 16 objects, and long clips in chunks). The writer offers only the parts that are on.
    */
   get mediaParts(): MediaPartId[] {
@@ -1570,6 +1571,27 @@ export const env = {
   /** FLEET_ALL_PRODUCTS: signed-in builders' products may use the fleet too. Off, only products an admin owns may. */
   get fleetAllProducts(): boolean {
     return flag("FLEET_ALL_PRODUCTS");
+  },
+
+  // ---------- Muse Spark Open for products (lib/gateway/spark-open.ts) ----------
+
+  /**
+   * SPARK_OPEN_PRODUCTS: the gateway serves model muse-spark-open at {GATEWAY_URL}/v1/chat/completions, on the provider
+   * SPARK_OPEN_PROVIDER names (baseten or fireworks, baseten when unset) with that provider's key (BASETEN_API_KEY or
+   * FIREWORKS_API_KEY). Off: that path answers 404 unknown_endpoint, and the brief, tokens and catalog are today's.
+   */
+  get sparkOpenProducts(): boolean {
+    return flag("SPARK_OPEN_PRODUCTS");
+  },
+  /**
+   * SPARK_OPEN_PRODUCTS, for what a new build is told and given: also needs a builder snapshot made from a checkout with the
+   * helper and skill in its template. template/caps/spark-open ships only its deps.json, so a snapshot lists `spark-open` in
+   * lib/sandbox/snapshots.json exactly when that's true, the way FLEET_PRODUCTS waits for `fleet`.
+   */
+  get sparkOpenProductsForBuilds(): boolean {
+    if (!flag("SPARK_OPEN_PRODUCTS")) return false;
+    const overlays = env.snapshotCaps ?? snapshotCapOverlays(process.env.BUILDER_SNAPSHOT_ID || undefined, undefined, () => {});
+    return overlays.includes(SPARK_OPEN_OVERLAY);
   },
 
   // ---------- Hosting a tuned model on a provider the platform pays for (lib/train/host) ----------

@@ -79,6 +79,9 @@ import { briefTargets } from "@/lib/native/targets";
 import { verifyProofText } from "@/lib/prompts/judge";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
+import { sharedKeysForBuild } from "@/lib/keys/grant";
+import { withSharedKeyScan } from "@/lib/keys/scan";
+import { SHARED_ENV_NAMES, sharedKeysOn, sharedKeysPromptSection, sharedKeysRoomLine, sharedLeakLines, sharedLeaksIn, type SharedGrant, type SharedLeak } from "@/lib/keys/shared";
 import { captureVersion } from "@/lib/versions/store";
 import type { NoteStatus } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
@@ -686,8 +689,11 @@ export async function provisionStep(input: {
   const look = lookNote();
   // Wave 3, unit 1: the trust overlay, for every new build while a trust product flag is on. Null with them off.
   const trust = trustOverlayStep(brief, input.slug);
+  // BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): checked here on the server for the person who started this build. Null with
+  // the flag off, so nothing below changes. It holds values, so it stays in this step.
+  const shared = await sharedKeysForBuild(build);
   const promptFor = (b: Brief) =>
-    renderBuildPrompt(b, {
+    sharedPrompt(renderBuildPrompt(b, {
       inspoFiles: inspiration.references.map((r) => r.fileName),
       fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
       maxModelSteps: MAX_MODEL_STEPS,
@@ -702,7 +708,7 @@ export async function provisionStep(input: {
       ...look,
       ...rangeNote(b),
       ...fastNote(b),
-    });
+    }), shared, "build");
   const promptMarkdown = promptFor(brief);
   const allowedModels = allowedModelsFor(brief);
   // A brief with cap blocks gets its overlays, its extra env and hosts, and a build token tied to this build, whose
@@ -745,7 +751,9 @@ export async function provisionStep(input: {
     // Wave 3, unit 11: the shared Glimmer endpoint's .env.local line, for a brief with no caps. Nothing with its flag off.
     ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief) } : {}),
     ...(trust ? { trust } : {}),
+    ...(shared ? { sharedKeys: shared } : {}),
   });
+  if (shared) await emit(input.buildId, { type: "log", text: sharedKeysRoomLine(shared) });
   // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
   // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
   if (capsFileFor(kept) && publicHost(env.platformUrl) === null) {
@@ -1054,7 +1062,9 @@ export async function collectVerifyStep(input: {
   const { edgeDrill, ...verify } = input;
   const collected = await sandbox.collectVerifyResult({ ...verify, ...(env.fullBuilds ? { maxScreenshots: MAX_CHAIN_SCREENSHOTS + 2 } : {}) });
   const screenshots = collected.screenshots;
-  const summary = edgeDrill ? withEdgeDrill(collected.summary, { ...edgeDrill, json: await sandbox.readSandboxText(input.sandboxName, EDGE_DRILL_RESULTS) }) : collected.summary;
+  const drilled = edgeDrill ? withEdgeDrill(collected.summary, { ...edgeDrill, json: await sandbox.readSandboxText(input.sandboxName, EDGE_DRILL_RESULTS) }) : collected.summary;
+  // BUILD_SHARED_KEYS: a build with the owner's keys gets a keys step, which fails when a value is in its files.
+  const summary = await withSharedKeysCheck(input.buildId, input.sandboxName, drilled);
   await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
   // A product with platform services: each fixed check as its own line in the build room (docs/CAPABILITIES.md, 2.8).
   for (const c of summary.caps ?? []) {
@@ -1068,6 +1078,34 @@ export async function collectVerifyStep(input: {
   };
 }
 collectVerifyStep.maxRetries = 1;
+
+/**
+ * BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): verify's summary with the shared-keys check added, for a build that has the
+ * keys. The same summary for every other build. A check that couldn't run adds nothing here, since the deploy checks
+ * again and fails closed.
+ */
+async function withSharedKeysCheck(buildId: string, sandboxName: string, summary: VerifySummary): Promise<VerifySummary> {
+  // With the flag off nothing is read, so this step does exactly what it did before.
+  if (!sharedKeysOn()) return summary;
+  const shared = await sharedKeysForBuild(await loadBuild(buildId));
+  if (!shared) return summary;
+  const leaks = await sandbox.scanSharedKeys(sandboxName, shared).catch(() => null);
+  if (leaks === null) console.warn(`[build keys] the keys check couldn't run on build ${buildId}. The deploy checks again.`);
+  return withSharedKeyScan(summary, leaks, sharedLeakLines(leaks ?? []));
+}
+
+/** A prompt with the shared accounts' section last. The same prompt without a grant. */
+function sharedPrompt(prompt: string, shared: SharedGrant | null, when: "build" | "change"): string {
+  const section = sharedKeysPromptSection(shared, when);
+  return section ? `${prompt.replace(/\n*$/, "\n")}${section}` : prompt;
+}
+
+/** Why a product with a shared key in its files isn't published. Names the file and the var, never the value. */
+function sharedLeakError(leaks: readonly SharedLeak[]): FatalError {
+  const lines = sharedLeakLines(leaks);
+  const more = lines.length > 1 ? ` ${lines.length - 1} more file${lines.length === 2 ? "" : "s"} too.` : "";
+  return new FatalError(`This wasn't published because a key from the owner's shared accounts would go with it. ${lines[0]}${more}`);
+}
 
 /**
  * An edge build's simulated outage drill, after a verify that passed: a second `next start` on loopback with GATEWAY_URL
@@ -1389,6 +1427,8 @@ export async function chainReopenStep(input: { buildId: string; productId: strin
     ...(caps ? { buildId: input.buildId } : {}),
   });
   await sandbox.hibernate(input.sandboxName);
+  // BUILD_SHARED_KEYS: checked again for every session, so a ban or the flag going off takes effect at the next one.
+  const shared = await sharedKeysForBuild(build);
   await sandbox.reopenSandbox({
     sandboxName: input.sandboxName,
     productId: input.productId,
@@ -1398,6 +1438,7 @@ export async function chainReopenStep(input: { buildId: string; productId: strin
     ...extraFilesFor(brief),
     ...(caps ? { capHosts: capBuildHosts(caps.caps), capEnv: capBuildEnv(brief), caps: true } : {}),
     ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief) } : {}),
+    ...(shared ? { sharedKeys: shared } : {}),
   });
   const sessionId = newSessionId();
   const plan = build.roundPlan;
@@ -1553,6 +1594,14 @@ export async function startDeployStep(input: {
   const flagOn = contributorBuildsOn();
   const runtime = contributorRuntimeMarkers(brief, flagOn, flagOn && (await sandbox.productShowsContributorNotice(input.sandboxName).catch(() => false)));
   if (flagOn && brief && !runtime.length) console.warn(`Product ${input.productId} has no Contributor marker: when live, a gadget, board or Wonder demo stays on Muse Wonder and anything else is refused.`);
+  // BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): checked again for this build's own principal. A product with the keys is
+  // looked through once more, .next and public/ included, before anything is minted, and this one fails closed.
+  const shared = await sharedKeysForBuild(build);
+  if (shared) {
+    const leaks = await sandbox.scanSharedKeys(input.sandboxName, shared);
+    if (leaks === null) throw new Error("The shared-keys check couldn't run, so the product wasn't published.");
+    if (leaks.length) throw sharedLeakError(leaks);
+  }
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
@@ -1569,6 +1618,14 @@ export async function startDeployStep(input: {
     env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token, ...(flagOn ? { MUSE_CONTRIBUTOR_NOTICE: runtime.length ? "1" : "0" } : {}), ...(brief ? capDeployEnv(brief, live.token) : {}) },
     projectId: product.vercelProjectId,
     onFiles: (files) => captureVersion({ buildId: input.buildId, productId: input.productId, files, restoredFrom: input.restoredFrom ?? null }),
+    // Every deploy: a shared key's value in any file stops it, whatever the flag says (a no-op while none is set). With
+    // the keys, NEXT_PUBLIC_ spellings of their names and their names in next.config stop it too.
+    checkFiles: (files) => {
+      const leaks = sharedLeaksIn(files, { names: shared?.secretNames ?? [] });
+      if (leaks.length) throw sharedLeakError(leaks);
+    },
+    // With the flag on, the product's env matches this build: its keys when it may have them, none of them when not.
+    ...(sharedKeysOn() ? { sharedEnv: { set: shared?.env ?? {}, remove: SHARED_ENV_NAMES.filter((n) => !shared || !(n in shared.env)) } } : {}),
   }).catch(async (err: unknown) => {
     // Wave 3, unit 1: a deploy refused before any deployment was made (files too big, DeployFilesTooBigError) never
     // retries, so nothing will ever use the token minted for it. Revoke it. Other errors retry the step, which mints anew.
@@ -1848,6 +1905,9 @@ export async function reopenStep(input: {
   });
   const newReferences: Reference[] = inspiration.references;
   const capHosts = caps ? capBuildHosts(caps.caps) : [];
+  // BUILD_SHARED_KEYS: checked for the person who asked for this change, not whoever built the product. Without a
+  // grant, .env.local is written without the keys and the firewall without their hosts.
+  const shared = await sharedKeysForBuild(build);
   await sandbox.reopenSandbox({
     sandboxName: input.sandboxName,
     productId: input.productId,
@@ -1860,8 +1920,10 @@ export async function reopenStep(input: {
     ...(caps && brief ? { capEnv: capBuildEnv(brief), caps: true } : {}),
     // Wave 3, unit 11: as at provision.
     ...(!caps && usesSharedGlimmer(brief) ? { capEnv: capBuildEnv(brief as Brief) } : {}),
+    ...(shared ? { sharedKeys: shared } : {}),
   });
-  const prompt = renderRefinePrompt({
+  if (shared) await emit(input.buildId, { type: "log", text: sharedKeysRoomLine(shared) });
+  const prompt = sharedPrompt(renderRefinePrompt({
     brief,
     message: `${input.freshSession ? "Note: this is a new session, so you have no memory of this product. Read AGENTS.md, BUILD_NOTES.md and the code before you edit.\n\n" : ""}${await restoredNote(input.productId).catch(() => "")}${build.message ?? inspiration.note ?? ""}`,
     newReferences: newReferences.map((r) => ({
@@ -1871,7 +1933,7 @@ export async function reopenStep(input: {
     recipes: recipeNotes(brief),
     ...sessionNotes(),
     ...lookNote(),
-  });
+  }), shared, "change");
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);
   return {

@@ -92,8 +92,8 @@ const notMetaAnswer = (): Response =>
 
 /**
  * ask_board on a paired board, for someone the link already let in. Only with GADGET_CONNECT, off. Only a Meta model is
- * asked, twice over: a board whose picked model isn't Meta's is refused before it's opened (deviceModelTarget picks a small
- * Llama for anything but a Jetson), and the board's own word on what it runs is read before the prompt goes (askOnBoard),
+ * asked, twice over: a board whose picked model isn't Meta's is refused before it's opened (deviceModelTarget picks one-bit
+ * Muse Glimmer for every board), and the board's own word on what it runs is read before the prompt goes (askOnBoard),
  * since a Jetson can be running something other than its picked model.
  */
 export async function liveAsk(args: Record<string, unknown>, link: LinkedBoard): Promise<Response> {

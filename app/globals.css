@@ -4391,6 +4391,11 @@ a.dash-card:hover {
   background: var(--chat-bg);
 }
 
+/* MakeChat and TrainComposer hide the box once a plan or a problem shows; without this, display: flex wins and the plan sits a screen below. */
+.play[hidden] {
+  display: none;
+}
+
 .play-main {
   flex: 1;
   min-width: 0;

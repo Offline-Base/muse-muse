@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { unstable_rethrow } from "next/navigation";
 import resources from "@/catalog/meta-resources.json";
@@ -7,6 +7,7 @@ import { db, schema } from "@/lib/db/client";
 import { databaseUrl } from "@/lib/db/url";
 import { env } from "@/lib/env";
 import { newestPerRebuild, parseManifest } from "@/lib/format";
+import { GALLERY_FIRST, HIDDEN_FROM_GALLERY } from "@/lib/gallery/hidden";
 import { VERDICT_LABEL, lessonHref } from "@/lib/learn";
 import type { Brief, BuildEvent, MuseLogLine, RebuildFit, RebuildTarget } from "@/lib/types";
 import type {
@@ -327,6 +328,19 @@ export interface ShippedFilter {
    */
   published?: boolean;
   slugs?: readonly string[];
+  /**
+   * A gallery list (lib/gallery/hidden.ts): leaves out HIDDEN_FROM_GALLERY and puts GALLERY_FIRST first, in its order,
+   * both before the limit. The products keep their own pages and links.
+   */
+  gallery?: boolean;
+}
+
+/** GALLERY_FIRST's slugs by their place on the list, then everything else. */
+function galleryFirstRank() {
+  if (!GALLERY_FIRST.length) return null;
+  // The ranks are written as literals: as bound parameters Postgres would type them text and sort "10" before "2".
+  const whens = GALLERY_FIRST.map((slug, i) => sql`when ${slug} then ${sql.raw(String(i))}`);
+  return sql`case ${schema.products.slug} ${sql.join(whens, sql` `)} else ${sql.raw(String(GALLERY_FIRST.length))} end`;
 }
 
 /** The shipped products (live or partial), newest first. Filters apply before the limit, so a page still fills up. */
@@ -339,7 +353,9 @@ export async function listShippedProducts(limit = 60, filter: ShippedFilter = {}
     ...(env.trustReports ? [isNull(schema.products.takenDownAt)] : []),
     ...(filter.published ? [isNotNull(schema.products.liveUrl), sql`${schema.products.liveUrl} <> ''`] : []),
     ...(filter.slugs ? [inArray(schema.products.slug, [...filter.slugs])] : []),
+    ...(filter.gallery && HIDDEN_FROM_GALLERY.length ? [notInArray(schema.products.slug, [...HIDDEN_FROM_GALLERY])] : []),
   ];
+  const first = filter.gallery ? galleryFirstRank() : null;
   const rows = await db()
     .select({
       product: schema.products,
@@ -354,7 +370,7 @@ export async function listShippedProducts(limit = 60, filter: ShippedFilter = {}
     .leftJoin(schema.builds, eq(schema.products.latestBuildId, schema.builds.id))
     .leftJoin(schema.inspirations, eq(schema.products.inspirationId, schema.inspirations.id))
     .where(shown.length === 1 ? shown[0] : and(...shown))
-    .orderBy(desc(schema.products.updatedAt))
+    .orderBy(...(first ? [asc(first)] : []), desc(schema.products.updatedAt))
     .limit(limit);
   const briefs = await latestBriefs(rows.filter((r) => !r.brief).map((r) => r.product.id));
 

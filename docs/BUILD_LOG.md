@@ -3093,3 +3093,141 @@ PR #96's open question: if no prompt separates an open door from a shut one, the
 - **For the take (docs/EDGE_DEMO.md):** a mini fridge with a few plain items inside. Decide "door open" in code when "open door" finds at least one box over the threshold, and show the "can" boxes as the second sign.
 - **Not proven:** the board's own SAM 3.1 (fp16 on jetson-04) on these prompts, real camera frames, lighting, and any prop other than a mini fridge. Two made-up photos are not an accuracy figure.
 - Spend: 2 images and 8 SAM calls, under $0.25.
+## Nov 2, 2026, night: Muse Code runs on Muse Spark Open (branch tg-musecode-open)
+
+The owner asked for Muse Code driven by Muse Spark Open through a custom endpoint. It ran on this laptop.
+- **How Muse Code reaches another endpoint (read in its help and Meta's docs, then run):**
+  - `muse exec` has `--base-url` and `--api-key-stdin`. A `--base-url` flag alone is refused: "Meta bearer withheld: base_url is off the sanctioned front door". The base URL has to be set in the settings file's `endpoint_transport` with `auth = "bearer"`. That run used a throwaway HOME, never the owner's `~/.config/muse/settings.json`.
+  - Muse Code first asks `GET /muse-code/models` for a catalog (Meta's lives at `https://api.meta.ai/muse-code/models`), then posts to `/responses`.
+  - Partners don't serve the catalog, so `scripts/open/muse-code-relay.mjs` answers that one request with a single Spark Open entry and forwards everything else to the partner's `/v1` API unchanged.
+- **Fireworks: blocked.** The account behind `FIREWORKS_API_KEY` answers every request with HTTP 412, "Account ... is suspended, possibly due to reaching the monthly spending limit or failure to pay past invoices". Production holds the same key, so anything on Fireworks fails until the owner fixes billing at fireworks.ai/account/billing.
+- **Baseten: worked.**
+  - Model id `meta-models/muse-spark-open` answers. `meta-models/muse-spark-open-1026`, the id from the hackathon guide, returns 404 for this account.
+  - `muse exec --model meta-models/muse-spark-open --max-model-steps 3 --json --yolo "Create a file named hello.txt that contains exactly the word hi, then stop."` exited 0 and wrote `hello.txt` containing `hi`.
+  - The relay saw 6 POSTs to `/responses`, all 200: the agent's steps plus its observers.
+  - Usage reported: 57,418 input and 342 output tokens on the main step. Cost: Baseten credit, not yet read from Baseten's dashboard; estimated under $0.20.
+- **Also found:** the `MODEL_API_KEY` in `~/muse-muse/.env.local` is invalid (401 `invalid_api_key`), while the one in `~/muse-muse-builds/.env.local` works. Scripts that read the first file can't reach Meta's API.
+- **Not done yet:**
+  - a Muse Muse build with Muse Code on Spark Open (builds run in Vercel Sandbox, whose firewall swaps only Meta's key, so this needs a platform-side relay with the partner key);
+  - any real task bigger than one file;
+  - Spark Open's tool-call quality over a long run.
+- **Claim allowed now:** "Muse Code, Meta's coding agent, ran a task on Muse Spark Open served by Baseten." Not yet: that Muse Muse builds apps with it.
+
+## Nov 2, 2026, night: a license, and 8 products hidden from the gallery (branch tg-public-ready)
+
+Getting the repo ready to go public for judging. No model run, no build, no deploy, no spend.
+
+- **License (owner's choice: Apache-2.0).**
+  - `LICENSE` is the Apache License 2.0 text, byte for byte the copy already in `lib/train/licenses/LICENSE`, with the appendix's copyright line filled in as "Copyright 2026 Offline Base".
+  - `NOTICE` says what the license doesn't cover: `content/meta-docs/` (Meta's text, kept with a Meta organizer's permission, with a placeholder for the owner to name who and when), model files and weights (Muse Glimmer's terms and Usage Policy, the Muse Model License for Muse Spark Open and its Derivatives with "Built with Muse Spark Open" and 18 and over, SAM 3.1's SAM License, and Model API outputs under Meta's Terms), Meta's names and marks (not an official Meta product), and the third-party files found in the tree.
+  - Third-party files found by a search of `app/fonts/`, `public/` and `template/` for fonts, models, media and license files: Inter (SIL OFL 1.1) twice, the WebXR Input Profiles controller models (MIT, Amazon) under the VR target, and the public-domain Alice text. The template also ships notice files for Phaser, Babylon.js, SpeechT5 and ONNX Runtime, which products install from npm or download. The mascot in `public/muse/` came from the owner, so `NOTICE` has a second placeholder for how it was made.
+  - `"license": "Apache-2.0"` in package.json (and the lockfile's root entry, as npm writes it), with `private` kept. One line under the README's Status. `privacy/THIRD_PARTY_NOTICES.md` no longer says Muse Privacy has no license.
+- **Hidden from the gallery, not deleted.** gym-snap-coach, marathon-plan-keeper, rate-change-tutor, class-capture-notes, start-here-chat, everyday-helper-chat, parking-lot-counter and object-count-studio look like the organizers' list of overdone projects (sports coaches, education chatbots, plain chatbots, simple image analyzers).
+  - One list, `HIDDEN_FROM_GALLERY` in `lib/gallery/hidden.ts`, plus `GALLERY_FIRST` (`["dinner-split-helper"]`, the product with the "Where it ran" device stage).
+  - `listShippedProducts` takes `gallery: true`: it leaves the hidden slugs out and puts the first ones first in SQL, both before the limit, so dinner-split-helper leads even when it's older than the 60 newest.
+  - Honored by the Gallery, the Make page's featured row (parking-lot-counter was one of its five, so it has four now, and `pickFeatured` skips any hidden slug), the dashboard's three connectors to try, and `/vr`. Left alone: `/gadgets`, which is Hussam's. There is no "more like this" list anywhere in the app, so nothing else needed it.
+  - Product pages, live links and connectors don't read the list, so they keep working.
+  - `scripts/judge-check.mjs` never assumed every product is in the gallery (it finds products by the gallery's links). It now reads the hidden slugs from `lib/gallery/hidden.ts` as text, opens each one's page directly, checks its published link, and flags a gallery card for a hidden product. Not run against the live site: production hasn't deployed this branch.
+- **Tests:** lib/gallery (hidden, featured, shipped on PGlite) and scripts/__tests__/judge-check, 20 of 20. Also lib/native queries, the Make page's flag-off test and lib/trust reports, 31 of 31. Typecheck clean except `lib/sandbox/host/modal.ts`, whose `modal` package isn't in the shared `node_modules` this worktree links to (from #83, not this branch).
+## Nov 2, 2026, night: the plan to win, the owner's answers, and the new video script (branch tg-video-v2)
+
+- **Review:** a full read of main against the rubric (Impact 30, Meta tooling 25, technical depth 20, demo 25) and the organizers' Nov 2 note that judges work mainly from the video and the public repo. Findings: the story was spread across six products, the old script leaned on the least-proven claim and said "hasn't run yet" about eight times, the repo was private with a README that opened with what hadn't run, and 8 gallery products looked like the organizers' "skip these" list.
+- **Live site check:** `node scripts/judge-check.mjs`, GETs only: 157 pages opened, all 200; 31 gallery products, all with a working live link. No problems found.
+- **Owner's answers:** two rounds on the plan-to-win page (claude.ai artifact, answers saved there). Summarized in docs/HANDOFF.md, "Owner decisions, Nov 2 night".
+- **Started from it, each on its own branch and PR:** Muse Spark Open on Fireworks for products (tg-spark-open), SAM 3.1 board fallback for edge builds (tg-edge-vision), LICENSE and gallery hiding then a Meta-only tree (tg-public-ready, tg-meta-only-tree), the owner's keys in builds (tg-build-keys), the Muse Privacy rerun on Glimmer (tg-privacy-glimmer).
+- **docs/VIDEO.md rewritten** to the owner's story: Zuckerberg's line, before and after, who it's for, the build, the product, Muse Privacy, where it ran, cable out on jetson-04 with SAM 3.1, under the hood, close. Numbers that don't exist yet are placeholders filled from this log. The old script is at `git show 282c0d87:docs/VIDEO.md`.
+- **Housekeeping:** free disk was 4.5 GB; regenerable code copies in an old scratch folder and an idle `.next` were deleted (5.9 GB free after). Folders holding tuned adapters were kept.
+- Spend $0.
+## Nov 2, 2026: Modal builder image made, then Modal turned off (owner)
+
+- **Builder image:** `scripts/dev/modal-builder-image.ts` ran once. Setup took 107 s, Muse Code 1.4.14. Image `im-01M6FGSPQRD2PRHRMED38G4MD0`.
+- **Preview test blocked:** Previews are protected, and a Modal sandbox can't add the Protection Bypass secret, so Muse Code on Modal can't reach a Preview's `/api/sandbox-meta` route (docs/MODAL_HOST.md, gap 4). Turning protection off was ruled out, since Previews act as admin.
+- **Owner decision:** "turn off the modal stuff for now". Removed from Vercel: `SANDBOX_HOST` (Preview) and `MODAL_BUILDER_IMAGE_ID` (Preview and Production). Left as they were: the two Modal token settings on Preview, added a day earlier for other work. Every build runs on Vercel Sandbox. The code from #83 stays, off by default.
+- **Not proven:** no Muse Code build has run on Modal. The SUBMISSION.md sentence ("smoke-tested on Modal with no full build there yet") stays accurate.
+- **Spend:** the image build, a few cents on Modal (not checked against the bill).
+
+## Nov 2, 2026, night: "send, it loads, then nothing" on the Make page (branch tg-play-hidden)
+
+- **Owner report:** on musemuse.dev, sending "Tune a model to hide personal details..." (and earlier the dataset starter) spun, then nothing.
+- **Reproduced on production as a guest:** `/api/make/intent` 200 in about 6 s, then `/api/train/plan` 200 with a full plan about 7 s later. The plan did render, but about 970 px down the page, under a full-height copy of the composer. Screenshot: docs/log/shots/2026-11-02/make-plan-below-fold.png.
+- **Cause:** MakeChat and TrainComposer hide the composer with the `hidden` attribute once a plan or a problem shows, but `.play { display: flex; min-height: 100dvh }` in app/globals.css overrides `hidden`. It's been like this since #55. Every model, dataset or "both" muse, and every error shown in that place, looked like nothing happened.
+- **Fix:** `.play[hidden] { display: none; }`. Checked on the live page by injecting the rule: the hidden box went from 900 px to 0.
+- **Tests:** platform-contrast fails 6 of 9 with "--bg is not defined", the same with and without this change. The other globals.css readers pass.
+- **Spend:** two plan drafts on production (Contributor, cents). No run started.
+
+## Nov 2, 2026, 10 PM ET: Muse Spark Open for products, behind `SPARK_OPEN_PRODUCTS` (branch tg-spark-open)
+
+The owner's first extra (HANDOFF, "Owner decisions, Nov 2 night"), aimed at the "Best Build on Meta Open Weights" bonus. Off by default.
+
+- **What it does:** a product whose brief lists `muse-spark-open` calls `{GATEWAY_URL}/v1/chat/completions` with its own token. `handleGateway` runs the call through the same allowlist, rate limits, in-flight slots, run caps, jobs, daily budget, platform cap, reservation and meter as a Meta call. Then it forwards the call to the provider `SPARK_OPEN_PROVIDER` names (`baseten` when unset, or `fireworks`) with the platform's key for it (`BASETEN_API_KEY` or `FIREWORKS_API_KEY`). The product never sees that key.
+- **What the gateway changes in a call:** the model id (to the provider's), `max_tokens` (always set, at most 32,000, so the estimate is a ceiling with the reasoning included) and `stream_options.include_usage` on a stream. It drops `user`, `safety_identifier`, `metadata` and `store`. It refuses `n` over 1, tools other than function tools, parts other than text and images, and unknown fields, since a service tier or `best_of` could change the bill. The reply passes through untouched, with `x-musemuse-served-on` naming the provider for the product's label.
+- **Decision, design:** reuse `handleGateway` rather than a route of its own like the fleet's, so the budget, cap and meter are the same code. Every edit there checks for the new endpoint, which exists only while `deps.sparkOpen` is set. Chat Completions both ways, since both providers serve it, so nothing is translated to or from Responses.
+- **Decision, provider (the lead, Nov 2 evening):** Fireworks' account behind `FIREWORKS_API_KEY` is suspended (HTTP 412, "possibly due to reaching the monthly spending limit or failure to pay past invoices"), and production uses the same key. Baseten answered, so it is the default.
+- **Prices:**
+  - Fireworks: $1.25 in, $0.15 cached and $4.25 out per million tokens, its Standard list price (docs/knowledge-research/claim-check-2026-10-30.md, F4).
+  - Baseten: its price isn't in the repo, so `lib/meta/spark-open.ts` uses a conservative stand-in, $2.50 in and $8.50 out with no cached discount (twice Fireworks'). An estimate that errs high only makes a budget refuse sooner. Replace it once someone reads Baseten's model page.
+- **Brief and build:**
+  - The brief writer may pick it only with the flag on and a builder snapshot that lists the new `spark-open` overlay (`template/caps/spark-open`, a marker like `fleet`'s).
+  - The catalog line names the provider and its price, and says to pick it for Meta's open-weight model or for a text step with no search, audio, video or PDFs. It says never to pick it for children or students under 18.
+  - The build prompt gets a "Muse Spark Open" section and the skill path. The judge gets a note that the credit line isn't Meta's marks. The privacy facts list it with Meta's models and name Baseten and Fireworks.
+  - The self-host kit says it doesn't answer there. `ModelChip` and the manifest schema know it.
+- **Template (needs a new snapshot to reach builds):** `lib/meta/spark-open.ts` has `askSparkOpen` and `sparkOpenStream`: 2,000 max tokens, reasoning low, a 115 s timeout and no retry. The label is "Muse Spark Open, on Baseten", from the gateway's header. The credit, word for word, is "Built with Muse Spark Open. For people 18 and over only.". The skill is `.agents/skills/meta-spark-open/SKILL.md`.
+- **Tokens:** `allowedModelsFor` (`lib/pipeline/logic.ts`) needed no edit, since a brief's capability models already pass through to the token.
+  - A build's smoke tests use the build token from the product's `.env.local`, and it can call the model. It is never swapped for `TEST_MODEL`, which swaps only Muse Wonder.
+  - A Muse Code session's token (`code_session`) is refused (`session_scope`), since it is pinned to `/v1/responses` and its one model on purpose.
+- **Smoke call: one real call, on Baseten, 9:55 PM ET.**
+  - Command: `SPARK_OPEN_PROVIDER=baseten node --env-file=~/muse-muse/.env.local --import tsx scripts/spark-open-smoke.ts --yes`. It runs through `handleGateway` with an in-memory token, budget and meter, so nothing touched the database.
+  - Reply: HTTP 200, `text/event-stream`, `x-musemuse-served-on: Baseten`, 9 chunks. The answer was "ready", with 111 characters of reasoning in `reasoning_content`.
+  - Latency: 33 s to the first byte (maybe a cold start, from one call), 39 s for the whole reply.
+  - Usage: Baseten accepted `include_usage` and sent a final usage chunk: 152 prompt tokens and 37 completion tokens, 26 of them reasoning. Metered at $0.000695 at the stand-in price.
+  - What it changed: the estimate now adds 200 input tokens for the chat template (a 27-character question billed 152), and the helper and skill allow for a slow first byte.
+- **Tests run, all passing:**
+  - New: `lib/gateway/__tests__/spark-open.test.ts` 22 of 22, `lib/prompts/__tests__/spark-open-flag.test.ts` 21 of 21, `template/scripts/__tests__/spark-open.test.mjs` 9 of 9.
+  - Existing, for the files touched: the gateway's handler, extract, fit-output, live, caps-off and runs tests, 154 passing and 8 skipped (they call the live API without `MODEL_API_KEY`). Then the flags-off goldens (unchanged), the fleet and GPU flag tests, no-wonder, the trust overlay, format, the caps manifest and flags-off, and the brief, gadget-option and agent-option tests, 146 of 146.
+  - Typecheck: clean apart from `lib/sandbox/host/modal.ts` not finding the `modal` package, which the shared `node_modules` in `~/mm-wt/messaging` doesn't have installed. The template helper typechecks on its own.
+- **Not proven:**
+  - No build has used it. The template's helper and skill reach builds only through a new builder snapshot.
+  - Production hasn't served it: `BASETEN_API_KEY` isn't on Production yet.
+  - The Fireworks path hasn't run against Fireworks, since the account is suspended.
+  - Not known yet: Baseten's real price, its usual latency, and whether image input, JSON mode and function tools work through this path.
+  - A local run (no public `PLATFORM_URL`) sends product calls straight to Meta's API, which doesn't serve this model.
+- **To turn it on:** add `BASETEN_API_KEY` to Production (and Preview to try it there first), set `SPARK_OPEN_PRODUCTS=1`, optionally `SPARK_OPEN_PROVIDER`, and redeploy. Then run `npm run snapshot` from a checkout with this merged, and commit `lib/sandbox/snapshots.json` with the new `BUILDER_SNAPSHOT_ID`, so the writer offers it.
+- **Spend:** one Baseten call, $0.0007 at the stand-in price.
+
+## Nov 2, 2026, late night ET: the owner's shared accounts for builds (PR #95, branch tg-build-keys)
+
+The owner asked that builds, and the products they make, can use the owner's own service accounts. Their decisions: builds by anyone signed in with the builder code (not guests), the real value in the build's environment, every product built that way keeps the keys, and the services are Vercel, AWS (a new limited user, never root), Lambda, Hugging Face, the Jetson fleet (an inference `jik_` key), Composio, and Fireworks, Baseten and Modal for Muse Spark Open. Built in `tg-build-keys` from main at `282c0d87`, with the guardrails below. Nothing ran on a real build, and no key, spend or deploy was used.
+
+- **Switch and sources:** `BUILD_SHARED_KEYS`, off by default. Values come only from new `BUILD_SHARED_*` vars, never the platform's own (`lib/keys/shared.ts`). A shared value equal to one of the platform's keys is refused, and so is the platform's own Vercel team. In the sandbox and the product they have the usual names (`VERCEL_TOKEN`, `AWS_ACCESS_KEY_ID`, `HF_TOKEN`, `FIREWORKS_API_KEY` and so on). Vercel's docs list the `AWS_*` names as allowed on functions, so they keep theirs. Only fully set services pass.
+- **Who:** checked on the server at provision, every change, every chained session, every verify and every publish (`lib/keys/grant.ts`). The person must have a real account (not the guest or any `musemuse.invalid` row), not be banned, and have signed in with a code (a password is set) or be a listed admin. A product's own power-child build never counts. For a change, it's the person who asked.
+- **Sandbox:** the values go in `.env.local` with a `MUSEMUSE_SHARED_KEYS` list of the secret names. The firewall opens only each passed service's API hosts (`sharedHosts` in `lib/sandbox/policy.ts`), with exact hosts' Host header pinned against domain fronting. A change rewrites both from scratch, so one without the keys removes them. The Prove it copy strips them.
+- **Prompt and skill:** the build or change prompt ends with "The owner's service accounts" (names and rules, no values) only when there is a grant, so prompts and goldens are unchanged with it off. New template skill `shared-keys`, which needs a new builder snapshot.
+- **Leak guards:** redaction of every value and its obvious encodings (base64 and base64url at any alignment, percent, hex, `\/`) in build events (in and out), status messages and errors, verify summaries and fix prompts, task tails, the transcript upload and highlights, BUILD_NOTES.md, the judge's text, Demo Studio's cards and captions, and Muse Code cap sessions. The Code page, source.zip and the GitHub export hold back any file with a value. A new `keys` verify step (platform-run, so it works on any snapshot) fails the build when a value is in the source tree, `public/`, `.next/static` or prerendered pages. The publish checks again, fails closed, and also refuses `NEXT_PUBLIC_<name>` and a key's name in next.config.
+- **Publish:** with the switch on, the product's Vercel env is synced to the publishing build: sensitive vars when it may have them, every shared name deleted when it may not (`syncSharedEnv`). With it off, publishing is as before.
+- **Kill switch:** turn the switch off, then `scripts/keys/revoke-shared.ts` (dry run by default, `--apply` to delete from every `musemuse-*` project), then revoke each key at its service, since live deployments keep the env they were built with.
+- **Tests (made-up values only):** `lib/keys/__tests__/` (shared, scan with the real script on a temp folder, grant, revoke, redaction scenario), `lib/publish/__tests__/shared-env.test.ts`, a new case in `lib/sandbox/__tests__/policy.test.ts` and `template/scripts/__tests__/shared-keys.test.mjs`: 50 of 50 pass. Existing suites for the touched code: 362 of 363 pass. The one failure, `builder-muse.scenario.test.ts` "starts the session bridge on serve" (reasoningEffort medium vs high), fails the same way on origin/main. `tsc --noEmit` is clean except `lib/sandbox/host/modal.ts` not finding the `modal` package, which isn't in this laptop's shared node_modules.
+- **Risks the guardrails don't cover** are in docs/BUILD_KEYS.md, "What the guardrails don't cover".
+
+
+## Nov 2, 2026, night: non-Meta model code out of the tree, in part (branch tg-meta-only-tree, on tg-public-ready)
+
+The organizers ruled on Nov 2 that every model the project calls at runtime must be Meta's (Llama doesn't count). The owner decided to leave code that downloads, loads, trains, serves or calls a non-Meta model out of the public tree; git history keeps it. No model run, no build, no deploy, no spend.
+
+- **Inventory first,** by five read-only searches in parallel (train and device, drive and boards, caps and template, `privacy/`, docs playgrounds and scripts). About 243 files name a non-Meta model. Most are llama.cpp (a tool that serves Glimmer here), guards that refuse non-Meta names, comments or history. The runtime paths are in the PR body.
+- **Removed:**
+  - `notebooks/` whole: the Kaggle notebook that tuned Llama 3.2 3B, its builder and test. Nothing referenced it.
+  - The Jetson student chain in `scripts/knowledge/aws` (9 files): it trained NVIDIA's Nemotron 3.5 Bolt E4B, with Gemma 4 E4B as the fallback. The r30b Glimmer run imports none of it. The pgrep busy checks in `train_multi.py` and `run_measure_known.sh` no longer name `train_student.py`.
+  - `scripts/dev/receipt-eval-board.py`, #67's loader for the board's Llama 3.2 1B adapter.
+  - The media cap's read-aloud in `template/caps/media`: `lib/platform/speech.ts` (SpeechT5 and its HiFi-GAN vocoder on ONNX Runtime Web), the model downloads in `media-assets.ts` (only `MediaError` and an empty list stay), `public/notices/onnxruntime.txt`, `expectSpeech`, and the checker's speech part. `media.txt` now says the media parts use no third-party code and run no model in the page. The platform had already turned the part off (`lib/caps/assets.json` empty, no speech part in briefs). A note heads docs/CAPABILITIES.md section 14.
+  - Llama adapter publishing in `lib/train`. `hubJobProblem` didn't refuse a glimmer-lora job whose `baseModel` is a Llama, so an adapter tuned before the ruling could still go to the Hub. It's refused now, and `llamaCard`, `smallGgufCard`, the Llama license branches of `hubModelStep` and `hubGgufStep`, and `llamaLicenseFiles` (which fetched Meta's gated Llama licenses with `HF_TOKEN`) are gone.
+  - Prompt Guard in `privacy/`: `base/prompt_guard.py`, both of its scripts, its two test files, the egress hook and its floors, the services wiring and its settings. `PROMPT_GUARD=1` is still refused. `tests/test_observe.py`'s later-check case now uses a toggle in its place.
+- **Moved:** `public/open-weights/llama-round-1.json`, `llama-round-2.json` and `llama-source.json` (the Llama harness results, served to anyone, read by no page) to `docs/log/open-weights/`.
+- **Copy fixed:** the BasePicker placeholder (a Glimmer repo now), `QUANT_TARGETS`, `TUNE_ANY_BASE` and media comments in `lib/env.ts` and `.env.example` (and `MEDIA_SPEECH` dropped from it), the muse-hardware skill and two comments that still said non-Jetson boards get "a small Llama" (`deviceModelTarget` gives every board one-bit Glimmer), the drive's small-Llama refusal, a vibe comment, and the edge test fixture's `EDGE_MODEL` (a Glimmer name now). NOTICE drops the SpeechT5 and ONNX Runtime line.
+- **Left, with reasons** (also in docs/HANDOFF.md, "Meta-only tree"):
+  - Muse Privacy's LFM and EmbeddingGemma code. All of it is refused at load. Removing it is about 30 files, including moving roughly 15 tests off their LFM mock, so it's a PR of its own; doing it here would put Muse Privacy's Glimmer path at risk on the last night.
+  - Hussam's board path: the drive's board-run export (Llama 3.2 1B plus its license on a stick), `DEVICE_LLAMA_TRAINING`, and `muse-device/`. All off by flag; changing them needs Hussam.
+  - Dead Llama branches no request can reach, and `licenseDuties`' Llama branch, which keeps old Llama records labeled as Llama.
+  - `native/lab`'s emulator has no Meta-name check on the file it's given.
+  - `onnxruntime` and `tokenizers` in `privacy/pyproject.toml`: removing them needs a `uv lock` with the network.
+  - The browser's own voice for text to speech (owner question 9).
+- **Tests:** template media and `lib/caps/media` 40 of 40 (the Chromium half skips: `template/node_modules` isn't installed here). `lib/train` hub-cards, gguf-cards, bases and decide-mode 102 of 102; the Hub, GGUF and workflow flows 83 of 83. The edge test and drive logic 39 of 39. The hardware, gadget-connect and vibe device tests 166 of 166. `privacy/`: egress, observe, deploy files, config, claims, plug-in, notices, services, flow and approvals 382 passed, plus regions, no-egress, connector, device-only and attacks 482 passed and 14 known xfails. One failure in each `privacy/` run is the shared venv's: `test_notices_list_every_python_dependency_at_its_installed_version` finds no `onnxruntime` in `~/muse-privacy/.venv`, which this branch doesn't change. `ruff check` on `privacy/` passes. Typecheck clean except the `modal` package missing from the shared `node_modules` (#83), as on tg-public-ready.

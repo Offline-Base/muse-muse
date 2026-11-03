@@ -97,6 +97,8 @@ import { capsMissingOverlays } from "@/lib/caps/ready";
 import { localHardwareOverlay, usesLocalHardwareOverlay } from "@/lib/sandbox/local-gadget";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
+import { parseScanOutput, SHARED_SCAN_SCRIPT } from "@/lib/keys/scan";
+import { redactShared, redactSharedBytes, redactSharedValue, sharedEnvText, sharedKeysOn, sharedNeedles, stripSharedEnvScript, type SharedGrant, type SharedLeak } from "@/lib/keys/shared";
 import { applyLookScript, applyRangeScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_OVERLAY, withLookColors } from "@/lib/sandbox/look";
 import {
   applyTrustScript,
@@ -303,7 +305,7 @@ function productsCallMetaDirectly(): boolean {
   return publicHost(env.platformUrl) === null;
 }
 
-function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
+function lockedPolicy(sandboxName: string, capHosts: readonly string[] = [], sharedHosts: readonly string[] = []) {
   return builderNetworkPolicy({
     modelApiKey: env.modelApiKey,
     placeholderKey: sandboxPlaceholder(sandboxName),
@@ -313,6 +315,8 @@ function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
     // Hosts a brief's caps need (lib/caps/hosts.ts). None for every product today.
     ...(capHosts.length ? { capHosts } : {}),
     platformBypass: env.previewBypass,
+    // BUILD_SHARED_KEYS: the owner's shared accounts' APIs, only for a build that has their keys. None for every other.
+    ...(sharedHosts.length ? { sharedHosts } : {}),
   });
 }
 
@@ -498,6 +502,11 @@ export interface ProvisionInput {
   // ---------- Wave 3, unit 1: the trust overlay (docs/CAPABILITIES.md, section 7). Absent with the trust flags off ----------
   /** musemuse.trust.json and musemuse.privacy.json for this product: applied after the caps, with MUSEMUSE_BUILD=1. */
   trust?: TrustOverlay;
+  /**
+   * BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): the owner's shared accounts for this build, from sharedKeysForBuild. Their
+   * values go in .env.local and their hosts in the firewall. Absent or null leaves both exactly as before.
+   */
+  sharedKeys?: SharedGrant | null;
 }
 
 /** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
@@ -619,6 +628,12 @@ async function applyTrust(sandbox: Sandbox, trust: TrustOverlay): Promise<void> 
 /** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
 function withCapEnv(text: string, capEnv: string | undefined): string {
   return capEnv ? `${text.replace(/\n*$/, "\n")}${capEnv}` : text;
+}
+
+/** BUILD_SHARED_KEYS: .env.local with the shared accounts' lines last (sharedEnvText). The same text without a grant. */
+function withSharedEnv(text: string, grant: SharedGrant | null | undefined): string {
+  const shared = sharedEnvText(grant ?? null);
+  return shared ? `${text.replace(/\n*$/, "\n")}${shared}` : text;
 }
 
 /**
@@ -750,7 +765,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   // ---------- end Wave 3, unit 3 ----------
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
-  await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
+  await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts, input.sharedKeys?.hosts) });
 
   if (input.museAppLook) await applyLook(sandbox);
   if (input.buildRange) await applyRange(sandbox);
@@ -773,7 +788,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     ...downloaded,
     ...(await productWrites(sandbox, input.museAppLook ? withLookColors(input.extraFiles ?? []) : (input.extraFiles ?? []))),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, Boolean(input.trust))) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withSharedEnv(withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, Boolean(input.trust))), input.sharedKeys) },
   ]);
   if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
   return { sandboxName: name };
@@ -798,11 +813,16 @@ export async function reopenSandbox(input: {
   capEnv?: string;
   /** True for a product with caps: the caps check's record of the gateway gets this change's token. */
   caps?: boolean;
+  /**
+   * BUILD_SHARED_KEYS: this change's grant, checked again for the person who asked for it. .env.local is written anew
+   * either way, so a change without one takes out the keys an earlier build put in, and the firewall closes their hosts.
+   */
+  sharedKeys?: SharedGrant | null;
 }): Promise<void> {
   requireModalPlatform();
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
-  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts) });
+  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts, input.sharedKeys?.hosts) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
@@ -815,7 +835,7 @@ export async function reopenSandbox(input: {
   await writeBatched(sandbox, [
     ...downloaded,
     ...(await productWrites(sandbox, look ? withLookColors(missing) : missing)),
-    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, trusted)) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withSharedEnv(withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), withTrustEnv(input.capEnv, trusted)), input.sharedKeys) },
   ]);
   if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
 }
@@ -871,7 +891,7 @@ export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
  */
 export async function forkForProve(sandboxName: string, hosts: { liveHost: string; platformHost: string | null }): Promise<{ sandboxName: string }> {
   const name = `${PROVE_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
-  await sandboxHost().fork({
+  const fork = await sandboxHost().fork({
     sourceSandbox: sandboxName,
     name,
     persistent: false,
@@ -886,6 +906,9 @@ export async function forkForProve(sandboxName: string, hosts: { liveHost: strin
     }),
     tags: { app: "musemuse", role: "prove", source: sandboxName.slice(0, 60) },
   });
+  // BUILD_SHARED_KEYS: Prove it runs against the live product, so its copy keeps none of the owner's keys (and its
+  // firewall never had their hosts). Only once the feature is or was set up, so a platform without it runs nothing new.
+  if (sharedKeysOn() || sharedNeedles().length) await sh(fork, stripSharedEnvScript(`${PRODUCT_DIR}/.env.local`));
   return { sandboxName: name };
 }
 
@@ -1753,7 +1776,8 @@ export async function pollTask(sandboxName: string, cmdId: string): Promise<Task
   const logPath = mapped?.toString("utf8").trim() || `${LOG_DIR}/unknown.log`;
   const state = await commandState(sandbox, cmdId, logPath);
   if (!state.finished) await ensureTime(sandbox, POLL_WORK_MS);
-  const outputTail = await tailText(sandbox, logPath, TASK_TAIL_BYTES);
+  // BUILD_SHARED_KEYS: a step's result is stored in the workflow's log, so a key a server printed never gets there.
+  const outputTail = redactShared(await tailText(sandbox, logPath, TASK_TAIL_BYTES));
   return { done: state.finished, exitCode: state.exitCode, outputTail };
 }
 
@@ -1780,7 +1804,8 @@ export async function collectVerifyResult(input: {
   const sandbox = await openSandbox(input.sandboxName);
   const stdout = await tailText(sandbox, `${LOG_DIR}/verify.out`, 64 * 1024);
   const tail = input.outputTail || (await tailText(sandbox, `${LOG_DIR}/verify.log`, 8000));
-  const summary = verifyOutcome(parseVerifySummary(stdout), input.exitCode, tail);
+  // BUILD_SHARED_KEYS: the summary feeds the build room and the fix round's prompt file, so no key's value goes into either.
+  const summary = redactSharedValue(verifyOutcome(parseVerifySummary(stdout), input.exitCode, tail));
 
   const judgeDir = `${PRODUCT_DIR}/test-results/judge`;
   const all = await listFiles(sandbox, judgeDir, "*.png");
@@ -1813,12 +1838,13 @@ export async function writeDemoSpec(
   sandboxName: string,
   spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url" | "note">,
 ): Promise<DemoStudioSpec> {
+  // BUILD_SHARED_KEYS: the cards' words never carry a key's value. The same words when no shared key is set.
   const full: DemoStudioSpec = {
-    title: noEmDashes(spec.title).trim() || "Untitled",
-    tagline: noEmDashes(spec.tagline).trim(),
+    title: redactShared(noEmDashes(spec.title)).trim() || "Untitled",
+    tagline: redactShared(noEmDashes(spec.tagline)).trim(),
     models: [...new Set(spec.models.map((m) => m.trim()).filter(Boolean))],
     url: spec.url,
-    ...(spec.note ? { note: noEmDashes(spec.note).trim() } : {}),
+    ...(spec.note ? { note: redactShared(noEmDashes(spec.note)).trim() } : {}),
     timeline: `${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/timeline.json`,
     out: DEMO_OUT_DIR,
   };
@@ -2059,7 +2085,7 @@ export async function productShowsContributorNotice(sandboxName: string): Promis
 export async function readBuildNotes(sandboxName: string): Promise<string | null> {
   const sandbox = await openSandbox(sandboxName);
   const buf = await sandbox.readFileToBuffer({ path: `${PRODUCT_DIR}/BUILD_NOTES.md` }).catch(() => null);
-  const text = buf?.toString("utf8").trim();
+  const text = buf ? redactShared(buf.toString("utf8")).trim() : "";
   return text ? text.slice(0, 40_000) : null;
 }
 
@@ -2103,6 +2129,21 @@ for (const { f } of files) {
 `;
 
 /**
+ * BUILD_SHARED_KEYS (docs/BUILD_KEYS.md): looks for the grant's values, in their obvious encodings, in the product's
+ * source tree, public/, .next/static and its prerendered pages (lib/keys/scan.ts). The values go to the scan only as
+ * its own env. Null when it couldn't run, so a caller decides whether that blocks.
+ */
+export async function scanSharedKeys(sandboxName: string, grant: SharedGrant): Promise<SharedLeak[] | null> {
+  if (!grant.secretNames.length) return [];
+  const sandbox = await openSandbox(sandboxName);
+  const script = `${RUN_DIR}/shared-scan.cjs`;
+  await sandbox.writeFiles([{ path: script, content: SHARED_SCAN_SCRIPT }]);
+  const scanEnv = Object.fromEntries(grant.secretNames.map((n) => [n, grant.env[n]]));
+  const res = await sh(sandbox, `node ${[script, PRODUCT_DIR, ...grant.secretNames].map(q).join(" ")}`, { env: scanEnv, allowFail: true, timeoutMs: 2 * MIN });
+  return parseScanOutput(res.stdout)?.leaks ?? null;
+}
+
+/**
  * Runs `muse export --session <id> --redacted`, uploads it to Blob (transcripts/<buildId>/...), and returns its URL
  * plus a short list of what happened (tool calls and edits) for the "how it was built" section.
  */
@@ -2128,7 +2169,8 @@ export async function exportTranscript(input: {
     }),
     sh(sandbox, `node ${q(filter)} ${q(LOG_DIR)}`, { timeoutMs: 50_000 }),
   ]);
-  const highlights = highlightsFrom(condenseMuseLines(filtered.stdout.split("\n")).lines);
+  // BUILD_SHARED_KEYS: the owner's keys never reach the transcript or its highlights, in any obvious encoding.
+  const highlights = highlightsFrom(condenseMuseLines(filtered.stdout.split("\n")).lines).map((h) => redactShared(h));
 
   if (exported.exitCode !== 0) {
     console.warn(`muse export failed (exit ${exported.exitCode}): ${(exported.stderr || exported.stdout).slice(-500)}`);
@@ -2137,7 +2179,7 @@ export async function exportTranscript(input: {
   if (input.skipUpload) return { url: sandboxUrl(input.sandboxName, out), highlights };
   const buf = await sandbox.readFileToBuffer({ path: out });
   if (!buf) return { url: null, highlights };
-  return { url: await putFile("transcripts", `${input.buildId}/transcript.json`, buf, "application/json"), highlights };
+  return { url: await putFile("transcripts", `${input.buildId}/transcript.json`, redactSharedBytes(buf), "application/json"), highlights };
 }
 
 /** CHAINED_BUILDS: writes the chain's state file and commits the session's work, so the next session starts from the repo. */

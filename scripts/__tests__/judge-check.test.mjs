@@ -2,7 +2,9 @@
 // Run: npx tsx --test scripts/__tests__/judge-check.test.mjs (not in CI, the real script needs the network).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeCheck, renderReport, docLinks, zeroLeaksWithoutCount, liveAndNotPublished, publishedLink } from "../judge-check.mjs";
+import { readFileSync } from "node:fs";
+import { judgeCheck, renderReport, docLinks, zeroLeaksWithoutCount, liveAndNotPublished, publishedLink, hiddenSlugsFromSource, HIDDEN_FILE } from "../judge-check.mjs";
+import { HIDDEN_FROM_GALLERY } from "../../lib/gallery/hidden.ts";
 
 const SITE = "https://muse-muse.vercel.app";
 const nav = `<nav><a href="/">Home</a><a href="/gallery">Gallery</a><a href="/private">Muse Privacy</a><a href="/api/health">api</a><a href="/icon.svg">i</a></nav>`;
@@ -125,4 +127,27 @@ test("helpers: doc links, the live frame, cards", () => {
   const cards = page(`<article><h3>One</h3>${livePill}<h2>Not published</h2></article><article><h3>Two</h3>${livePill}</article>`);
   assert.deepEqual(liveAndNotPublished(cards, false), ["One"]);
   assert.deepEqual(liveAndNotPublished(page(`<p>Live turn by turn view</p><h2>Not published</h2>`), true), [], "the word inside a sentence isn't a pill");
+});
+
+test("opens hidden products by their own page, checks their links, and flags one that shows in the gallery", async () => {
+  const hiddenPage = productPage("Gym Snap Coach", "https://musemuse-gym-snap-coach.vercel.app");
+  const site = fakeSite({ pages: { "/p/gym-snap-coach": hiddenPage }, external: { "https://musemuse-gym-snap-coach.vercel.app/": 200 } });
+  const r = await run(site, { hidden: ["gym-snap-coach"] });
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.galleryRows.length, 2, "the gallery's own two");
+  assert.deepEqual(r.hiddenRows.map((h) => [new URL(h.key).pathname, h.pageStatus, h.linkStatus]), [["/p/gym-snap-coach", 200, "200"]]);
+  assert.match(renderReport(r), /## Hidden from the gallery[\s\S]*\/p\/gym-snap-coach/);
+
+  const shown = fakeSite({ pages: { "/p/gym-snap-coach": hiddenPage, "/p/beta": productPage("Beta", "https://musemuse-beta.vercel.app") }, external: { "https://musemuse-gym-snap-coach.vercel.app/": 404 } });
+  const r2 = await run(shown, { hidden: ["beta", "gym-snap-coach"] });
+  const kinds = r2.problems.map((p) => p.kind).sort();
+  assert.deepEqual(kinds, ["hidden product in the gallery", "published link fails"]);
+  assert.match(r2.problems.find((p) => p.kind === "hidden product in the gallery").what, /\/p\/beta/);
+});
+
+test("reads the hidden slugs from lib/gallery/hidden.ts as the site does", () => {
+  const source = readFileSync(new URL(`../../${HIDDEN_FILE}`, import.meta.url), "utf8");
+  assert.deepEqual(hiddenSlugsFromSource(source), [...HIDDEN_FROM_GALLERY]);
+  assert.deepEqual(hiddenSlugsFromSource(`export const HIDDEN_FROM_GALLERY: readonly string[] = [\n  "a-b", // gone\n  'c',\n];`), ["a-b", "c"]);
+  assert.equal(hiddenSlugsFromSource("export const OTHER = [];"), null);
 });

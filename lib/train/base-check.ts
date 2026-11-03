@@ -139,30 +139,3 @@ export async function gatedBaseFiles(repo: string, revision: string, deps: BaseC
   }
   return out.length ? out : null;
 }
-
-/** Each Llama version's license and use policy, in Meta's own repo, read with HF_TOKEN since those repos are gated. */
-const LLAMA_LICENSE_SOURCES: Readonly<Record<string, { repo: string; license: string }>> = {
-  "3.1": { repo: "meta-llama/Llama-3.1-8B-Instruct", license: "LICENSE" },
-  "3.2": { repo: "meta-llama/Llama-3.2-3B-Instruct", license: "LICENSE.txt" },
-  "3.3": { repo: "meta-llama/Llama-3.3-70B-Instruct", license: "LICENSE" },
-  "4": { repo: "meta-llama/Llama-4-Scout-17B-16E-Instruct", license: "LICENSE" },
-};
-
-/**
- * The LICENSE and USE_POLICY.md a Llama model's repo must ship, or the sentence why they can't be read. An upload without
- * them is refused, never sent without them.
- */
-export async function llamaLicenseFiles(baseRepo: string, deps: BaseCheckDeps = {}): Promise<{ license: string; policy: string } | string> {
-  const source = LLAMA_LICENSE_SOURCES[/llama-(\d(?:\.\d)?)/i.exec(baseRepo)?.[1] ?? ""];
-  const token = deps.token === undefined ? hubToken() : deps.token;
-  if (!source) return "This Llama version's license isn't mapped, so its model can't be published.";
-  if (!token) return GATED_REFUSAL;
-  const fetcher = deps.fetch ?? fetch;
-  const text = async (path: string) => {
-    const res = await read(fetcher, `${HUB}/${source.repo}/resolve/main/${path}`, { headers: { authorization: `Bearer ${token}` } });
-    return res.ok ? res.text() : null;
-  };
-  const [license, policy] = await Promise.all([text(source.license), text("USE_POLICY.md")]);
-  if (!license?.trim() || !policy?.trim() || !/llama/i.test(license)) return GATED_REFUSAL;
-  return { license, policy };
-}

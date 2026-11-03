@@ -44,9 +44,9 @@ beforeEach(() => {
   process.env.GATEWAY_URL = GATEWAY;
   process.env.PRODUCT_TOKEN = "tok_made_up";
   process.env.EDGE_URL = EDGE;
-  process.env.EDGE_MODEL = "llama-3.2-3b";
+  process.env.EDGE_MODEL = "muse-glimmer-2026-iq1s";
   process.env.EDGE_BOARD = "jetson-04";
-  process.env.EDGE_MODEL_NAME = "Llama 3.2 3B";
+  process.env.EDGE_MODEL_NAME = "Muse Glimmer 30B one-bit";
   process.env.EDGE_CLOUD_TIMEOUT_MS = "300";
   process.env.EDGE_TIMEOUT_MS = "300";
 });
@@ -75,11 +75,11 @@ test("cloud refused: the edge answers, with its fixed label and a json_schema re
   const res = await ask();
   assert.equal(res.ok, true);
   assert.equal(res.by, "edge");
-  assert.equal(res.label, "Answered on jetson-04, Llama 3.2 3B");
+  assert.equal(res.label, "Answered on jetson-04, Muse Glimmer 30B one-bit");
   assert.deepEqual(res.data, GOOD);
   assert.equal(res.fellBack.kind, "refused");
   const sent = calls.find((c) => c.side === "edge").body;
-  assert.equal(sent.model, "llama-3.2-3b");
+  assert.equal(sent.model, "muse-glimmer-2026-iq1s");
   assert.equal(sent.response_format.type, "json_schema");
   assert.equal(sent.response_format.json_schema.name, "reading");
   assert.equal("chat_template_kwargs" in sent, false);

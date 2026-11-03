@@ -6,7 +6,7 @@
  *   npx tsx --test lib/caps/media/__tests__/media.test.ts
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, afterEach, describe, it } from "node:test";
@@ -196,7 +196,6 @@ describe("the limits and the asset list", () => {
     const video = readFileSync(path.join(TEMPLATE, "caps/media/files/lib/platform/video.ts"), "utf8");
     assert.equal(num("VIDEO_FRAMES_MAX", video), MEDIA_LIMITS.videoFramesMax);
     assert.equal(num("VIDEO_SIDE_MAX", video), MEDIA_LIMITS.videoSideMax);
-    assert.equal(num("SPEECH_CHARS_MAX", readFileSync(path.join(TEMPLATE, "caps/media/files/lib/platform/speech.ts"), "utf8")), MEDIA_LIMITS.speechCharsMax);
     assert.equal(num("NOTES_MAX", readFileSync(path.join(TEMPLATE, "caps/media/files/lib/platform/midi.ts"), "utf8")), MEDIA_LIMITS.notesMax);
     // SAM's price, from lib/meta/pricing.ts, is what the template's copy says.
     assert.match(tiles, /perImage: 0\.0025, perVideoFrame: 0\.0002, minVideoFrames: 50/);
@@ -205,11 +204,12 @@ describe("the limits and the asset list", () => {
     assert.equal(+samVideoCostUsd([10]).toFixed(4), 0.01, "a clip is billed for at least 50 frames");
   });
 
-  it("serves none of the speech helper's files, so no SpeechT5 model reaches a product's page", async () => {
+  it("serves no model files, and the template ships no speech helper or model runtime", async () => {
     const assets = vettedAssets();
     assert.deepEqual(assets, [], "the list is empty since the Nov 2 ruling");
     const T = (await import(pathToFileURL(path.join(TEMPLATE, "caps/media/files/lib/platform/media-assets.ts")).href)) as { MEDIA_ASSETS: Array<{ name: string; bytes: number; sha256: string }> };
-    for (const a of T.MEDIA_ASSETS) assert.ok(!(assets as Array<{ sha256: string }>).some((x) => x.sha256 === a.sha256), `${a.name} isn't served`);
+    assert.deepEqual(T.MEDIA_ASSETS, []);
+    for (const gone of ["lib/platform/speech.ts", "public/notices/onnxruntime.txt"]) assert.ok(!existsSync(path.join(TEMPLATE, "caps/media/files", gone)), gone);
   });
 
   it("refuses model weights in the list: every model a product calls is Meta's, through the gateway's API", () => {
