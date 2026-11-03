@@ -90,7 +90,7 @@ import {
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
 import { NO_HELPERS, type HelperCount } from "@/lib/fast/fast";
-import { polishBudgetLine, polishEnding, polishRoomLine, type PolishPlan } from "@/lib/polish/logic";
+import { polishBudgetLine, polishEnding, polishFixSteps, polishRoomLine, type PolishPlan } from "@/lib/polish/logic";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { stepsFeedStep } from "@/lib/pipeline/steps-feed-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
@@ -492,10 +492,12 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
       await emitStep(ctx.buildId, { type: "log", text: `The chain reached its $${ctx.plan.chain.totalUsd} spending cap, so no more fix rounds run.` });
       return { passed, steps: verify.steps, fixes: fix, judge: judged };
     }
-    // The polish round's budget holds the same way: no fix round once the round has spent it.
+    // The polish round's budget holds the same way: the fix round gets only the steps the budget has left, or none.
+    let polishFix: number | null = null;
     if (ctx.polish) {
       const spent = (await chainReadStep(ctx.buildId)).costUsd;
-      if (spent >= ctx.polish.maxUsd) {
+      polishFix = polishFixSteps(ctx.polish, spent);
+      if (polishFix === 0) {
         await emitStep(ctx.buildId, { type: "log", text: polishBudgetLine(ctx.polish, spent) });
         return { passed, steps: verify.steps, fixes: fix, judge: judged };
       }
@@ -517,7 +519,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
     // stopped is not, and no fix round comes after it.
-    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap, ...(ctx.polish ? { maxModelSteps: ctx.polish.fixSteps } : {}) });
+    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap, ...(polishFix ? { maxModelSteps: polishFix } : {}) });
     if (fixed.stopped) throw stoppedByOwner(kind);
   }
 }

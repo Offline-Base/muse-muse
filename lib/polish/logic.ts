@@ -39,8 +39,16 @@ const PRODUCT_SHARE = 0.2;
 /** The engine's share split between the round and its fix round. */
 const ROUND_SHARE = 0.65;
 const MIN_STEPS = 12;
+/** The fewest steps worth a fix round once the round's cost is known (polishFixSteps). */
+const MIN_FIX_STEPS = 6;
 /** Muse Code's own step cap (DEFAULT_MAX_MODEL_STEPS in lib/sandbox/muse.ts). */
 const MAX_STEPS = 200;
+
+/**
+ * The smallest POLISH_MAX_USD a polish starts with: below it the round's floor of MIN_STEPS would cost more than the
+ * budget, so the route refuses rather than run past it (about $1.85).
+ */
+export const POLISH_MIN_USD = Math.ceil(((MIN_STEPS * POLISH_STEP_USD) / ROUND_SHARE / (1 - PRODUCT_SHARE)) * 100) / 100;
 
 /** How a polish is bounded: dollars, model steps per run and fix rounds. Returned by loadRefineStep, so a replay keeps it. */
 export interface PolishPlan {
@@ -103,9 +111,20 @@ export function polishRoomLine(plan: PolishPlan): string {
   return `${POLISH_ROOM_TITLE}: one round of up to ${plan.roundSteps} model steps and at most ${plan.fixRounds} fix round of up to ${plan.fixSteps}, estimated at no more than $${plan.maxUsd.toFixed(2)} in Meta credits, $${plan.productUsd.toFixed(2)} of it for the product's own test calls.`;
 }
 
+/**
+ * The step cap of the fix round, from what the round has already spent: never more than the plan's, and only what fits
+ * in the budget that's left once the product's whole share is kept for the fix round's own checks. 0: no fix round runs,
+ * so a polish can't pass POLISH_MAX_USD by a whole fix round when the round itself ran close to it.
+ */
+export function polishFixSteps(plan: PolishPlan, spentUsd: number): number {
+  const left = plan.maxUsd - (Number.isFinite(spentUsd) ? Math.max(0, spentUsd) : plan.maxUsd) - plan.productUsd;
+  const steps = Math.min(plan.fixSteps, Math.floor(left / POLISH_STEP_USD + 1e-9));
+  return steps >= MIN_FIX_STEPS ? steps : 0;
+}
+
 /** What the room says when a fix round would go past the budget. */
 export function polishBudgetLine(plan: PolishPlan, spentUsd: number): string {
-  return `${POLISH_ROOM_TITLE} has spent $${spentUsd.toFixed(2)} of its $${plan.maxUsd.toFixed(2)} budget, so no fix round runs.`;
+  return `${POLISH_ROOM_TITLE} has spent $${spentUsd.toFixed(2)} of its $${plan.maxUsd.toFixed(2)} budget, and a fix round wouldn't fit in what's left, so none runs.`;
 }
 
 /** The final word on a polish: plain about which model did the pass, and that a failure changed nothing on the product. */

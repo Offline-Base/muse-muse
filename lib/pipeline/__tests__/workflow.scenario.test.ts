@@ -1626,7 +1626,16 @@ describe("the polish round (POLISH_ENABLED)", () => {
     reset({ head, polish: POLISH, verifies: [{ passed: false }], chainReads: [{ costUsd: 4.2 }] });
     assert.deepEqual(await wf.refineProduct({ buildId: "p3" }), { status: "failed" });
     assert.equal(named("startMuseStep").length, 1);
-    assert.ok(logs().some((l) => /spent \$4\.20 of its \$4\.00 budget, so no fix round runs/.test(l)));
+    assert.ok(logs().some((l) => /spent \$4\.20 of its \$4\.00 budget, and a fix round wouldn't fit/.test(l)));
+  });
+
+  it("gives the fix round only the steps the budget has left, and none when too few fit", async () => {
+    reset({ head, polish: POLISH, verifies: [{ passed: false }], chainReads: [{ costUsd: 2.5 }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p5" }), { status: "failed" });
+    assert.deepEqual(named("startMuseStep").map((c) => (c.args[0] as { maxModelSteps?: number }).maxModelSteps), [26, 8]);
+    reset({ head, polish: POLISH, verifies: [{ passed: false }], chainReads: [{ costUsd: 3 }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "p6" }), { status: "failed" });
+    assert.equal(named("startMuseStep").length, 1);
   });
 
   it("leaves every other change as it was: no step cap, no polish words, no budget reads", async () => {

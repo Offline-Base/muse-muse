@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { changeLabel, isPolishMessage, passedPolish, POLISH_HEADER, POLISH_LABEL, POLISH_MAX_FOCUS_CHARS, polishBudgetLine, polishEnding, polishNote, polishPlan, polishRoomLine } from "@/lib/polish/logic";
+import { changeLabel, isPolishMessage, passedPolish, POLISH_HEADER, POLISH_LABEL, POLISH_MAX_FOCUS_CHARS, polishBudgetLine, polishEnding, polishFixSteps, POLISH_MIN_USD, polishNote, polishPlan, polishRoomLine } from "@/lib/polish/logic";
 import { startPolish, type PolishDeps } from "@/lib/polish/start";
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -43,11 +43,23 @@ describe("the polish bounds", () => {
     assert.equal(polishPlan(1000, 10).roundSteps, 200);
   });
 
+  it("gives the fix round only what the budget has left after the product's share, and none below 6 steps", () => {
+    const plan = polishPlan(4, 10);
+    assert.equal(polishFixSteps(plan, 0.5), 14);
+    assert.equal(polishFixSteps(plan, 2.5), 8);
+    assert.equal(polishFixSteps(plan, 2.8), 0);
+    assert.equal(polishFixSteps(plan, Number.NaN), 0);
+    // The round's own floor fits in the smallest budget a polish starts with.
+    const least = polishPlan(POLISH_MIN_USD, 10);
+    assert.ok(least.productUsd + least.roundSteps * 0.08 <= POLISH_MIN_USD);
+    assert.ok(polishPlan(POLISH_MIN_USD - 0.01, 10).roundSteps * 0.08 > (POLISH_MIN_USD - 0.01) * 0.8 * 0.65);
+  });
+
   it("says the estimate, the budget stop and the ending plainly, with no em dash", () => {
     const plan = polishPlan(4, 10);
     const line = polishRoomLine(plan);
     assert.match(line, /^Final pass on Muse Wonder: one round of up to 26 model steps and at most 1 fix round of up to 14, estimated at no more than \$4\.00/);
-    assert.match(polishBudgetLine(plan, 4.1), /spent \$4\.10 of its \$4\.00 budget, so no fix round runs/);
+    assert.match(polishBudgetLine(plan, 4.1), /spent \$4\.10 of its \$4\.00 budget, and a fix round wouldn't fit in what's left, so none runs\./);
     assert.equal(polishEnding("live", "Live at https://x.vercel.app"), "UI pass by Muse Wonder. Live at https://x.vercel.app");
     assert.match(polishEnding("failed", "The change did not pass its checks."), /^The UI pass by Muse Wonder didn't ship, so nothing changed on the live product\. The change/);
     for (const text of [line, polishBudgetLine(plan, 1), polishEnding("failed", "x")]) assert.ok(!text.includes(EM_DASH));
@@ -112,8 +124,8 @@ describe("POST /api/builds/{id}/polish", () => {
     assert.deepEqual(calls.attached, ["polish-1"]);
   });
 
-  it("is off with the flag off and at a $0 budget, and nothing starts", async () => {
-    for (const over of [{ enabled: false }, { maxUsd: 0 }]) {
+  it("is off with the flag off, at a $0 budget and below the smallest budget, and nothing starts", async () => {
+    for (const over of [{ enabled: false }, { maxUsd: 0 }, { maxUsd: 1 }]) {
       const { deps: d, calls } = deps(over);
       const res = await startPolish(d, BUILD, {});
       assert.equal(res.status, over.enabled === false ? 404 : 503);

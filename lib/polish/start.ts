@@ -2,7 +2,7 @@
  * Starting a polish round (POST /api/builds/{buildId}/polish, lib/polish/logic.ts). Plain module: the route passes the real
  * database, quota and workflow start, and tests pass fakes, so nothing here spends or reaches Neon on its own.
  */
-import { POLISH_MAX_FOCUS_CHARS, POLISH_MODEL, polishNote, polishPlan } from "@/lib/polish/logic";
+import { POLISH_MAX_FOCUS_CHARS, POLISH_MIN_USD, POLISH_MODEL, polishNote, polishPlan } from "@/lib/polish/logic";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 export interface PolishProduct {
@@ -48,13 +48,16 @@ export function polishRequest(body: Record<string, unknown>): { message: string;
 /**
  * Starts one polish of the live product a build made. Refuses (409) before it has shipped, while another build of the
  * product runs, and when the product has had a polish already, unless `again` is true. Nothing starts with the flag off
- * (404) or POLISH_MAX_USD at 0 (503).
+ * (404) or POLISH_MAX_USD at 0 or under POLISH_MIN_USD (503).
  */
 export async function startPolish(deps: PolishDeps, buildId: string, body: Record<string, unknown>): Promise<PolishReply> {
   if (!deps.enabled) return reply(404, { error: "not_found" });
   const request = polishRequest(body);
   if ("error" in request) return reply(400, { error: request.error });
   if (!(deps.maxUsd > 0)) return reply(503, { error: "polish_budget_off", message: "POLISH_MAX_USD is 0, so no polish starts." });
+  if (deps.maxUsd < POLISH_MIN_USD) {
+    return reply(503, { error: "polish_budget_low", message: `POLISH_MAX_USD is under $${POLISH_MIN_USD.toFixed(2)}, too little for a polish round, so none starts.` });
+  }
 
   const build = await deps.findBuild(buildId);
   if (!build) return reply(404, { error: "not_found" });
