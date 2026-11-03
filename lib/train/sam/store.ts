@@ -62,6 +62,8 @@ export interface CreateRunIn {
   createdBy: string | null;
   seed?: number;
   epochs?: number;
+  /** The run's own spend cap, held to SAM_TUNE_MAX_USD (the default). */
+  maxUsd?: number;
 }
 
 export async function createRun(input: CreateRunIn): Promise<{ ok: true; run: SamRunView } | { ok: false; problem: string }> {
@@ -77,7 +79,7 @@ export async function createRun(input: CreateRunIn): Promise<{ ok: true; run: Sa
       data: input.data,
       seed: input.seed ?? randomInt(1, 2 ** 31 - 1),
       epochs: input.epochs ?? DEFAULT_EPOCHS,
-      maxUsd: env.samTuneMaxUsd,
+      maxUsd: Math.max(0, Math.min(Number.isFinite(input.maxUsd) ? input.maxUsd! : env.samTuneMaxUsd, env.samTuneMaxUsd)),
       createdBy: input.createdBy,
     })
     .returning();

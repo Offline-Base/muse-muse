@@ -83,6 +83,8 @@ describe("the verdict", () => {
     assert.match(caveatsFor(nov3Report()).join(" "), /scored 0.5 or more, so it is a lower bound/);
     assert.doesNotMatch(caveatsFor(nov3Report({ apFrom: 0.05 })).join(" "), /lower bound/);
     assert.deepEqual(finishReport(nov3Report()).caveats, caveatsFor(nov3Report()));
+    assert.match(caveatsFor(nov3Report({ setsSource: "run" })).join(" "), /your own photos or made up/);
+    assert.doesNotMatch(caveatsFor(nov3Report({ setsSource: "run" })).join(" "), /COCO/);
   });
 });
 
@@ -150,6 +152,11 @@ describe("the board's report", () => {
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, url: "https://evil.example/x.jpg" } as never] }), run).ok, false);
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, license: "CC BY-NC 2.0" } as never] }), run).ok, false);
     assert.equal(validateReportIn(nov3Report({ images: [{ ...image, credit: null } as never] }), run).ok, false);
+    // COCO's own license names (what the board reads from instances_val2017.json) are kept in the short form.
+    const coco = validateReportIn(nov3Report({ images: [{ ...image, license: "Attribution-ShareAlike License" } as never] }), run);
+    assert.ok(coco.ok);
+    assert.equal(coco.report.images[0]!.license, "CC BY-SA 2.0");
+    assert.equal(validateReportIn(nov3Report({ images: [{ ...image, license: "Attribution-NonCommercial License" } as never] }), run).ok, false);
     const unlicensed = { ...image, license: null, credit: null };
     assert.equal(validateReportIn(nov3Report({ images: [unlicensed as never] }), run).ok, false, "a built-in run's pictures are all COCO photos");
     assert.equal(validateReportIn(nov3Report({ images: [unlicensed as never] }), { ...run, data: "uploads" }).ok, false, "uploads still need H");

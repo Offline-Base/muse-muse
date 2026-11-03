@@ -10,7 +10,7 @@ import { HttpError } from "@/lib/http";
 import { runForToken, type SamRunRow } from "@/lib/train/sam/store";
 
 /** The header the upload route's raw-bytes body carries its job token in (JSON routes send `jobToken` in the body). */
-export const JOB_TOKEN_HEADER = "x-sam-job-token";
+export const JOB_TOKEN_HEADER = "x-job-token";
 
 /** 404 with SAM_TUNE off, as every SAM tune route is. */
 export function requireSamTune(): void {
@@ -37,7 +37,7 @@ export function requireWorker(req: Request): void {
 }
 
 /**
- * The worker secret and the run's own job token: `bodyToken` from a JSON body, else the x-sam-job-token header.
+ * The worker secret and the run's own job token: `bodyToken` from a JSON body, else the X-Job-Token header (what worker.py and the upload route send).
  * Returns the run, still claimed or running.
  */
 export async function requireRunToken(req: Request, id: string, bodyToken?: unknown): Promise<SamRunRow> {

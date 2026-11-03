@@ -4482,3 +4482,11 @@ The table, rules, store and worker gate for teaching SAM 3.1 a new object on the
 - **Env and storage:** `SAM_TUNE`, `SAM_WORKER_TOKEN_SHA256`, `SAM_TUNE_DAILY_USD` (5), `SAM_TUNE_MAX_USD` (1); `samtune` added to the stored prefixes, with its line in lib/storage.ts.
 - **Tests (touched only):** new logic (15), store on PGlite (7) and worker-auth (3), 25 of 25; migrations, env-workflow-bundle and storage. All pass. `npx tsc --noEmit -p .` clean. Spend $0, no model call, build or deploy.
 - **Left:** two uploads racing for the last of the 10 slots can leave one unlisted file under `report/` (never shown, since a report may only point at listed files). The minutes in `planFor` are an estimate from Nov 3 and say so; the built-in run's bear-negative count (40) is a guess until the board prep (U5) counts the licensed val2017 bears.
+
+### 2026-11-03: SAM tune review fixes on tg-sam-core (cross-unit contract pass)
+
+- **Job token header:** `JOB_TOKEN_HEADER` is now `x-job-token`, what worker.py sends and U2's upload route reads. It was `x-sam-job-token`, which nothing sent.
+- **Licenses:** `validateReportIn` reads COCO's own names ("Attribution License", "Attribution-ShareAlike License") as "CC BY 2.0" and "CC BY-SA 2.0". Anything else is still refused. Credits may be up to 300 characters, the board's own cap, where 200 would have failed the whole run at /done.
+- **Caveats:** a run on the person's own photos says "The look-alikes are your own photos or made up (Muse Image)." It no longer says they come from COCO. The Nov 3 and built-in caveats are unchanged.
+- **createRun:** takes an optional `maxUsd`, held to `SAM_TUNE_MAX_USD`, for U2's create route.
+- **Tests:** logic, worker-auth and store, 25 of 25. `npx tsc --noEmit -p .` is clean. $0 spent.
