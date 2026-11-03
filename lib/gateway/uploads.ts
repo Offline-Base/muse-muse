@@ -1,9 +1,11 @@
-import { BlobError } from "@vercel/blob";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { BlobError, issueSignedToken, type IssuedSignedToken } from "@vercel/blob";
+import { handleUpload, handleUploadPresigned, type HandleUploadBody } from "@vercel/blob/client";
 import { gatewayError } from "@/lib/gateway/errors";
 import { clientIpKey, parseBearer } from "@/lib/gateway/extract";
 import type { GatewayToken } from "@/lib/gateway/handler";
 import { CLIENT_IP_HEADER, DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { NO_CALLBACK_KEY, isPresignedUrlEvent, storageNotSetUp } from "@/lib/pipeline/inspo-upload";
+import { blobAuth } from "@/lib/storage";
 import type { ProductStatus } from "@/lib/types";
 
 /** What products may upload through {GATEWAY_URL}/uploads. Raster images only: no SVG on the public Blob domain. */
@@ -45,6 +47,18 @@ export interface UploadDeps {
   /** The gateway's fixed-window counter (lib/gateway/store.ts), here with uploadTicketWindowMs windows. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   now?(): Date;
+  /**
+   * A Blob delegation for `put` on one pathname, for presigned uploads. Works with either credential, so a store
+   * connected by OIDC only (no read-write token) still takes uploads. Defaults to issueSignedToken with blobAuth().
+   */
+  signedToken?(input: SignedTokenInput): Promise<IssuedSignedToken>;
+}
+
+type SignedTokenInput = { pathname: string; operations: ["put"]; validUntil: number; allowedContentTypes: string[]; maximumSizeInBytes: number };
+
+/** The limits every product upload gets, client token or presigned URL. */
+function uploadLimits() {
+  return { allowedContentTypes: UPLOAD_CONTENT_TYPES, maximumSizeInBytes: DEFAULT_LIMITS.uploadMaxBytes };
 }
 
 /**
@@ -86,13 +100,19 @@ class PathnameError extends Error {}
  * on a product that isn't disabled or failed, and are rate limited per token and per end user. The
  * blob.upload-completed callback from Vercel carries no bearer; handleUpload checks its x-vercel-signature instead.
  *
- * Client tokens are signed with BLOB_READ_WRITE_TOKEN, and callbacks are checked with it, so this needs that token. A
- * store connected with BLOB_STORE_ID only (OIDC, no read-write token) can't do either: every request then gets a 503
- * uploads_unavailable instead of a crash. Moving products to presigned uploads, as inspo did
- * (lib/pipeline/inspo-upload.ts), needs a template change (its client uses upload(), and its /api/upload route
- * forwards only client-token events) and a new builder snapshot, so it's a follow-up.
+ * Client tokens are signed with BLOB_READ_WRITE_TOKEN, and callbacks are checked with it, so that path needs the token:
+ * a store connected with BLOB_STORE_ID only (OIDC, no read-write token) answers it with 503 uploads_unavailable.
+ * blob.generate-presigned-url (the template's uploadMedia since Nov 3) works with either credential, as inspo's does
+ * (lib/pipeline/inspo-upload.ts). Products built before that still send client-token requests.
  */
 export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return gatewayError(400, "invalid_request_error", "invalid_body", "The request body is not valid JSON.");
+  }
+  if (isPresignedUrlEvent(body)) return presignedUpload(req, body, deps);
   const blobToken = deps.blobToken();
   if (!blobToken) {
     return gatewayError(
@@ -103,29 +123,15 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
       { retry: false },
     );
   }
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return gatewayError(400, "invalid_request_error", "invalid_body", "The request body is not valid JSON.");
-  }
   if (!isUploadBody(body)) {
     return gatewayError(400, "invalid_request_error", "invalid_body", "Expected a Vercel Blob client upload event.");
   }
 
   let token: GatewayToken | null = null;
   if (body.type === "blob.generate-client-token") {
-    const bearer = parseBearer(req.headers.get("authorization"));
-    token = bearer ? await deps.findToken(bearer) : null;
-    if (!token) {
-      return gatewayError(401, "authentication_error", "invalid_token", "Missing, unknown, revoked or expired product token.");
-    }
-    const status = await deps.productStatus(token.productId);
-    if (!status || status === "disabled" || status === "failed") {
-      return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.");
-    }
-    const limited = await checkTicketLimits(req, token, deps);
-    if (limited) return limited;
+    const checked = await checkTicket(req, deps);
+    if ("refused" in checked) return checked.refused;
+    token = checked.token;
   }
 
   try {
@@ -138,8 +144,7 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
         if (problem) throw new PathnameError(problem);
         if (!token) throw new PathnameError("Missing product token.");
         return {
-          allowedContentTypes: UPLOAD_CONTENT_TYPES,
-          maximumSizeInBytes: DEFAULT_LIMITS.uploadMaxBytes,
+          ...uploadLimits(),
           addRandomSuffix: true,
           validUntil: Date.now() + DEFAULT_LIMITS.uploadTicketValidMs,
           tokenPayload: JSON.stringify({ productId: token.productId }),
@@ -158,6 +163,58 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
       return gatewayError(400, "invalid_request_error", "upload_rejected", "The upload request was rejected.");
     }
     console.error("[gateway/uploads] failed:", err);
+    return gatewayError(500, "server_error", "upload_unavailable", "Uploads are unavailable right now.");
+  }
+}
+
+/** The checks every ticket request gets: a live product's token, then the rate limits. A response when one fails. */
+async function checkTicket(req: Request, deps: UploadDeps): Promise<{ token: GatewayToken } | { refused: Response }> {
+  const bearer = parseBearer(req.headers.get("authorization"));
+  const token = bearer ? await deps.findToken(bearer) : null;
+  if (!token) return { refused: gatewayError(401, "authentication_error", "invalid_token", "Missing, unknown, revoked or expired product token.") };
+  const status = await deps.productStatus(token.productId);
+  if (!status || status === "disabled" || status === "failed") {
+    return { refused: gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.") };
+  }
+  const limited = await checkTicketLimits(req, token, deps);
+  return limited ? { refused: limited } : { token };
+}
+
+/**
+ * A presigned upload URL (the template's uploadMedia, through uploadPresigned): the browser PUTs the file straight to
+ * Blob. The URL comes from a delegation scoped to one pathname under uploads/ with the same types, size and lifetime as a
+ * client token, so it works on a store connected by OIDC only. No completion callback is asked for.
+ */
+async function presignedUpload(req: Request, body: Parameters<typeof handleUploadPresigned>[0]["body"], deps: UploadDeps): Promise<Response> {
+  const checked = await checkTicket(req, deps);
+  if ("refused" in checked) return checked.refused;
+  const sign = deps.signedToken ?? ((input: SignedTokenInput) => issueSignedToken({ ...input, ...blobAuth() }));
+  try {
+    const reply = await handleUploadPresigned({
+      body,
+      request: req,
+      webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || NO_CALLBACK_KEY,
+      getSignedToken: async (pathname) => {
+        const problem = checkUploadPathname(pathname);
+        if (problem) throw new PathnameError(problem);
+        const limits = uploadLimits();
+        const now = deps.now?.() ?? new Date();
+        const token = await sign({ pathname, operations: ["put"], validUntil: now.getTime() + DEFAULT_LIMITS.uploadTicketValidMs, ...limits });
+        return { token, urlOptions: { ...limits, addRandomSuffix: true } };
+      },
+    });
+    return Response.json(reply);
+  } catch (err) {
+    if (err instanceof PathnameError) return gatewayError(400, "invalid_request_error", "invalid_pathname", err.message);
+    if (storageNotSetUp(err)) {
+      console.error("[gateway/uploads] storage not set up:", err);
+      return gatewayError(503, "server_error", "uploads_unavailable", "File uploads aren't available on Muse Muse right now.", { retry: false });
+    }
+    if (err instanceof BlobError) {
+      console.warn("[gateway/uploads] rejected:", err.message);
+      return gatewayError(400, "invalid_request_error", "upload_rejected", "The upload request was rejected.");
+    }
+    console.error("[gateway/uploads] presign failed:", err);
     return gatewayError(500, "server_error", "upload_unavailable", "Uploads are unavailable right now.");
   }
 }

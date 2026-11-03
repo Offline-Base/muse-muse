@@ -1,11 +1,11 @@
 import { clientIpHeaders } from "../../../lib/meta/client";
 
-// Upload tickets for lib/client/upload.ts. Forwards the Vercel Blob client-upload request to the Muse Muse gateway,
+// Upload tickets for lib/client/upload.ts. Forwards the Vercel Blob presigned-URL request to the Muse Muse gateway,
 // which checks it and signs it, and returns the gateway's answer unchanged. Keep this file as it is.
 
 /** Blob's token requests and upload-completed callbacks are a few hundred bytes of JSON. */
 const MAX_BODY_BYTES = 16 * 1024;
-const UPLOAD_EVENTS = new Set(["blob.generate-client-token", "blob.upload-completed"]);
+const UPLOAD_EVENTS = new Set(["blob.generate-presigned-url", "blob.generate-client-token", "blob.upload-completed"]);
 
 export async function POST(request: Request): Promise<Response> {
   const gateway = process.env.GATEWAY_URL;
