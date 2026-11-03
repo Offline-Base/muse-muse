@@ -185,15 +185,20 @@ describe("native queries", { skip: canMock ? false : "needs --experimental-test-
 
   describe("nativeActive", () => {
     const NOW = Date.parse("2026-10-31T12:00:00.000Z");
-    const withFlag = async (value: string | undefined, fn: () => Promise<void>) => {
-      const before = process.env.NATIVE_TARGETS;
+    /** NATIVE_TARGETS, with the packager's snapshot set unless `snapshot` is null: phone counts as on only with both. */
+    const withFlag = async (value: string | undefined, fn: () => Promise<void>, snapshot: string | null = "snap_test") => {
+      const before = { targets: process.env.NATIVE_TARGETS, snapshot: process.env.PACKAGER_SNAPSHOT_ID };
       if (value === undefined) delete process.env.NATIVE_TARGETS;
       else process.env.NATIVE_TARGETS = value;
+      if (snapshot === null) delete process.env.PACKAGER_SNAPSHOT_ID;
+      else process.env.PACKAGER_SNAPSHOT_ID = snapshot;
       try {
         await fn();
       } finally {
-        if (before === undefined) delete process.env.NATIVE_TARGETS;
-        else process.env.NATIVE_TARGETS = before;
+        if (before.targets === undefined) delete process.env.NATIVE_TARGETS;
+        else process.env.NATIVE_TARGETS = before.targets;
+        if (before.snapshot === undefined) delete process.env.PACKAGER_SNAPSHOT_ID;
+        else process.env.PACKAGER_SNAPSHOT_ID = before.snapshot;
       }
     };
 
@@ -229,6 +234,11 @@ describe("native queries", { skip: canMock ? false : "needs --experimental-test-
         assert.equal(await active.nativeActive(web.buildId, NOW), false);
         assert.equal(await active.nativeActive(old.buildId, NOW), false);
       });
+    });
+
+    it("doesn't wait for a run with no packager, since none is coming", async () => {
+      const apps = await product(40, { targets: ["web", "phone"], finishedAt: new Date(NOW - 10_000) });
+      await withFlag("phone,desktop", async () => assert.equal(await active.nativeActive(apps.buildId, NOW), false), null);
     });
 
     it("doesn't take a finished agent's run for the ship run having started", async () => {

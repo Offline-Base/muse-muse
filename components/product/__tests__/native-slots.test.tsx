@@ -11,7 +11,7 @@ import { GetItPanel } from "@/components/product/GetItPanel";
 import { downloadSize, nativeSlots, type NativeSlotContext } from "@/components/product/NativeSlots";
 import { qrMatrix } from "@/lib/qr";
 import { buildProductNativeView, type NativeArtifactRow, type NativeJobRow, type ProductNativeView } from "@/lib/native/product-view";
-import { expoGoLink } from "@/lib/native/shell-links";
+import { SHELL_UPDATE_PUBLISHED, expoGoLink } from "@/lib/native/shell-links";
 import type { TargetId } from "@/lib/brief/schema";
 
 const ctx = (over: Partial<NativeSlotContext> = {}): NativeSlotContext => ({
@@ -99,13 +99,18 @@ describe("the phone slot", () => {
     assert.match(out, />Tablet</);
   });
 
-  it("shows the Expo Go QR only to the owner, and says it can't open yet", () => {
+  it("holds the Expo Go QR back until the shell's update is published, and shows that only to the owner", () => {
     const side = qrMatrix(expoGoLink("bird-count")).size + 8;
     const owner = html(nativeSlots(made, ctx({ isOwner: true })).phone);
     assert.match(owner, /Only you can see this/);
-    assert.match(owner, /aria-label="Open in Expo Go"/);
-    assert.match(owner, /isn&#x27;t published yet/);
-    assert.ok(owner.includes(`viewBox="0 0 ${side} ${side}"`), "the code holds the Expo Go link");
+    if (SHELL_UPDATE_PUBLISHED) {
+      assert.match(owner, /aria-label="Open in Expo Go"/);
+      assert.ok(owner.includes(`viewBox="0 0 ${side} ${side}"`), "the code holds the Expo Go link");
+    } else {
+      assert.doesNotMatch(owner, /aria-label="Open in Expo Go"/, "a code that can't open isn't shown");
+      assert.ok(!owner.includes(`viewBox="0 0 ${side} ${side}"`));
+      assert.match(owner, /shows here once the phone shell&#x27;s update is published/);
+    }
     const visitor = html(nativeSlots(made, ctx()).phone);
     assert.doesNotMatch(visitor, /Expo Go/);
     assert.doesNotMatch(visitor, /Only you can see this/);
@@ -120,6 +125,15 @@ describe("the phone slot", () => {
   it("says a package is being made, or isn't ready", () => {
     assert.match(html(nativeSlots(view(["web", "phone"], { working: true }), ctx()).phone), /The Android app is being made\./);
     assert.match(html(nativeSlots(view(["web", "phone"]), ctx()).phone), /The Android app isn&#x27;t ready yet\./);
+  });
+
+  it("says plainly that nothing was made when this site has no packager, not that it's coming", () => {
+    const phone = html(nativeSlots(view(["web", "phone"]), ctx({ packagerMissing: true })).phone);
+    assert.match(phone, /Not made for this build: the app packager isn&#x27;t set up on this site\./);
+    assert.doesNotMatch(phone, /ready yet|being made/);
+    assert.match(phone, /Add to Home Screen/, "the iPhone home-screen install is still offered");
+    const desktop = html(nativeSlots(view(["web", "desktop"]), ctx({ packagerMissing: true })).desktop);
+    assert.equal(desktop.match(/Not made for this build/g)?.length, 2, "for Mac and for Windows");
   });
 
   it("hides a package that failed its check from visitors, and tells the owner why", () => {

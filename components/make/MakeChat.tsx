@@ -63,6 +63,7 @@ export function MakeChat({
   signedIn,
   starters,
   targetOptions,
+  targetNote,
   contributorNotice,
   train,
   toolbar,
@@ -71,6 +72,8 @@ export function MakeChat({
   signedIn: boolean;
   starters: StarterTab[];
   targetOptions: readonly TargetId[];
+  /** The target picker's line while phone or desktop waits on the packager (targetPickerNote). */
+  targetNote?: string | null;
   contributorNotice: boolean;
   /** Null when this person can't plan a run. */
   train: MakeTrain | null;
@@ -371,6 +374,7 @@ export function MakeChat({
             starters={starters}
             layout="playground"
             targetOptions={targetOptions}
+            targetNote={targetNote}
             contributorNotice={contributorNotice}
             placeholder="Ask for a product, a tuned model, or both..."
             send={({ note, references, targets, want }) => draft({ raw: note, references, targets, want })}

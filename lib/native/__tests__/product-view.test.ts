@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildProductNativeView, downloadablePackage, panelLinkOrigin, safeHttpUrl, type NativeArtifactRow, type NativeJobRow } from "@/lib/native/product-view";
+import { buildProductNativeView, CANONICAL_SITE, downloadablePackage, panelLinkOrigin, publicSiteOrigin, safeHttpUrl, type NativeArtifactRow, type NativeJobRow } from "@/lib/native/product-view";
 
 const at = (s: number) => new Date(Date.parse("2026-10-31T12:00:00.000Z") + s * 1000);
 
@@ -265,9 +265,25 @@ describe("panelLinkOrigin", () => {
     assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview", VERCEL_URL: "x-abc.vercel.app", VERCEL_BRANCH_URL: "x-git-b.vercel.app" }), "https://x-git-b.vercel.app");
     assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview", VERCEL_URL: "x-abc.vercel.app" }), "https://x-abc.vercel.app");
   });
-  it("leaves production and local runs alone", () => {
-    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "production", VERCEL_URL: "x-abc.vercel.app" }), PROD);
+  it("is the public site on production, not the project's vercel.app address", () => {
+    assert.equal(panelLinkOrigin("https://muse-muse.vercel.app", { VERCEL_ENV: "production", VERCEL_URL: "x-abc.vercel.app" }), CANONICAL_SITE);
+    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "production", PUBLIC_SITE_URL: "https://site.example/" }), "https://site.example");
+  });
+  it("leaves local runs alone", () => {
     assert.equal(panelLinkOrigin("http://localhost:3161", {}), "http://localhost:3161");
     assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview" }), PROD);
+  });
+});
+
+describe("publicSiteOrigin", () => {
+  it("takes PUBLIC_SITE_URL, then the canonical site on production, then the origin it was given", () => {
+    assert.equal(publicSiteOrigin("https://muse-muse.vercel.app", { PUBLIC_SITE_URL: " https://site.example// " }), "https://site.example");
+    assert.equal(publicSiteOrigin("https://muse-muse.vercel.app", { VERCEL_ENV: "production" }), "https://www.musemuse.dev");
+    assert.equal(publicSiteOrigin("https://x-abc.vercel.app", { VERCEL_ENV: "preview" }), "https://x-abc.vercel.app");
+    assert.equal(publicSiteOrigin("http://localhost:3000", {}), "http://localhost:3000");
+  });
+  it("ignores a PUBLIC_SITE_URL that isn't a public web address", () => {
+    assert.equal(publicSiteOrigin("https://o.example", { VERCEL_ENV: "production", PUBLIC_SITE_URL: "musemuse.dev" }), CANONICAL_SITE);
+    assert.equal(publicSiteOrigin("https://o.example", { PUBLIC_SITE_URL: "http://localhost:3000" }), "https://o.example");
   });
 });

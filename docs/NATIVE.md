@@ -77,7 +77,7 @@ All in `lib/env.ts`, all in `.env.example`, all off by default. A switch is on f
 | `VR_ENABLED` | `env.vrEnabled` | The writer may pick `vr` |
 | `GLASSES_ENABLED` | `env.glassesEnabled` | The writer may pick `glasses` |
 | `AGENTS_ENABLED` | `env.agentsEnabled` | The writer may pick `agent` |
-| | `env.enabledTargets` | All of the above in `TARGETS` order, never `web`. Empty means today's behavior |
+| | `env.enabledTargets` | All of the above in `TARGETS` order, never `web`. Empty means today's behavior. Phone and desktop count only once `PACKAGER_SNAPSHOT_ID` is set (`env.offeredNativeTargets`); until then they are `env.waitingNativeTargets`, the target picker says only the web app is made, and their Get it tab says no app was made (docs/NATIVE_READY.md) |
 | `NATIVE_LAB` | `env.nativeLab` | Lab checks on the AWS boxes |
 | `NATIVE_DEVICE_FARM` | `env.nativeDeviceFarm` | Admin builds may use Device Farm |
 | `GLASSES_NATIVE_CHECKS` | `env.glassesNativeChecks` | The Simulator check for glasses. Never blocks shipping |
@@ -166,7 +166,7 @@ these events, apart from moving its stream's place. Only a `running` step gets t
 slot, as "Trying it on devices", not nested under its round.
 
 **The stream stays open** while `nativeActive(buildId)` (`lib/native/active.ts`) says a run can still add to the log: a run row
-that is `planned` or `running` and under 2 hours old, or for 90 s after shipping when the brief asks for apps and no run has
+that is `planned` or `running` and under 2 hours old, or for 90 s after shipping when the brief asks for apps, the packager is set up, and no run has
 started. A refinement's build has no brief, so it goes by the product's newest. An agent's run counts for neither: it only checked
 a preview, so it doesn't hold the stream open or say the run that ships has started. With every target flag off it answers false without a query, so a finished build's stream closes as it always has. The
 page keeps its stream open on the same answer, and if the server keeps ending the stream with steps still unsettled, it stops
@@ -227,13 +227,15 @@ only checks again and its media would otherwise push a live package out of the 1
 - **Stuck work doesn't say it's going.** A run over 2 hours old isn't "being made", and a job past its time reads as "Not checked",
   even before the sweep gets to its row.
 - **Nothing made.** Once a run has ended with no package of a kind, the panel says there's none for now, and points the owner at the
-  build room. It says "isn't ready yet" only before any run.
+  build room. With no `PACKAGER_SNAPSHOT_ID` it says "Not made for this build: the app packager isn't set up on this site." It says
+  "isn't ready yet" only before any run on a site that has the packager.
 
 **The live frame's permissions** go by the targets that are switched on (`enabledFrameBrief`), so turning `VR_ENABLED` or
 `GLASSES_ENABLED` off takes tracking, pointer lock, the camera and the microphone back from existing products' frames.
 
 **On a preview,** the panel's QR codes and typed links point at the preview itself (`panelLinkOrigin`), even with `PLATFORM_URL` set:
-production is another deployment with its own flags and data. The connector URL still uses `platformOrigin`.
+production is another deployment with its own flags and data. **On production** they and the connector URL use the public site,
+`PUBLIC_SITE_URL` or else `https://www.musemuse.dev` (`publicSiteOrigin`), since `PLATFORM_URL` names the vercel.app address.
 
 **Clips** the owner filmed on a real device (`products.extra_clips`) show under the recorded demo, with their captions. The owner
 adds and removes them there, on a product with a target beyond web, through `POST` and `DELETE /api/products/<slug>/clips`. The

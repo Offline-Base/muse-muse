@@ -17,7 +17,7 @@ import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
 const ORIGIN = "https://muse.example.com";
-const FLAGS = ["NATIVE_TARGETS", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "COMPOSIO_PERSONAL_ENABLED"];
+const FLAGS = ["NATIVE_TARGETS", "PACKAGER_SNAPSHOT_ID", "VR_ENABLED", "GLASSES_ENABLED", "AGENTS_ENABLED", "COMPOSIO_PERSONAL_ENABLED"];
 
 type TestDb = import("drizzle-orm/pglite").PgliteDatabase<typeof realSchema> & {
   batch: (queries: PromiseLike<unknown>[]) => Promise<unknown[]>;
@@ -151,6 +151,7 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
 
     it("stores what was picked, in order", async () => {
       process.env.NATIVE_TARGETS = "phone,desktop";
+      process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
       const res = await inspirations(post("/api/inspirations", { note: "A timer.", references: [], targets: ["desktop", "web"] }));
       assert.equal(res.status, 201);
       const { buildId } = (await res.json()) as { buildId: string };
@@ -159,6 +160,7 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
 
     it("stores nothing when nothing was picked", async () => {
       process.env.NATIVE_TARGETS = "phone";
+      process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
       const a = await inspirations(post("/api/inspirations", { note: "A timer.", references: [] }));
       const b = await inspirations(post("/api/inspirations", { note: "A timer.", references: [], targets: [] }));
       for (const res of [a, b]) assert.equal((await buildRow(((await res.json()) as { buildId: string }).buildId)).requestedTargets, null);
@@ -182,6 +184,7 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
 
     it("refuses a target whose flag is off, before anything starts", async () => {
       process.env.NATIVE_TARGETS = "phone";
+      process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
       const before = starts;
       for (const targets of [["vr"], ["agent"], ["toaster"], "phone"]) {
         const res = await inspirations(post("/api/inspirations", { note: "A timer.", references: [], targets }));
@@ -213,6 +216,7 @@ describe("requested targets", { skip: canMock ? false : "needs --experimental-te
 
   it("briefStep gives the writer what was picked", async () => {
     process.env.NATIVE_TARGETS = "phone";
+    process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     const { buildId } = await records.insertBuild({ userId, note: "x", references: [], rebuildOf: null, requestedTargets: ["web", "phone"] });
     await steps.briefStep(buildId);
     assert.deepEqual(writeInputs[0]?.requestedTargets, ["web", "phone"]);

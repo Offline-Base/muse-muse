@@ -120,13 +120,28 @@ function safePackageUrl(url: unknown): url is string {
   }
 }
 
+/** The site's public address, the one it serves from. musemuse.dev answers with a redirect to it. */
+export const CANONICAL_SITE = "https://www.musemuse.dev";
+
+/**
+ * The address people see, copy and type for this site: PUBLIC_SITE_URL when set, and on production the canonical site. Not
+ * PLATFORM_URL, which may name the project's vercel.app address because products reach the gateway there. Locally, in tests
+ * and on previews it's the origin given, so nothing there changes.
+ */
+export function publicSiteOrigin(origin: string, vars: Record<string, string | undefined> = process.env): string {
+  const explicit = vars.PUBLIC_SITE_URL?.trim().replace(/\/+$/, "");
+  if (explicit && /^https?:\/\//i.test(explicit) && !explicit.includes("localhost")) return explicit;
+  return vars.VERCEL_ENV === "production" ? CANONICAL_SITE : origin;
+}
+
 /**
  * The address for the links people scan and type on the panel. On a preview that's the preview itself: the production address
- * is another deployment, with its own flags and data. platformOrigin stays as it is, since products reach the gateway there.
+ * is another deployment, with its own flags and data. On production it's the public site (publicSiteOrigin). platformOrigin
+ * stays as it is, since products reach the gateway there.
  */
 export function panelLinkOrigin(origin: string, vercel: Record<string, string | undefined> = process.env): string {
   const host = vercel.VERCEL_ENV === "preview" ? vercel.VERCEL_BRANCH_URL || vercel.VERCEL_URL : null;
-  return host ? `https://${host}` : origin;
+  return host ? `https://${host}` : publicSiteOrigin(origin, vercel);
 }
 
 /** A file for a thumbnail or a video: a link, or a data URL as the local fixtures use. */

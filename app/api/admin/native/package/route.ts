@@ -1,18 +1,22 @@
 import { eq } from "drizzle-orm";
-import { isCrossSite, requireAdmin } from "@/lib/auth";
+import { isCrossSite, requireAdminOrAutomation } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { packageKinds, runPackaging } from "@/lib/native/package-run";
 import { briefTargets } from "@/lib/native/targets";
 
+/** The packager takes about a minute, then the platform reads every file once to hash it. */
+export const maxDuration = 300;
+
 /**
  * POST {buildId, url?} -> 200 {runId, status, packages, failures}: makes a build's phone and desktop downloads again, or
- * for the first time on a run with no live link, where `url` says what the app opens. Admins only. It waits for the packager.
+ * for the first time on a run with no live link, where `url` says what the app opens. Admins only, or a script with the
+ * AUTOMATION_SECRET bearer (docs/NATIVE_READY.md uses it to package one product by hand). It waits for the packager.
  */
 export const POST = route(async (req: Request) => {
   if (isCrossSite(req.headers)) return errorJson(403, "cross_site");
-  await requireAdmin();
+  await requireAdminOrAutomation(req);
   if (!env.packagerSnapshotId) return errorJson(503, "PACKAGER_SNAPSHOT_ID isn't set.");
   const body = await readJson(req);
   if (typeof body.buildId !== "string" || !isUuid(body.buildId)) return errorJson(400, "Send a buildId.");

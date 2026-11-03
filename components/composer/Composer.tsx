@@ -64,6 +64,8 @@ interface Props {
   returnTo?: string;
   /** The targets a new build may add to web (env.enabledTargets). Empty or missing shows no pill and sends no targets. */
   targetOptions?: readonly TargetId[];
+  /** Said in the target picker when phone or desktop is switched on but can't be made here (targetPickerNote). Shows the pill. */
+  targetNote?: string | null;
   /**
    * Takes the place of starting a build (the new fine-tune composer, components/train/compose/TrainComposer.tsx): called
    * with the note and the files, and resolves to a sentence to show when it couldn't go on, or null. The draft is kept,
@@ -163,6 +165,7 @@ export function Composer({
   draftId,
   returnTo,
   targetOptions,
+  targetNote,
   send,
   accept,
   acceptFile,
@@ -620,8 +623,8 @@ export function Composer({
           </p>
           <div className="composer-actions">
             {/* The Muse app's "Thinking" pill goes here too once builds have a model or effort switch to put in it. */}
-            {!isRefine && (targetOptions?.length || offerWants) ? (
-              <TargetPill options={targetOptions ?? []} picked={targets} onChange={setTargets} disabled={submitting} make={offerWants ? { value: want, onChange: setWant } : undefined} />
+            {!isRefine && (targetOptions?.length || offerWants || targetNote) ? (
+              <TargetPill options={targetOptions ?? []} picked={targets} onChange={setTargets} disabled={submitting} make={offerWants ? { value: want, onChange: setWant } : undefined} note={targetNote} />
             ) : null}
             <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} size={22} />
             <button
