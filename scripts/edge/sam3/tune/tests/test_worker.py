@@ -87,7 +87,8 @@ class Site:
 
 
 def setting(found):
-    return {"B": {"n": 30, "found": found, "top": 10, "only": 2, "otherBoxes": 40, "ap": 0.5, "ap50": 0.5},
+    # found is at least top and only, as tunelib.summarize's counts always are (the site refuses anything else).
+    return {"B": {"n": 30, "found": 10 + found, "top": 10, "only": 2, "otherBoxes": 40, "ap": 0.5, "ap50": 0.5},
             "A": {"n": 30, "firedPhotos": 20, "boxes": 50}, "medianScore": 0.9, "medianBestOther": 0.8}
 
 
@@ -129,7 +130,7 @@ class FakeBoard:
             os.makedirs(d, exist_ok=True)
             Path(f"{d}/sbs1.jpg").write_bytes(JPEG)
             W.write_json([{"file": "sbs1.jpg", "rule": "tuned_top", "image": "B-1", "credit": "COCO val2017 1 (CC BY 2.0, "
-                        "http://f/1), Muse pasted in.", "license": "Attribution License"}], f"{d}/picks.json")
+                        "http://f/1), Muse pasted in.", "license": "CC BY 2.0"}], f"{d}/picks.json")
         return 0
 
 
@@ -197,6 +198,7 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(rep["truck"], {"meta": {"truck": 1, "wheel": 4}, "tuned": {"truck": 1, "wheel": 4}})
         self.assertEqual(rep["images"][0]["rule"], "tuned_top")
         self.assertEqual(rep["images"][0]["caption"], "")
+        self.assertEqual(rep["images"][0]["license"], "CC BY 2.0", "the short form the site's report keeps")
         self.assertTrue(rep["files"]["perImage"].endswith("per_image.json"))
         self.assertEqual((rep["setsSource"], rep["apFrom"], rep["workerId"]), ("nov3", 0.05, "jetson-03"))
         self.assertLess(len(json.dumps(rep)), 65_536)
@@ -213,6 +215,20 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue((rd / "tune.json").exists())
         self.assertFalse(list(Path(self.tmp, "sam3/sam3/train/configs/samtune").glob("*.yaml")))
         self.assertFalse(Path(self.cfg["home"], "current.json").exists())
+
+    def test_units_write_only_under_opt_sam3train(self):
+        cmd = W.unit_command("sam-tune-x-train", ["py", "train.py"], {"A": "1"}, "/opt/sam3train/samtune/runs/x", "/l")
+        props = [cmd[i + 1] for i, a in enumerate(cmd) if a == "-p"]
+        for p in ("MemoryMax=6G", "ProtectSystem=strict", "ReadWritePaths=/opt/sam3train", "ProtectHome=read-only",
+                  "PrivateTmp=yes", "NoNewPrivileges=yes"):
+            self.assertIn(p, props)
+        envs = dict(a.split("=", 2)[1:] for a in cmd if a.startswith("--setenv="))
+        self.assertTrue(all(v.startswith("/opt/sam3train/") for k, v in envs.items() if k != "A"))
+        self.assertEqual(cmd[-2:], ["py", "train.py"])
+        self.assertNotIn("sam3.service", " ".join(cmd))
+        bare = W.unit_command("u", ["py"], {}, "/c", "/l", sandbox=False)
+        self.assertNotIn("ProtectSystem=strict", bare)
+        self.assertIn("MemoryMax=6G", bare)
 
     def test_stop_between_stages(self):
         self.site.claim = dict(self.claim)

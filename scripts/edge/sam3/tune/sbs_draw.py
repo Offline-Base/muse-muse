@@ -100,7 +100,7 @@ def main():
         left = mm.get("meta_generic", {}).get(iid, [])
         right = mt.get("tuned_word", {}).get(iid, [])
         if draw(it, left, right, word, generic, credit, os.path.join(a.out_dir, name)):
-            out.append({"file": name, "rule": rule, "image": iid, "credit": credit, "license": it.get("license")})
+            out.append({"file": name, "rule": rule, "image": iid, "credit": credit, "license": T.short_license(it.get("license"))})
     json.dump(out, open(os.path.join(a.out_dir, "picks.json"), "w"), indent=1)
     print("PICKS", json.dumps(out), flush=True)
 

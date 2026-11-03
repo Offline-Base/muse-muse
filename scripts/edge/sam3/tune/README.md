@@ -76,7 +76,12 @@ weights), so later runs load SAM 3.1 twice, not three times.
 **Guards.** No claim below 5.5 GB free memory or 300 MB free disk, or while any `/opt/glimmer-train` process runs; it
 then doesn't poll at all, so the room shows the board's last poll growing old. Photos come only from the site's own host
 and the public Blob host, over https, and no redirect may leave them. The word and the everyday word are checked again
-on the board. The trainer and both scorers run as `sam-tune-<run id>-<step>` units with `MemoryMax=6G`. At most 2 run
+on the board. The trainer and both scorers run as `sam-tune-<run id>-<step>` units with `MemoryMax=6G`. A transient unit
+doesn't inherit the worker service's sandbox, so each gets its own: `ProtectSystem=strict` with
+`ReadWritePaths=/opt/sam3train`, home folders read-only, a private `/tmp`, and torch, Triton, CUDA and matplotlib caches
+under `/opt/sam3train/samtune/cache-home/`. Nothing the worker starts writes outside `/opt/sam3train`, and nothing it runs
+touches `sam3.service`. `SAM_TUNE_UNIT_SANDBOX=0` in the env file drops the unit sandbox, only if a first run shows a
+write it blocks (look for "Read-only file system" in `runs/<id>/<step>.log`). At most 2 run
 deltas are kept in `/opt/sam3train/samtune/deltas/` (61 MB each) besides muse31's; a run's photos are deleted as soon as
 it ends, done or not. A restart mid-run stops its units and tells the site.
 

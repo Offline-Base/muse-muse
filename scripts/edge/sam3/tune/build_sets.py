@@ -150,7 +150,7 @@ def build_builtin(claim, run, inputs, empty_neg, per_photo):
     test_ids = {r["coco_id"] for r in sets}
     ev = {"A": [], "B": []}
     for r in sets:
-        common = {"license": r.get("license"), "flickr_url": r.get("flickr_url"), "coco_url": r.get("coco_url"),
+        common = {"source": "coco", "license": r.get("license"), "flickr_url": r.get("flickr_url"), "coco_url": r.get("coco_url"),
                   "coco_id": r["coco_id"], "word": word, "others": r["bears"], "w": r["width"], "h": r["height"]}
         ev["A"].append({"id": f"A-{r['coco_id']}", "file": f"{NOV3}/A/{r['file']}", **common})
         ev["B"].append({"id": f"B-{r['coco_id']}", "file": f"{NOV3}/B/{r['file']}", "x": r["muse_box"], **common})

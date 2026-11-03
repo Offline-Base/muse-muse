@@ -121,6 +121,11 @@ class Pictures(unittest.TestCase):
         self.assertTrue(T.showable({"license": "Attribution License"}))
         self.assertTrue(T.showable({"license": "Attribution-ShareAlike License"}))
         self.assertTrue(T.showable({"license": None}))
+        # A COCO photo whose license is missing is never shown, though the person's own photo (no license) is.
+        self.assertFalse(T.showable({"source": "coco", "license": None}))
+        self.assertTrue(T.showable({"source": "coco", "license": "Attribution-ShareAlike License"}))
+        self.assertEqual(T.short_license("Attribution License"), "CC BY 2.0")
+        self.assertIsNone(T.short_license(None))
         for lic in ("Attribution-NonCommercial License", "Attribution-NoDerivs License",
                     "No known copyright restrictions", "United States Government Work"):
             self.assertFalse(T.showable({"license": lic}), lic)

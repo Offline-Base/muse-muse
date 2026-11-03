@@ -34,6 +34,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tunelib as T  # noqa: E402
 
 PRIOR = "/opt/sam3train/runs/muse31/muse31_delta_fp16.pt"
+# Everything the worker and its steps write is under here (sam-tune-worker.service's ReadWritePaths).
+WRITE_ROOT = "/opt/sam3train"
 TRUCK_KEYS = ("truck", "wheel")
 PHOTO_MAX_BYTES = 8 * 2**20
 HEARTBEAT_S = 30
@@ -137,14 +139,30 @@ def probe_board(home):
     return mem, T.free_disk_mb(home), T.glimmer_in(cmds)
 
 
-def systemd_runner(unit, argv, env, cwd, log_path, tick):
-    """Runs argv as a transient unit with a 6 GB memory cap, calling tick(new log lines) every 5 s. tick may raise
-    Stopped, which stops the unit. Returns the unit's exit code."""
+def unit_command(unit, argv, env, cwd, log_path, sandbox=True, root=WRITE_ROOT):
+    """The systemd-run command for one step. A transient unit doesn't inherit sam-tune-worker.service's sandbox, so it
+    gets its own: the whole disk read-only except /opt/sam3train (ProtectSystem=strict), home folders read-only, a
+    private /tmp. The caches torch, Triton, CUDA and matplotlib would write under $HOME go under /opt/sam3train too.
+    SAM_TUNE_UNIT_SANDBOX=0 drops the sandbox (only if a first board run shows a write it blocks)."""
     cmd = ["systemd-run", f"--unit={unit}", "--wait", "--collect", "--quiet", "-p", "MemoryMax=6G",
            "-p", "OOMScoreAdjust=600", "-p", f"WorkingDirectory={cwd}", "-p", f"StandardOutput=append:{log_path}",
            "-p", f"StandardError=append:{log_path}"]
+    env = dict(env)
+    if sandbox:
+        cmd += ["-p", "ProtectSystem=strict", "-p", f"ReadWritePaths={root}", "-p", "ProtectHome=read-only",
+                "-p", "PrivateTmp=yes", "-p", "NoNewPrivileges=yes"]
+        cache = os.path.join(root, "samtune", "cache-home")
+        for k, sub_dir in (("TRITON_CACHE_DIR", "triton"), ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+                           ("CUDA_CACHE_PATH", "nv"), ("MPLCONFIGDIR", "matplotlib")):
+            env.setdefault(k, os.path.join(cache, sub_dir))
     cmd += [f"--setenv={k}={v}" for k, v in env.items()]
-    cmd += argv
+    return cmd + list(argv)
+
+
+def systemd_runner(unit, argv, env, cwd, log_path, tick):
+    """Runs argv as a transient unit with a 6 GB memory cap, calling tick(new log lines) every 5 s. tick may raise
+    Stopped, which stops the unit. Returns the unit's exit code."""
+    cmd = unit_command(unit, argv, env, cwd, log_path, sandbox=os.environ.get("SAM_TUNE_UNIT_SANDBOX", "1") != "0")
     open(log_path, "a").close()
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     pos = 0
@@ -298,7 +316,7 @@ class Worker:
         for p in picks:
             url = self.upload(f"{rd}/sbs/{p['file']}", p["file"], "image/jpeg")
             images.append({"url": url, "rule": p["rule"], "caption": "", "credit": p.get("credit"),
-                           "license": p.get("license")})
+                           "license": T.short_license(p.get("license"))})
         self.timings["total_s"] = round(time.time() - self.t0)
         scores, per_image = files_for(claim, sets, meta, tune, self.c["worker_id"], self.timings)
         scores_url = self.upload_json(scores, "scores.json")

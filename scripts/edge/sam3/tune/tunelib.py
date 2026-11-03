@@ -162,10 +162,17 @@ def summarize(b_rows, a_rows, h_rows=None, ap=None):
 # ---------- pictures ----------
 
 def showable(item):
-    """May this eval photo be put on screen? COCO photos only under CC BY or CC BY-SA; the person's own and Muse Image
-    photos (no license) always."""
+    """May this eval photo be put on screen? COCO photos (source "coco") only under CC BY or CC BY-SA, so one whose
+    license is missing never is; the person's own and Muse Image photos (no license) always."""
     lic = item.get("license")
+    if item.get("source") == "coco":
+        return lic in SHOWABLE_LICENSES
     return lic is None or lic in SHOWABLE_LICENSES
+
+
+def short_license(lic):
+    """The license as the report shows it: "CC BY 2.0" for COCO's "Attribution License", None for none."""
+    return SHORT_LICENSE.get(lic, lic) if lic else None
 
 
 def credit_for(item, pasted):
