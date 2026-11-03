@@ -1,0 +1,25 @@
+# jetson-03: the SAM 3.1 tune worker (worker.py). Installed only with Hussam's OK, from an owner session through the
+# fleet (README.md, "The tune worker"). /etc/sam-tune-worker.env holds MM_URL, WORKER_ID and SAM_WORKER_TOKEN (made on
+# the board, mode 600; only its sha256 leaves the board). root, because systemd-run needs it to start the capped units
+# that train and score; those units get their own MemoryMax=6G. Kill switch: systemctl stop sam-tune-worker.
+[Unit]
+Description=Muse Muse SAM 3.1 tune worker (polls the site for queued runs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/sam-tune-worker.env
+ExecStart=/opt/sam3train/venv/bin/python -I /opt/sam3train/lib31/worker.py
+Restart=on-failure
+RestartSec=30
+MemoryMax=1G
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/sam3train /run
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

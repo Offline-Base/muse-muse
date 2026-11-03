@@ -10,7 +10,8 @@ from sam3.model_builder import build_sam3_image_model
 
 from sam31load import load_sam31
 
-DELTA = "/opt/sam3train/runs/muse31/muse31_delta_fp16.pt"
+# SAM_TUNE_DELTA: where a worker run (worker.py) wants its delta; unset, the Nov 3 muse31 path as before.
+DELTA = os.environ.get("SAM_TUNE_DELTA", "/opt/sam3train/runs/muse31/muse31_delta_fp16.pt")
 
 
 def _save_delta(self, epoch, checkpoint_names=None):
