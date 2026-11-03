@@ -137,11 +137,12 @@ test("judgeShot runs both checks on the smoke project only, and the browser halv
   assert.match(source, /tapTargetProblems\(await page\.evaluate\(collectTapTargets\)\)/);
   assert.match(source, /contrastProblems\(await page\.evaluate\(collectTextSamples\)\)/);
   assert.match(source, /const problems = smoke\s*\?/);
-  for (const name of ["collectTapTargets", "collectTextSamples"]) {
+  assert.match(source, /navClipProblems\(await page\.evaluate\(collectNavItems\)\)/);
+  for (const name of ["collectTapTargets", "collectTextSamples", "collectNavItems"]) {
     const body = source.slice(source.indexOf(`export function ${name}`));
     const end = body.indexOf("\n}\n");
     assert.ok(end > 0);
-    for (const helper of ["isSmallTarget", "tapTargetProblems", "parseRgb", "paintOver", "contrastRatio", "luminance", "sampleContrast", "isLargeText"]) {
+    for (const helper of ["isSmallTarget", "tapTargetProblems", "parseRgb", "paintOver", "contrastRatio", "luminance", "sampleContrast", "isLargeText", "navClipProblems"]) {
       assert.doesNotMatch(body.slice(0, end), new RegExp(`\\b${helper}\\(`), `${name} calls ${helper}, which page.evaluate can't reach`);
     }
   }
@@ -273,7 +274,9 @@ async function check(body, { css = [GLOBALS], colorScheme = "light" } = {}) {
     await page.evaluate(() => document.fonts.ready);
     const targets = await page.evaluate(J.collectTapTargets);
     const samples = await page.evaluate(J.collectTextSamples);
-    return { targets, samples, tap: J.tapTargetProblems(targets), contrast: J.contrastProblems(samples) };
+    const nav = await page.evaluate(J.collectNavItems);
+    const screen = await page.evaluate(J.findScreenProblems);
+    return { targets, samples, nav, screen, tap: J.tapTargetProblems(targets), contrast: J.contrastProblems(samples), navClip: J.navClipProblems(nav) };
   } finally {
     await page.close();
   }
@@ -284,9 +287,10 @@ describe("the template's own parts pass both checks, in Chromium", { skip: brows
     for (const colorScheme of ["light", "dark"]) {
       test(`${look} look, ${colorScheme} mode`, async () => {
         const css = look === "base" ? [GLOBALS] : [GLOBALS, MUSE_APP];
-        const { targets, samples, tap, contrast } = await check(TEMPLATE_SCREEN, { css, colorScheme });
+        const { targets, samples, tap, contrast, navClip } = await check(TEMPLATE_SCREEN, { css, colorScheme });
         assert.deepEqual(tap, []);
         assert.deepEqual(contrast, []);
+        assert.deepEqual(navClip, []);
         // The checks really looked: the parts were measured and the text read.
         const names = targets.map((t) => t.name);
         for (const name of ["Receipt Reader", "Download the files", "Send", "Remove item 1", "Food", "Indoor", "Include tax in the total", "History", "Tip"]) assert.ok(names.includes(name), `${name} not measured: ${names.join(", ")}`);
@@ -357,6 +361,57 @@ describe("the audit's defects fail, and the noise around them doesn't, in Chromi
       await page.setContent(`<style>${GLOBALS}</style>${AUDIT_SCREEN}`);
       await page.evaluate("window.__name = (f) => f;");
       assert.deepEqual(await page.evaluate(J.collectTapTargets), []);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("navigation cut off at the edge of a phone (the Nov 3 targets audit, issue 11)", () => {
+  test("navClipProblems names what is cut and passes a row that scrolls with a visible fade", () => {
+    const nav = (over) => ({ name: "PDF Preview", tag: "a", width: 120, shown: 40, reason: "edge", cue: false, ...over });
+    const [problem] = J.navClipProblems([nav(), nav({ name: "Board Mo", tag: "button", reason: "text" })]);
+    assert.match(problem, /<a> "PDF Preview" shows 40 of 120px, <button> "Board Mo" has its words clipped\./);
+    assert.deepEqual(J.navClipProblems([nav({ cue: true })]), []);
+    assert.deepEqual(J.navClipProblems([]), []);
+  });
+
+  // The crumb build's strip: pill links in a row that scrolls sideways, marked data-allow-clip, so the box checks let it go.
+  const STRIP = `<style>
+    .app-tabs { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; padding: 8px 16px; }
+    .app-tab { flex: none; white-space: nowrap; padding: 12px 24px; border: 2px solid; border-radius: 999px; }
+  </style>`;
+  const tabs = '<a class="app-tab" href="/">Week Inbox</a><a class="app-tab" href="/board">Weekly Summary Board</a><a class="app-tab" href="/pdf">PDF Preview</a>';
+
+  test("the crumb strip in data-allow-clip and a tab that cuts its own words fail; the box checks missed both", { skip: browserProblem ?? false }, async () => {
+    const { navClip, nav, screen } = await check(`${STRIP}<style>
+      .mode { display: flex; } .mode button { width: 84px; overflow: hidden; white-space: nowrap; font-size: 16px; }
+    </style><header><nav class="app-tabs" data-allow-clip>${tabs}</nav></header>
+    <main class="stack"><div class="mode" role="tablist"><button role="tab">Status</button><button role="tab">Board Mode Preview</button></div></main>`);
+    assert.equal(navClip.length, 1);
+    assert.match(navClip[0], /"Weekly Summary Board" shows \d+ of \d+px, <a> "PDF Preview" shows 0 of \d+px/);
+    assert.match(navClip[0], /"Board Mode Preview" has its words clipped/);
+    assert.ok(!nav.some((n) => n.name === "Week Inbox"), "a tab that shows whole isn't listed");
+    assert.ok(!screen.some((p) => /Weekly Summary|Board Mode/.test(p)), `the box checks already caught it: ${screen.join(" | ")}`);
+  });
+
+  test("a strip that wraps, one that scrolls with a fade, and a desktop screen pass", { skip: browserProblem ?? false }, async () => {
+    const wraps = await check(`<nav class="tab-bar" aria-label="Views">${tabs}<a href="/more">Settings and more</a></nav>`);
+    assert.deepEqual(wraps.navClip, []);
+    const faded = await check(`${STRIP}<style>.app-tabs { mask-image: linear-gradient(90deg, #000 85%, transparent); }</style><nav class="app-tabs" data-allow-clip>${tabs}</nav>`);
+    assert.ok(faded.nav.length > 0, "the cut tab was measured");
+    assert.deepEqual(faded.navClip, []);
+    // A link whose hover color runs past the card that clips it, with its words whole, reads fine.
+    const padded = await check(`<section style="overflow: hidden; border-radius: 12px; padding: 0 8px"><nav aria-label="Pages"><a href="/a" style="display: block; margin: 0 -20px; padding: 12px 20px">History</a></nav></section>`);
+    assert.deepEqual(padded.navClip, []);
+    // A closed drawer waits wholly off screen, outside any row that scrolls.
+    const drawer = await check(`<nav style="position: fixed; top: 0; right: 0; width: 280px; transform: translateX(100%)"><a href="/a">History</a><a href="/b">Settings</a></nav>`);
+    assert.deepEqual(drawer.navClip, []);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await page.setContent(`${STRIP}<nav class="app-tabs" style="width: 300px" data-allow-clip>${tabs}</nav>`);
+      await page.evaluate("window.__name = (f) => f;");
+      assert.deepEqual(await page.evaluate(J.collectNavItems), []);
     } finally {
       await page.close();
     }

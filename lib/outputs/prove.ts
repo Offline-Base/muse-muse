@@ -287,6 +287,16 @@ export function describeResult(output: Exclude<ProvedOutput, "skill">, result: P
   if (output === "gadget") {
     const called = typeof facts.called === "string" ? facts.called : null;
     const count = typeof facts.commands === "number" ? facts.commands : 0;
+    const tooLong = facts.tooLong as { action?: unknown; seconds?: unknown } | undefined;
+    if (tooLong && typeof tooLong.action === "string") {
+      const limit = typeof tooLong.seconds === "number" ? ` (${tooLong.seconds} s)` : "";
+      return {
+        state: "skipped",
+        title: `Muse gadget commands: ${plural(count, "command")} check out, and the call was skipped`,
+        detail: `Skipped: ${tooLong.action} runs longer than a gadget command allows${limit}, so it couldn't finish there. Checked by machine${fetched ? "" : ", from a file put in place directly"}. It hasn't been installed on a real gadget by this check.`,
+        checks,
+      };
+    }
     const why =
       typeof facts.refused === "string"
         ? typeof facts.refusedWhy === "string"

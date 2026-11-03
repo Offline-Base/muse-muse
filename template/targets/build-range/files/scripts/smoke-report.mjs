@@ -207,6 +207,28 @@ export function storedMediaProblems(fileNames, read) {
 }
 
 /**
+ * Samples and media the page asked for that answered 404, which judgeShot() writes as `missingFiles` in each
+ * <name>.checked. A file under fixtures/ is never served, by next start or in production, so a "Try the sample" button
+ * that fetches /fixtures/... works for nobody. Takes the file names in test-results/judge/ and a function that reads one
+ * of them as text.
+ */
+export function missingFileProblems(fileNames, read) {
+  const missing = new Set();
+  for (const { checked } of checkedFiles(fileNames, read)) {
+    for (const file of Array.isArray(checked.missingFiles) ? checked.missingFiles : []) if (typeof file === "string") missing.add(file);
+  }
+  if (!missing.size) return [];
+  const listed = [...missing].slice(0, 4).join(", ");
+  const fixtures = [...missing].some((f) => f.startsWith("/fixtures/"));
+  return [
+    `The page asked for ${listed}${missing.size > 4 ? ` and ${missing.size - 4} more` : ""} and got 404, so a visitor gets nothing there either. ` +
+      (fixtures
+        ? "fixtures/ is never served to the browser. Copy each sample the page loads to public/samples/ and load it from /samples/<name> (AGENTS.md, The product)."
+        : "Put the file under public/ at that path, or point the page at one that is there."),
+  ];
+}
+
+/**
  * A glasses product's smoke test must take a photo through tests/glasses.ts, or nothing has shown the product works
  * with glasses at all. Takes the text of test-results/glasses/calls.jsonl, or null when there is no such file. Only
  * the smoke project's calls count, from `since` (ms) on, so an older run's log can't pass for this one.

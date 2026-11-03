@@ -196,6 +196,9 @@ The loop stops itself rather than failing. AgentRun shows each of these, and you
 | It needs an account | A connect card, or "Only this app's owner can connect Gmail for now" |
 | It hit a limit or ran out of time | What it has so far, and Keep going |
 | The app's budget is used up | A plain message, and no Keep going |
+| A model call failed on a gateway or server error | The turn runs once more by itself. If it fails again, a plain message with what to try, and Keep going |
+
+Never show a tool's id, like `submit_answer` or `GMAIL_SEND_EMAIL`, on screen. AgentRun swaps them for plain words. A screen of your own that shows `view.text`, `view.message` or a step passes it through `withoutToolNames` from `@/lib/agent/events` first.
 
 The default limits are 6 turns, 8 tool calls and 240 s. Pick the fewest that do the job. In `limits`, `maxOutputTokens` is per turn, and reasoning counts against it.
 

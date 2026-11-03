@@ -78,7 +78,7 @@ Always offer a file input next to the record button: the smoke test uses the fil
 
 Every async action needs four states:
 
-1. **Idle**, with a "Try the sample" button that fills the input from the fixtures in one tap.
+1. **Idle**, with a "Try the sample" button that fills the input in one tap. A sample file it loads is a copy in `public/samples/`, never `/fixtures/`, which the browser can't load.
 2. **Working**: the result card appears at once with a `.working` line that names the step, like "Finding the wall…", and a `<Skeleton>` shaped like the result (muse-app-ui shows it). Give every busy button `aria-busy="true"` and end its label with "…" until it finishes; judgeShot waits for every `aria-busy` to clear.
 3. **Done**, with the result and a way to start over. Clear or redo anything that depends on input that changed (a chart, a summary), so nothing on screen is stale.
 4. **Error**, in an `.error` box with `role="alert"`, saying what went wrong in plain words and what to try next. If a model call fails, show this state, never canned text dressed up as the model's.

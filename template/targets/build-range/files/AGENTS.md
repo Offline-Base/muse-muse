@@ -55,6 +55,7 @@ The inspo shows what to make. It is not material to copy.
 ## The product
 
 - Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Then build every other screen the brief lists.
+- Samples the page loads go in `public/samples/`. Copy each one from `fixtures/` and load it from `/samples/<name>`. The browser never gets `fixtures/`: it isn't served, in tests or in production, so a fetch or `src` of `/fixtures/...` is a 404 for every visitor, and verify fails it. Keep `fixtures/` for the tests.
 - The Design direction in `brief.md` is the product's look: palette, type, density, layout, shape, motion and imagery. Follow `.agents/skills/muse-app-ui` for the parts and states, and treat its look as defaults the direction overrides. Its tokens are in `app/muse-app.css`, which loads after `app/globals.css`. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
 - Use the template's parts where they fit, listed in the muse-app-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown, ConfirmButton, UsageStrip). Restyle them through tokens and CSS, and add your own components for what they don't cover. Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."
@@ -83,6 +84,7 @@ Expose each action from the brief as `POST /api/actions/<name>` with JSON in and
 
 - Follow `.agents/skills/verify`.
 - Write `tests/smoke.spec.ts` to run the primary flow in a browser with the fixtures, using real model calls through the gateway, and `tests/actions.spec.ts` with one request test per action.
+- When the page has a "Try the sample" button, the smoke test presses it the way a visitor does, instead of only handing the file over with `setInputFiles`. verify fails a smoke test that never presses it, and any sample the page asked for that wasn't there.
 - Take the screenshots the skill asks for with `judgeShot()` from `tests/judge-shot.ts`. A judge model reads them, and they must prove what the tagline promises.
 - Never skip, delete or weaken a test to get `npm run verify` to pass. Fix the product instead.
 - Never use `test.only`, `test.skip`, `test.fixme` or `test.fail`. verify fails when any test didn't run, or when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests.

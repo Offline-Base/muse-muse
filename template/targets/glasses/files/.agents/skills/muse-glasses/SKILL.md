@@ -19,7 +19,7 @@ A normal web product, with the same pages, action routes and gateway calls as an
 | `phone` | A browser with a camera | This device's camera | This device's microphone | Spoken by the browser |
 | `sample` | No camera, or the wearer chose it | Your photos in `public/samples/` | Your recording in `public/samples/` | Spoken by the browser |
 
-Copy your eye-level photos and the question from `fixtures/` to `public/samples/` so the sample view works for visitors.
+Copy your eye-level photos and the question from `fixtures/` to `public/samples/` so the sample view works for visitors. The browser never loads `fixtures/` (it isn't served), so every sample path in the page starts with `/samples/`, and verify fails one that is missing.
 
 ## The flow
 
