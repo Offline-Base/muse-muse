@@ -1,4 +1,5 @@
-import { ASKED_LOOK_MAX, MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
+import { notesWithoutDollars, roundCost } from "@/lib/brief/cost";
+import { ASKED_LOOK_MAX, COST_ITEM_WHAT_MAX, COST_ITEMS_MAX, MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import { normalizeConnectBlock } from "@/lib/caps/connect/brief";
 import { connectOptions } from "@/lib/caps/connect/flags";
 import { normalizeDataBlock } from "@/lib/caps/data/brief";
@@ -94,7 +95,21 @@ export function normalizeRawBrief(raw: unknown, references: Reference[], opts: {
   if (opts.fullBuilds && b.requirements !== undefined) b.requirements = normalizeRequirements(b.requirements);
   for (const a of asArray(b.actions)) if (typeof a.name === "string") a.name = snakeCase(a.name);
   if (typeof b.estimatedCostPerRunUsd === "number") {
-    b.estimatedCostPerRunUsd = Math.max(0, Math.round(b.estimatedCostPerRunUsd * 10_000) / 10_000);
+    b.estimatedCostPerRunUsd = roundCost(b.estimatedCostPerRunUsd);
+  }
+  // The total is the sum of the parts, worked out here, never the writer's own arithmetic (Nov 3 audit: parts of
+  // about $0.02 under "Total about $0.12"). The parts carry the dollars, so a figure left in the notes goes.
+  if (Array.isArray(b.costItems)) {
+    const items = asArray(b.costItems).slice(0, COST_ITEMS_MAX);
+    for (const i of items) {
+      if (typeof i.what === "string") i.what = clamp(i.what, COST_ITEM_WHAT_MAX);
+      if (typeof i.usd === "number" && Number.isFinite(i.usd)) i.usd = Math.max(0, Math.round(i.usd * 1_000_000) / 1_000_000);
+    }
+    b.costItems = items;
+    if (items.length && items.every((i) => typeof i.usd === "number" && Number.isFinite(i.usd))) {
+      b.estimatedCostPerRunUsd = roundCost(items.reduce((s, i) => s + (i.usd as number), 0));
+      if (typeof b.costNotes === "string") b.costNotes = notesWithoutDollars(b.costNotes);
+    }
   }
 
   const insp = b.inspiration as Loose | undefined;

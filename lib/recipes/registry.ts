@@ -174,7 +174,7 @@ export function recipesWriterRules(caps: readonly CapId[]): string {
   );
   if (available.some((r) => r.longRun)) {
     lines.push(
-      `- A long recipe (${available.filter((r) => r.longRun).map((r) => r.id).join(", ")}) is the exception to one run costing cents: it has its own daily budget, and estimatedCostPerRunUsd and costNotes count its turns honestly, in dollars. complexity is "complex". Don't add the agent target for one: it writes its own loop.`,
+      `- A long recipe (${available.filter((r) => r.longRun).map((r) => r.id).join(", ")}) is the exception to one run costing cents: it has its own daily budget, and costItems count its turns honestly, in dollars. complexity is "complex". Don't add the agent target for one: it writes its own loop.`,
     );
   }
   if (available.some((r) => r.id === "recipe-case-agent")) {

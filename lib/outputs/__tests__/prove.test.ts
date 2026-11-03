@@ -797,6 +797,19 @@ describe("the room's Prove it rows", () => {
     assert.equal(mcp!.children![0]!.state, "failed");
   });
 
+  it("shows $0.00 for a finished run that spent nothing, as the fridge build's did when every call failed", () => {
+    const [row] = proveRows([ev("stage", "done", { costUsd: 0 }), ev("mcp", "failed"), ev("gadget", "failed")], later);
+    assert.equal(row!.title, "stage done");
+    assert.equal(row!.description, "$0.00 est.");
+  });
+
+  it("shows no cost while the run is going, or for an old run whose closing line carried none", () => {
+    const [running] = proveRows([ev("stage", "running", { costUsd: 0 }), ev("cli", "running")], later);
+    assert.equal(running!.description, undefined);
+    const [old] = proveRows([ev("stage", "done"), ev("cli", "done")], later);
+    assert.equal(old!.description, undefined);
+  });
+
   it("says a run that stopped writing never finished", () => {
     const [row] = proveRows([ev("stage", "running"), ev("cli", "running")], new Date("2026-10-31T13:00:00.000Z").getTime());
     assert.equal(row!.state, "failed");

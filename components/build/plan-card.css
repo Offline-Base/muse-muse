@@ -12,6 +12,16 @@
   min-width: 0;
 }
 
+/*
+ * The plan card already shows Muse, so the walking Muse (components/mascot/Mascot.tsx) stays off while one is on the page.
+ * It walks along the bottom of the window over whatever is there, and in a room that was the plan's own text (Nov 3
+ * audit, the fridge room: "Upload plus two sample fridge photos" under it). One Muse at a time, and the plan stays readable.
+ */
+:root:has(.plan-card) .mascot,
+:root:has(.plan-card) .mascot-climb {
+  display: none;
+}
+
 .plan-card {
   --plan-swap: 300ms;
   display: grid;

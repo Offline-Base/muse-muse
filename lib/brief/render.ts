@@ -1,6 +1,7 @@
 import { targetLabel } from "@/lib/format";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
+import { costSentence } from "@/lib/brief/cost";
 import type { Brief, TargetId } from "@/lib/brief/schema";
 import { NOTE_REPLY_PREFIX } from "@/lib/pipeline/control";
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
@@ -175,10 +176,6 @@ function agentLines(brief: Brief): string[] {
       ? "During this build, its tools return sample results and connections show a sample account. Test the structure (a finished step, a card with what it found or did on the account), never the sample's words. It has no web sources, so don't show or test source links."
       : "During this build, tools other than web search return sample results with `example.com` links and connections show a sample account. Test the structure (a finished step, a source link, the answer card), never the sample's words.",
   ];
-}
-
-function money(usd: number): string {
-  return usd >= 0.1 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4).replace(/0+$/, "").replace(/\.$/, ".00")}`;
 }
 
 function extensionKind(fileName: string): string {
@@ -488,7 +485,7 @@ export function renderBuildPrompt(
     "",
     "## Cost",
     "",
-    `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
+    costSentence(brief),
     brief.agent && briefTargets(brief).includes("agent")
       ? "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`. Keep all the tests to at most 3 agent runs, each with `maxTurns` 3 or 4."
       : full
@@ -819,7 +816,7 @@ export function briefToMarkdown(brief: Brief): string {
     "",
     "## Cost",
     "",
-    `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
+    costSentence(brief),
     "",
     `Complexity: ${brief.complexity}.`,
   );

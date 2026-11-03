@@ -833,3 +833,53 @@ function firstLine(text: string): string {
   const line = (text ?? "").split("\n").find((s) => s.trim()) ?? "";
   return line.length > 240 ? `${line.slice(0, 239)}…` : line;
 }
+
+const DONE_PREFIX = /^done\.\s+/i;
+
+/**
+ * The message a round's done line repeats, if any. The log keeps only the first line of Muse Code's last message in its
+ * done line (lib/sandbox/msp-log.ts), with "Done. " in front, so "Done. Milestone 3 is built. What changed:" is the start
+ * of a message that goes on with its list. Null when the done line is something else.
+ */
+export function doneEchoes(done: string, says: readonly string[]): string | null {
+  const line = done.trim();
+  if (!line) return null;
+  for (let i = says.length - 1; i >= 0; i--) {
+    const said = says[i]!.trim();
+    if (!said) continue;
+    if (said === line) return said;
+    // The prefix is the log's own unless the message itself starts with "Done".
+    const head = (/^done\b/i.test(said) ? line : line.replace(DONE_PREFIX, "")).replace(/…$/, "").trimEnd();
+    if (head && said.startsWith(head)) return said;
+  }
+  return null;
+}
+
+/**
+ * Text that ends on a colon with nothing after it, such as a cut "What changed:", ends on the sentence before it when
+ * that clause is only a few words, and with a period otherwise. Anything else comes back as it was, trimmed.
+ */
+export function noDanglingColon(text: string): string {
+  const t = text.trimEnd();
+  const end = /[*_]*:[*_]*$/.exec(t);
+  if (!end) return t;
+  const head = t.slice(0, end.index).trimEnd();
+  let start = 0;
+  for (const m of head.matchAll(/[.!?][*_)"'`]*\s+|\n+/g)) start = (m.index ?? 0) + m[0].length;
+  const before = head.slice(0, start).trimEnd();
+  const clause = head.slice(start).trim();
+  if (before && clause.split(/\s+/).length <= 4) return before;
+  return head ? `${head}.` : "";
+}
+
+/**
+ * What a round ended on, for the conversation: Muse Code's whole last message, list and all, when the done line holds
+ * only its first line, and never a dangling colon. Falls back to the done line, then the last message.
+ */
+export function closingWords(finalText: string | null | undefined, says: readonly string[]): string | undefined {
+  const done = finalText?.trim() ?? "";
+  const echoed = done ? doneEchoes(done, says) : null;
+  let text = done || says.map((s) => s.trim()).filter(Boolean).at(-1) || "";
+  if (echoed && echoed !== done) text = DONE_PREFIX.test(done) && !/^done\b/i.test(echoed) ? `Done. ${echoed}` : echoed;
+  return noDanglingColon(text) || undefined;
+}

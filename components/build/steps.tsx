@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SourceItem, StepItem, StepMedia, StepState, StepsEnd } from "@/components/chat";
-import { groupLog, type AgentNode, type LogGroup, type Note, type OpenQuestion, type RailState, type RailStep, type RoomState, type Segment, type WatcherRun } from "@/components/build/derive";
+import { closingWords, doneEchoes, groupLog, noDanglingColon, type AgentNode, type LogGroup, type Note, type OpenQuestion, type RailState, type RailStep, type RoomState, type Segment, type WatcherRun } from "@/components/build/derive";
 import { GoalCard, Thinking, TodoList, statusWords, steerMeta } from "@/components/build/session";
 import { BriefBody, CheckBody, VERIFY_LABEL, groupSummary, museUsageText, segmentMeta } from "@/components/build/turns";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
@@ -150,14 +150,15 @@ function logRows(seg: MuseSegment, live: boolean, listsAgents: boolean): StepIte
   const { groups } = groupLog(seg.lines);
   const lastActivity = groups.reduce((at, g, i) => (g.type === "activity" ? i : at), -1);
   const lastSay = groups.reduce<string | null>((said, g) => (g.type === "say" ? g.text.trim() : said), null);
+  // On the session bridge the last message comes twice: as itself, and as the first line of what the round ended on.
+  const echoesLast = (done: string) => lastSay !== null && doneEchoes(done, [lastSay]) !== null;
   return groups.flatMap((g, i): StepItem[] => {
     const id = `${seg.key}/${i}`;
     switch (g.type) {
       case "say":
         return [{ id, title: "", state: "done", body: <MarkdownText className="say" text={g.text.trim()} /> }];
       case "done":
-        // On the session bridge the last message comes twice: as itself, and as what the round ended on.
-        return g.text.trim() === lastSay ? [] : [{ id, title: "", state: "done", body: <MarkdownText className="say say-final" text={g.text.trim()} /> }];
+        return echoesLast(g.text) ? [] : [{ id, title: "", state: "done", body: <MarkdownText className="say say-final" text={noDanglingColon(g.text)} /> }];
       case "thinking":
         return [{ id, title: "", state: "done", body: <Thinking text={g.text} /> }];
       case "steer":
@@ -457,11 +458,11 @@ function checkLine(seg: CheckSegment): ConvoItem | null {
   return { type: "step", key: seg.key, title: `Checks found problems${tryWord}`, ...(said ? { description: truncate(said, 200) } : {}), state: "failed" };
 }
 
-/** What a finished round said last. */
+/** What a finished round said last: its whole last message, not only the first line the done line keeps. */
 function roundWords(seg: MuseSegment): string | undefined {
   const { groups, summary } = groupLog(seg.lines);
-  const says = groups.filter((g): g is Extract<LogGroup, { type: "say" }> => g.type === "say");
-  return summary.finalText?.trim() || says[says.length - 1]?.text.trim();
+  const says = groups.flatMap((g) => (g.type === "say" ? [g.text] : []));
+  return closingWords(summary.finalText, says);
 }
 
 /** A shipped build's answer, which reads under what it made: what its last round said. */

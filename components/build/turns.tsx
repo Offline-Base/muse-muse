@@ -10,6 +10,7 @@ import { groupLog, type LogGroup, type Segment } from "@/components/build/derive
 import { DrillGroup } from "@/components/build/DrillGroup";
 import { splitDrillSteps } from "@/lib/edge/drills";
 import { splitBuildNote } from "@/lib/docs/build-note";
+import { costItemsOf, planMoney, runCostUsd } from "@/lib/brief/cost";
 import { compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
 import type { Brief, Reference } from "@/lib/types";
 
@@ -117,6 +118,8 @@ export function BriefBody({ brief, title = true }: { brief: Brief; title?: boole
   const dontCopy = filled(brief.inspiration.dontCopy);
   const inspo = brief.inspiration.summary.trim();
   const costNotes = brief.costNotes.trim();
+  // The total is the sum of the parts listed under it, worked out in code (lib/brief/cost.ts), so the two always agree.
+  const costParts = costItemsOf(brief);
   return (
     <div className="rich">
       {title ? (
@@ -269,9 +272,22 @@ export function BriefBody({ brief, title = true }: { brief: Brief; title?: boole
             </div>
           ) : null}
           <p>
-            <strong>Cost per run:</strong> about {usd(brief.estimatedCostPerRunUsd)} (est.).{" "}
-            {costNotes ? <span className="muted">{costNotes}</span> : null}
+            <strong>Cost per run:</strong> about {costParts.length ? planMoney(runCostUsd(brief)) : usd(brief.estimatedCostPerRunUsd)} (est.)
+            {costParts.length ? ", from these parts:" : "."}{" "}
+            {costNotes && !costParts.length ? <span className="muted">{costNotes}</span> : null}
           </p>
+          {costParts.length ? (
+            <>
+              <ul>
+                {costParts.map((c, i) => (
+                  <li key={i}>
+                    {c.what.replace(/[.;\s]+$/, "")}: {planMoney(c.usd)}
+                  </li>
+                ))}
+              </ul>
+              {costNotes ? <p className="muted">{costNotes}</p> : null}
+            </>
+          ) : null}
         </>
       )}
     </div>
