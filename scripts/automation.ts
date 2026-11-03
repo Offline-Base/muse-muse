@@ -66,6 +66,20 @@ export async function postJson(site: string, path: string, body: unknown, secret
   return { status: res.status, json: json && typeof json === "object" ? json : {} };
 }
 
+/**
+ * GET a public JSON route with no key (the build status route is public, like the build room). `json` is null when the
+ * body isn't JSON, which is how a route that isn't deployed answers (Next's HTML 404 page). A network failure is status 0.
+ */
+export async function getJson(site: string, path: string): Promise<{ status: number; json: Record<string, unknown> | null }> {
+  try {
+    const res = await fetch(`${site}${path}`, { redirect: "manual", headers: { accept: "application/json" } });
+    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    return { status: res.status, json: json && typeof json === "object" ? json : null };
+  } catch (err) {
+    return { status: 0, json: { error: "network", message: err instanceof Error ? err.message : String(err) } };
+  }
+}
+
 /** What a refusal said, for the results file: the error code, its message or refusal text, and when to retry. */
 export function refusalOf(r: PostResult): Record<string, unknown> {
   const { error, message, refusal, retryAfterSeconds } = r.json as Record<string, unknown>;

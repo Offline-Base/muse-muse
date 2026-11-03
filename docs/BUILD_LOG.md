@@ -4261,3 +4261,31 @@ Cost (list prices, the code's estimates, not checked against the bills):
 - components/train/__tests__/fixtures/tune-flag-off.json: the build room render it pins changed with this morning's deliberate room changes (the same render hash the plan-art golden was refreshed to). Regenerated with TUNE_GOLDEN_WRITE=1; flag off and on still render the same.
 - Tests: partner, host, scripts, no-wonder and train component suites pass; typecheck clean; partner and train workflow bundles keep only pure imports.
 - Owner decision, Nov 3 afternoon: $200 Meta API budget for all builds, a final Muse Wonder UI pass at the end of each build, every product fully working and good enough for Meta to feature.
+
+## Nov 3, 2026, about 1:45 PM ET: batch tools to polish, cost and audit the 53 builds (branch tg-w-batch, not pushed)
+
+- **Why:** the owner's Nov 3 afternoon decision. The 53 cookbook and showcase builds started from `scripts/demo-batch.ts` each get a final Muse Wonder UI pass, everything has to stay inside $200 of Meta spend, and every product has to work well enough for Meta to feature.
+- **`npm run polish-batch -- <demo-batch files or build ids>`** (scripts/polish-batch.ts):
+  - It polls each build's public status. Once a build is live or partial, it starts that build's polish (`POST /api/builds/<id>/polish`, which another unit adds).
+  - Defaults: 8 at once, a $200 budget, and $2 held back for each polish in flight plus the next one. It stops starting new polishes once spend plus that reserve would pass the budget.
+  - If the route answers 404 without the app's JSON, the route isn't deployed yet. It says so plainly and exits 2, and `--resume=<file>` carries on later without polishing any build twice.
+  - It waits and retries on 409, 429 and 503, and gives up on a build after 6 tries. It stops on 401 or 403.
+  - It saves to .data/polish-<time>.json after every change. `--dry` prints the plan with no key. `--focus-file` sends each failing product's audit paragraph with its polish.
+- **`npm run spend-ledger -- <files or ids>`** (scripts/spend-ledger.ts):
+  - It adds up `build.costUsd` from `GET /api/builds/<id>` for each build and each polish refinement (a refinement is a build of kind "refine" with its own costUsd), prints a table and what is left, and exits 1 when over budget.
+  - The public route doesn't list a product's refinements. Their ids come from the polish files, plus the product's `latestBuildId` when it is newer than the batch's build.
+  - It doesn't count a product's own model calls after it ships, and the table says so.
+- **`npm run audit-batch -- <files, ids or product addresses>`** (scripts/audit-batch.ts):
+  - It runs Playwright, taken from node_modules or template/node_modules, on desktop 1440x900 and phone 390x844. That is at most 2 main-flow runs per product, with at most 4 products at once in one headless Chromium.
+  - Each run presses "Try the sample", then the next main button (`.primary.ai` first), and waits up to 150 s.
+  - It records console errors, failed /api calls, answers with `model: false`, `fallback: true`, `estimate: true` or an `error` field, sideways scroll, controls under 44 px on the phone and text cut off at the right edge, with screenshots.
+  - It writes .data/audit-<time>.json and .md: pass or fail for each product, and a focus paragraph for each failing one that polish-batch reads back.
+  - It types nothing (made-up samples only). Each sample run calls the product's own models through its live token, so an audit spends a little, outside build costUsd.
+- **Pure parts** are in scripts/batch/logic.ts and scripts/batch/audit-logic.ts: the status parsing, ledger math, polish answers, queue and budget, focus text and markdown. The in-page scripts are plain strings, so the TypeScript runner's helpers never reach the page. `getJson` was added to scripts/automation.ts.
+- **Checked, no spend:**
+  - Free public GETs: `--dry` on the three demo-batch files read so far showed 34 builds, all still building, $0.62 spent, $199.38 left.
+  - The ledger exits 1 with `--budget=0.001`.
+  - `audit-batch --dry` lists the builds it skips.
+  - A full browser audit of two local fake products made of static pages with no model: the clean one passed, and the broken one failed on all 7 problem kinds with screenshots.
+  - No build, polish, refinement or model call ran.
+- **Tests:** scripts/__tests__/batch-logic.test.ts, audit-logic.test.ts and automation.test.ts, 42 of 42. Typecheck clean. None of the new files has "use step" or "use workflow", so no workflow bundle changed.
