@@ -1524,3 +1524,53 @@ export const codeExports = pgTable(
   },
   (t) => [uniqueIndex("code_exports_owner_idx").on(t.productId, t.provider, t.ownerKind, t.ownerKey)],
 );
+
+// ---------- 0033_sam_tune (lib/train/sam/, SAM_TUNE) ----------
+
+/**
+ * A run teaching SAM 3.1 a new word on the office board (jetson-03). The board pulls queued runs through the worker API
+ * (app/api/train/sam/worker/), so production never holds a fleet token. `job_token_hash` is the sha256 of the token handed
+ * over at claim; the plain token is never stored. The verdict and caveats in `report` are written by the server
+ * (lib/train/sam/logic.ts), never taken from the board. `uploads` lists the files this run's board saved, for the caps.
+ * One run is claimed or running at a time, held by a partial unique index.
+ */
+export const samTuneRuns = pgTable(
+  "sam_tune_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    word: text("word").notNull(),
+    generic: text("generic").notNull(),
+    data: text("data").$type<import("@/lib/train/sam/types").SamData>().notNull(),
+    status: text("status").$type<import("@/lib/train/sam/types").SamStatus>().notNull().default("draft"),
+    photos: jsonb("photos").$type<import("@/lib/train/sam/types").SamPhoto[]>().notNull().default([]),
+    distractors: jsonb("distractors").$type<import("@/lib/train/sam/types").SamDistractor[]>().notNull().default([]),
+    seed: integer("seed").notNull(),
+    epochs: integer("epochs").notNull(),
+    stage: jsonb("stage").$type<import("@/lib/train/sam/types").SamProgress>(),
+    report: jsonb("report").$type<import("@/lib/train/sam/types").SamReport>(),
+    error: text("error"),
+    uploads: jsonb("uploads").$type<string[]>().notNull().default([]),
+    costUsd: real("cost_usd").notNull().default(0),
+    maxUsd: real("max_usd").notNull(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    workerId: text("worker_id"),
+    jobTokenHash: text("job_token_hash"),
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    shown: boolean("shown").notNull().default(false),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("sam_tune_one_active").on(sql`(true)`).where(sql`${t.status} in ('claimed', 'running')`),
+    index("sam_tune_queue_idx").on(t.status, t.createdAt),
+  ],
+);
+
+/** When each office board last asked for a SAM tune run, for the room's "jetson-03 ready, last seen 20 s ago". */
+export const samWorkers = pgTable("sam_workers", {
+  workerId: text("worker_id").primaryKey(),
+  seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
+  freeMemMb: integer("free_mem_mb").notNull(),
+  freeDiskMb: integer("free_disk_mb").notNull(),
+});
