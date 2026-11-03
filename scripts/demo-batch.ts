@@ -10,6 +10,8 @@
  *   npm run demo-batch -- --set=showcase    the video's showcase builds: allapis, classgame and tutor (three builds)
  *   npm run demo-batch -- --set=showcase allapis   only the one that calls every Meta API a product can use today
  *   npm run demo-batch -- --set=cookbook    one build per app-build recipe in Meta's cookbook, ids are the recipe slugs (docs/COOKBOOK.md)
+ *   npm run demo-batch -- --set=skills      one build per skill we made (recipes and template skills), ids are skill-<skill name>
+ *   npm run demo-batch -- --help            print this list
  * Uses AUTOMATION_SECRET from .env.local, acting as the first ADMIN_EMAILS user (no daily build limit), the same way
  * scripts/rebuild-all.ts does. The secret is sent only as the Authorization header and never printed.
  * Writes the build links to .data/demo-batch-<time>.json.
@@ -235,16 +237,77 @@ const COOKBOOK_NOTES: readonly DemoNote[] = [
   { id: "muse-spark-open-torchtitan-rl", recipe: "recipe-open-weights", note: "Build a reward spread checker to run before an RL training job. I paste made-up warehouse word problems with whole-number answers and pick exact match, boxed answer, or a number within a tolerance. It samples four answers per problem and scores each one in code. It shows each group's rewards and advantages and whether that group teaches the model anything, then gives a verdict for the whole task. It exports task.jsonl and the TorchTitan with_task snippet, and comes with 12 sample problems from easy to hard." },
 ];
 
+/**
+ * `--set=skills`: one build per skill we made, so each recipe (lib/recipes/skills) and each template skill a brief can
+ * trigger (template/.agents/skills, template-native/.agents/skills) has a product Meta could feature. id = skill-<skill
+ * name>, recipe = the skill. The heroes vary (a teacher, a small shop, a nurse, a coach, a student), every person, place
+ * and record is made up, and only Meta models answer. New products, not the DEMO_NOTES or cookbook ones again.
+ * What each needs on the site, or the build comes back without that skill:
+ * - the recipe-* notes: RECIPES_ENABLED; recipe-case-agent and recipe-simulated-loops also AGENT_LONG_RUNS, and
+ *   recipe-verified-agent VERIFY_AGENTS and AGENTS_ENABLED (it adds the agent target itself).
+ * - skill-meta-glimmer: nothing. With GPU_GLIMMER_SHARED off, the product answers with Muse Wonder and says the Glimmer
+ *   mode needs a Glimmer endpoint (meta-glimmer skill), so it spends no GPU.
+ * - skill-muse-edge: EDGE_ENABLED and EDGE_BUILDS, or /api/inspirations refuses the edge target (400).
+ * - skill-muse-gadget: GADGETS_ENABLED. The build runs on the simulated gadget; live, with no board, it asks for an upload.
+ * - skill-muse-native: phone offered (NATIVE_TARGETS with PACKAGER_SNAPSHOT_ID), or the phone target is refused (400).
+ * Left out: jetson-fleet. The writer is offered it only with FLEET_PRODUCTS and the fleet's URL, jik_ key and model set,
+ * and without them nothing answers in its place (the product only says the fleet is offline), so a public build can't
+ * show it. meta-chat, meta-image, meta-voice and meta-sam are the showcase's allapis basics, and meta-spark-open and
+ * shared-keys wait on owner switches (SPARK_OPEN_PRODUCTS, the owner's service accounts).
+ */
+const SKILL_NOTES: readonly DemoNote[] = [
+  // Recipes (lib/recipes/registry.ts).
+  { id: "skill-recipe-voice", recipe: "recipe-voice", note: "Build a parent conference notes tool for a made-up 4th grade teacher: I upload a recording of a conference held in Spanish and English, pick both languages as hints and add the made-up student's name, Mateo, as a keyword, and it gives me a transcript with the speakers labeled, a short summary in English and in Spanish, and a checklist of what the teacher and the family each agreed to do, which I can edit and download. It ships with a sample recording of two made-up speakers, made in the build, so Try the sample runs the real transcription." },
+  { id: "skill-recipe-image", recipe: "recipe-image", note: "Build a product photo studio for a made-up candle shop called Ember and Wick: I upload one photo of a candle (the sample is a realistic amber jar candle on a plain table), it keeps that photo as the anchor, then makes a series of four seasonal scenes (a spring windowsill, a summer patio, an autumn bookshelf, a winter mantel) where the jar's shape and color stay the same, and I can redo any one scene with a short change. Each image is labeled as made by AI, and I can download the set as PNGs for the shop's page." },
+  { id: "skill-recipe-api", recipe: "recipe-api", note: "Build a shift handoff card maker for nurses on a made-up hospital unit: I paste a messy end-of-shift note about a made-up patient, and it streams back a clean handoff card in the SBAR format (situation, background, assessment, recommendation) as JSON checked against a schema it shows me, with a list of anything the note left out, like a missing allergy line. A Stop button ends the stream. It ships with two messy sample notes on made-up patients, says it only formats notes and gives no medical advice, and shows the tokens used under each card." },
+  { id: "skill-recipe-games", recipe: "recipe-games", note: "Build a 3D marble maze for a made-up middle school's game club, built in rounds: tilt a board made of simple shapes with the arrow keys, or touch buttons over the canvas on a phone, to roll a marble past holes and moving walls to a glowing goal, with three short levels, a 45-second timer per level and the best time saved in this browser. Every run ends on its own, at the goal, in a hole or when time runs out, with an end screen and a Retry button." },
+  { id: "skill-recipe-sam-media", recipe: "recipe-sam-media", note: "Build a practice clip tracker for a made-up adult rec league soccer coach: I upload a short clip of a player dribbling and shooting (the sample starts from a realistic photo of a made-up adult player in a red jersey with a ball on a grass field), type 'player' and 'ball', and SAM 3.1 tracks both through the clip as colored masks, with a trail showing the ball's path. I can step through it frame by frame, add a coaching note to any frame, and download the masked clip as WebM." },
+  { id: "skill-recipe-visual-reports", recipe: "recipe-visual-reports", note: "Build a shelf check for a made-up neighborhood hardware store, Pine Street Hardware: I upload a photo of an aisle, and one vision call places a numbered dot right on each empty spot, mixed-up item or fallen box, red for empty and amber for messy. Tapping a dot opens a card with what's there, what's wrong and what to restock. It ships with two realistic sample shelf photos with every item in plain view, says the dots are approximate, and I can download the result as one self-contained HTML page with the photo and dots to hand to staff." },
+  { id: "skill-recipe-case-agent", recipe: "recipe-case-agent", note: "Build a legal case agent on a new fictional dispute: Corner Crumb Bakery, a made-up tenant, says its made-up landlord kept a $3,200 security deposit for an oven hood the bakery says was already broken at move-in. It reads the file (the lease, the move-in checklist, three emails and two invoices), drafts a checklist, proves each item with exact page quotes, asks me for evidence when it is stuck, and files a memo I sign off. Show every turn live. The case is made up and it isn't legal advice." },
+  { id: "skill-recipe-verified-agent", recipe: "recipe-verified-agent", note: "Build a policy answer checker for nurses on a made-up hospital unit, 4 West: I upload the unit's made-up policy binder (medication storage, visitor hours, fall checks, shift swaps), ask a question like 'how often do we check the crash cart?', and every answer quotes the binder exactly, a second check reviews each claim against its quote, and it can't answer until both pass. When the binder doesn't say, it stops and tells me to ask the charge nurse. It ships with a sample binder and five sample questions, one the binder doesn't cover." },
+  { id: "skill-recipe-agent-patterns", recipe: "recipe-agent-patterns", note: "Build a gradebook bug fixer for a made-up 9th grade teacher: it ships a tiny made-up gradebook project in JavaScript with three planted bugs (a weighted average that rounds too early, a late penalty applied twice, a drop-the-lowest-quiz rule that drops the highest), each with one failing test. I pick a failing test and press Run, the model reads, edits and runs the tests one tool call per turn, I see each turn as THINK, ACT, RESULT and EVAL, it stops at 15 turns, and the page's own test run decides Fixed and shows the diff. Every student in it is made up." },
+  { id: "skill-recipe-code-sessions", recipe: "recipe-code-sessions", note: "Build a goal keeper for a coding agent working on a made-up student's flashcard app: I pin the goal 'cards I miss come back the next day, cards I know wait longer, and my streak resets after a skipped day' with 4 acceptance checks, and the agent works on the bundled project until all 4 pass. A status line shows how many checks pass, a nudge appears when it drifts, it is refused if it tries to mark the goal done early, and every model call and edit goes into a log I can download as JSON. The page says plainly it is a stand-in for Muse Code's harness." },
+  { id: "skill-recipe-simulated-loops", recipe: "recipe-simulated-loops", note: "Build a packing robot demo for a made-up tea shop, Leaf and Ladle, on a simulated robot arm labeled Simulated arm: I pick one of three sample orders, and an agent on Muse Wonder looks at a picture of the shelf, moves the arm to put each tin in the box one move at a time, looks again after every move, and stops for my Approve before it seals the box. Every move shows the step count, tokens and cost, and the run ends on a card that says packed, stopped by me, or stopped at 25 moves. It opens on a labeled replay, with a Start button for a real run." },
+  { id: "skill-recipe-open-weights", recipe: "recipe-open-weights", note: "Build an SFT data studio for a made-up swim club's head coach, who wants Muse Spark Open to answer parents' common questions in the club's voice. I paste our made-up question and answer chats as JSONL or as a CSV, and it flags broken rows, duplicates and weak answers, drafts ten more chats in our style, shows which tokens get trained, splits off a held-out set, and exports train.jsonl, heldout.jsonl and the TorchTitan recipe file. It says plainly that it trains nothing itself, and comes with 20 made-up sample chats with a few planted problems." },
+
+  // Template skills a brief triggers (template/.agents/skills, template-native/.agents/skills).
+  { id: "skill-meta-reasoning", recipe: "meta-reasoning", note: "Build a lab report helper for a made-up high school chemistry class: a student uploads the lab handout as a PDF and a photo of their handwritten data table, Muse Wonder reads both and returns the measurements as JSON, code redoes the averages and percent error and marks any row where the math is off, and it explains what each number means without writing the report for them. It ships with a sample handout and a sample photo of a made-up data table with one planted arithmetic slip." },
+  { id: "skill-meta-glimmer", recipe: "meta-glimmer", note: "Build a staff picks writer for a made-up independent bookstore, Paper Lantern Books, that wants an open-weights model it can host itself later: a clerk types a book's title and two lines about why they loved it, and it writes a shelf card in three lengths to print. It uses Muse Glimmer when the shop's own Glimmer endpoint is set and Muse Wonder until then, and every card says which model wrote it. It ships with five made-up sample books." },
+  { id: "skill-muse-edge", recipe: "muse-edge", targets: ["edge"], note: "Build a supply room checker for a made-up rural clinic that keeps answering on the clinic's own board when the internet is down: a nurse snaps a photo of the supply shelf, it counts the glove boxes, mask packs and gauze rolls it can see, flags what's below the restock level the clinic sets, and writes a short reorder list. Every answer says whether the cloud or the board answered. It ships with two realistic sample shelf photos." },
+  { id: "skill-muse-gadget", recipe: "muse-gadget", note: "Build a class plant journal for a made-up 3rd grade classroom with a camera board on the windowsill: each morning a student presses Take photo, the board photographs the class bean plants, and Muse Wonder notes each plant's height against the ruler beside it, any new leaves and whether the soil looks dry, adding a dated entry to a growth chart the class reads on the big screen. When no board is connected it says so clearly and lets the teacher upload a photo instead. It ships with three sample photos from different days." },
+  { id: "skill-muse-native", recipe: "muse-native", targets: ["phone"], note: "Build a practice planner for a made-up adult rec basketball coach that feels made for a phone: pick drills from a list, or snap a photo of the whiteboard and it turns the writing into a drill list, then run practice with a big countdown for each drill, a buzz on the phone at every switch and a reminder before practice starts. Share the plan with the team from the share sheet. It ships with a sample practice of six drills." },
+];
+
 /** The note sets `--set=` picks from. No flag is DEMO_NOTES, as before. An unknown set stops here: it used to start all of DEMO_NOTES. */
+export const SETS = ["targets", "showcase", "cookbook", "skills"] as const;
+
 export function noteSet(name: string | undefined): readonly DemoNote[] {
   if (name === "targets") return TARGET_NOTES;
   if (name === "showcase") return SHOWCASE_NOTES;
   if (name === "cookbook") return COOKBOOK_NOTES;
+  if (name === "skills") return SKILL_NOTES;
   if (name === undefined) return DEMO_NOTES;
-  throw new Error(`--set=${name} isn't a known set. Sets: targets, showcase, cookbook.`);
+  throw new Error(`--set=${name} isn't a known set. Sets: ${SETS.join(", ")}.`);
 }
 
+/** What --help prints. */
+export const USAGE = [
+  "npm run demo-batch -- [--dry] [--url=<site>] [--set=<set>] [ids...]",
+  "  --dry             print the notes, start nothing",
+  "  --url=<site>      another deployment (default https://www.musemuse.dev)",
+  "  (no --set)        one build per recipe, plus the legal case agent",
+  "  --set=targets     one build per target: phone, desktop, vr, glasses, agent, edge",
+  "  --set=showcase    the video's showcase builds: allapis, classgame and tutor",
+  "  --set=cookbook    one build per app-build recipe in Meta's cookbook, ids are the recipe slugs",
+  "  --set=skills      one build per skill we made (recipes and template skills), ids are skill-<skill name>",
+  "  ids...            only the named ones from the set",
+].join("\n");
+
 async function main(): Promise<void> {
+  if (process.argv.includes("--help")) {
+    console.log(USAGE);
+    return;
+  }
   const dry = process.argv.includes("--dry");
   const set = noteSet(arg("set"));
   const notes = pickIds(set, words());
