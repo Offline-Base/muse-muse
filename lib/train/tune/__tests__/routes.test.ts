@@ -242,6 +242,23 @@ describe("tune routes", { skip: canMock ? false : "needs --experimental-test-mod
       assert.deepEqual(called("reserveCounter")[0]!.args, ["tune-plan:admin-1", 20]);
     });
 
+    it("says who will write a described run's examples, and refuses a dataset-only plan before the model call when MAKE_CHAT_ALL is off", async () => {
+      const res = await planRoute(req("/api/train/plan", { note: NOTE }));
+      assert.equal(((await res.json()) as { writerModel?: string }).writerModel, "muse-spark-1.3-contributor");
+      const before = called("respondStructured").length;
+      delete process.env.MAKE_CHAT_ALL;
+      const off = await planRoute(req("/api/train/plan", { note: NOTE, settings: { datasetOnly: true } }));
+      assert.equal(off.status, 404);
+      assert.equal(((await off.json()) as { error: string }).error, "dataset_only_off");
+      assert.equal(called("respondStructured").length, before, "no plan call was paid for");
+      process.env.MAKE_CHAT_ALL = "1";
+      try {
+        assert.equal((await planRoute(req("/api/train/plan", { note: NOTE, settings: { datasetOnly: true } }))).status, 200);
+      } finally {
+        delete process.env.MAKE_CHAT_ALL;
+      }
+    });
+
     it("drafts on Muse Wonder on production, whatever TEST_MODEL says", async () => {
       process.env.VERCEL_ENV = "production";
       await draftOne();

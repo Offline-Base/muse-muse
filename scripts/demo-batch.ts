@@ -2,7 +2,7 @@
  * Starts one test build per cookbook recipe, plus the legal case agent, on the live site, then exits. The builds run on
  * Vercel, so the laptop can close once this prints "started". Every note uses made-up data, and builds run on whatever
  * model the site is set to (Muse Spark 1.3 Contributor while BUILDS_ON_CONTRIBUTOR is on).
- *   npm run demo-batch                      start them all on https://musemuse.dev
+ *   npm run demo-batch                      start them all on https://www.musemuse.dev
  *   npm run demo-batch -- --dry             print the notes, start nothing
  *   npm run demo-batch -- --url=<site>      another deployment
  *   npm run demo-batch -- legal games       only the named ones
@@ -11,9 +11,9 @@
  * scripts/rebuild-all.ts does. The secret is sent only as the Authorization header and never printed.
  * Writes the build links to .data/demo-batch-<time>.json.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
 import { env } from "@/lib/env";
 import { CASE_AGENT_SAMPLE_NOTE } from "@/lib/recipes/registry";
+import { arg, pickIds, postJson, refusalOf, resultsFile, siteArg, words, type PostResult } from "./automation";
 
 type DemoNote = { id: string; recipe: string; note: string; targets?: readonly string[] };
 
@@ -116,44 +116,35 @@ const TARGET_NOTES: readonly DemoNote[] = [
   },
 ];
 
-function arg(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
-
 async function main(): Promise<void> {
   const dry = process.argv.includes("--dry");
-  const site = (arg("url") ?? "https://musemuse.dev").replace(/\/$/, "");
-  const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const set = arg("set") === "targets" ? TARGET_NOTES : DEMO_NOTES;
-  const notes = only.length ? set.filter((n) => only.includes(n.id)) : set;
-  if (!notes.length) throw new Error(`None of ${only.join(", ")} is a demo id. Ids: ${set.map((n) => n.id).join(", ")}`);
+  const notes = pickIds(set, words());
   if (dry) {
     for (const n of notes) console.log(`${n.id} (${n.recipe})\n  ${n.note}\n`);
     return;
   }
+  const site = siteArg();
   if (!env.automationSecret) throw new Error("AUTOMATION_SECRET isn't in .env.local. It must match the one on Vercel Production.");
-  const started: Array<{ id: string; recipe: string; buildId?: string; link?: string; error?: string }> = [];
+  const file = resultsFile("demo-batch");
+  const started: Array<{ id: string; recipe: string; buildId?: string; link?: string; error?: unknown }> = [];
   for (const n of notes) {
-    const res = await fetch(`${site}/api/inspirations`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.automationSecret}` },
-      body: JSON.stringify({ note: n.note, references: [], ...(n.targets ? { targets: n.targets } : {}) }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { buildId?: string; error?: string };
-    if (res.ok && body.buildId) {
-      started.push({ id: n.id, recipe: n.recipe, buildId: body.buildId, link: `${site}/b/${body.buildId}` });
-      console.log(`started  ${n.id.padEnd(13)} ${site}/b/${body.buildId}`);
+    // Saved after each one, so a failure partway keeps the builds that already started.
+    const res = await postJson(site, "/api/inspirations", { note: n.note, references: [], ...(n.targets ? { targets: n.targets } : {}) }, env.automationSecret).catch(
+      (err: unknown): PostResult => ({ status: 0, json: { error: "network", message: err instanceof Error ? err.message : String(err) } }),
+    );
+    const buildId = typeof res.json.buildId === "string" ? res.json.buildId : undefined;
+    if (res.status >= 200 && res.status < 300 && buildId) {
+      started.push({ id: n.id, recipe: n.recipe, buildId, link: `${site}/b/${buildId}` });
+      console.log(`started  ${n.id.padEnd(13)} ${site}/b/${buildId}`);
     } else {
-      started.push({ id: n.id, recipe: n.recipe, error: `${res.status} ${body.error ?? ""}`.trim() });
-      console.log(`FAILED   ${n.id.padEnd(13)} ${res.status} ${body.error ?? ""}`);
+      started.push({ id: n.id, recipe: n.recipe, error: refusalOf(res) });
+      console.log(`FAILED   ${n.id.padEnd(13)} ${res.status} ${String(res.json.message ?? res.json.error ?? "")}`);
     }
+    file.save({ site, started });
   }
-  mkdirSync(".data", { recursive: true });
-  const file = `.data/demo-batch-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  writeFileSync(file, `${JSON.stringify({ site, started }, null, 2)}\n`);
   const ok = started.filter((s) => s.buildId).length;
-  console.log(`\n${ok} of ${notes.length} started. Links saved in ${file}. They run on Vercel, so you can close the laptop.`);
+  console.log(`\n${ok} of ${notes.length} started. Links saved in ${file.path}. They run on Vercel, so you can close the laptop.`);
   if (ok < notes.length) process.exitCode = 1;
 }
 

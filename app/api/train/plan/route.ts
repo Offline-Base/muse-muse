@@ -2,9 +2,11 @@ import { contributorWriterOn, env } from "@/lib/env";
 import { reserveCounter } from "@/lib/gateway/store";
 import { errorJson, readJson, route } from "@/lib/http";
 import { spendPaused } from "@/lib/quota";
+import { makeChatAllOn } from "@/lib/make/switch";
 import { runCaller, runCallerToCreate, runCeilings, runExamplesMax, withCookies } from "@/lib/train/tune/caller";
 import { buildForTune } from "@/lib/train/tune/build-source";
 import { examplesFromBody } from "@/lib/train/tune/examples";
+import { taskWriterModel } from "@/lib/train/writer";
 import { hasSecret } from "@/lib/train/tune/folder-clean";
 import { askedExamples, clampExamples, contentFindings, draftPlan, NOTE_MAX, NOTE_MIN, StructuredOutputError } from "@/lib/train/tune/plan";
 import { contentFindings as visitorFindings, withVisitorRules } from "@/lib/train/public/content";
@@ -63,6 +65,11 @@ export const POST = route(async (req: Request) => {
   if (!rows) return errorJson(400, "examples must be up to 50 rows, each with a prompt and an answer.");
   const size = askedExamples(body.settings, runExamplesMax(caller));
   if (!size.ok) return errorJson(400, size.error);
+  // A caller that will ask POST /api/train/runs to stop at the dataset says so here, so a site without it refuses before the
+  // plan's model call is paid for and counted, not after.
+  if ((body.settings as { datasetOnly?: unknown } | undefined)?.datasetOnly === true && !makeChatAllOn()) {
+    return errorJson(404, "dataset_only_off", { message: "Stopping at the dataset needs MAKE_CHAT_ALL on this site." });
+  }
   const asked = size.value;
 
   let source: { kind: "build"; buildId: string; productId: string } | { kind: "folder"; hash: string; mode: "rows" | "write" } | undefined;
@@ -131,5 +138,7 @@ export const POST = route(async (req: Request) => {
   }
   await recordUsage({ source: "platform", endpoint: "responses" }, result.usage).catch((e) => console.error("[train/plan] usage", e));
   if (!result.ok) return withCookies(errorJson(422, "refused", { refusal: result.refusal }), out);
-  return withCookies(Response.json({ plan: result.plan }), out);
+  // A described run's examples writer, so an unattended caller can check it before it starts the run.
+  const writerModel = result.plan.source.kind === "task" ? { writerModel: taskWriterModel() } : {};
+  return withCookies(Response.json({ plan: result.plan, ...writerModel }), out);
 });

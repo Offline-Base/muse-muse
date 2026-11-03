@@ -3827,3 +3827,16 @@ Five units, each checked by a second agent, which fixed real problems in all fiv
   - Fix rounds count only fix steps.
 - **Tests:** 34 touched test files plus the pipeline, brief and no-wonder suites, 997 of 997; typecheck clean.
 - **Needs a new builder snapshot** for AGENTS.md, the skills and AgentRun. verify.mjs, smoke-report.mjs, judge-shot.ts and lib/agent refresh on every verify; the rest is live on deploy.
+
+## Nov 3, 2026, 7 AM ET: code review fixes for scripts/demo-tunes.ts (10 findings)
+
+- **No unattended publishing:** the tune starts with `autoPublish: false`, so an overnight run never uploads an adapter to Hugging Face by itself; publishing stays a person's choice in the room.
+- **Nothing lost on a failure:** runs go side by side (`Promise.allSettled`), and the results file is saved after every step, so a failed plan for one run keeps the other's run id and link.
+- **Typos fail:** an unknown id throws with the list of ids, in both scripts, instead of saving an empty file and exiting 0.
+- **Spend is shown and capped:** each plan's cost is printed and saved (examples, GPU ceiling, scoring, minutes). A tune whose GPU ceiling is over `--max-gpu-usd` (default 20, the owner's cap) isn't started. `--plan` drafts the plans and prints their cost without starting anything.
+- **Dataset-only refused before it's paid for:** the script tells `POST /api/train/plan` it will stop at the dataset, and the route answers 404 `dataset_only_off` ("needs MAKE_CHAT_ALL") before the plan's model call.
+- **Redirects and bad URLs:** `--url` must be a full https origin (or localhost). Posts don't follow redirects: a redirect comes back as an error naming where it points, instead of a GET 405 or a dropped key. The default is www.musemuse.dev in both scripts.
+- **Contributor is checked, not assumed:** the plan route now says which model will write a described run's examples (`writerModel`, from the new `lib/train/writer.ts`, the same value startTuneRun saves). The script refuses to start unless it's muse-spark-1.3-contributor, or `--allow-writer=<id>` says otherwise on purpose.
+- **Shared code:** new scripts/automation.ts (flags, the origin, the authorized POST, refusals, the results file), used by demo-batch and demo-tunes. `runHref` moved to lib/train/writer.ts and is re-exported from start.ts.
+- **Refusals saved:** the file keeps the server's error code, message or refusal text, and retryAfterSeconds.
+- **Tests:** new scripts/__tests__/automation.test.ts, and a plan-route test for `writerModel` and the early `dataset_only_off`. Train routes, open-train, tune and GPU suites 308 of 308; typecheck clean.

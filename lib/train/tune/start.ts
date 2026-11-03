@@ -18,6 +18,7 @@ import { attachDatasetRun, createDataset, createImportedDataset, failDataset, ge
 import { TUNE_STEPS } from "@/lib/train/tune/settings";
 import { freshHeartbeat } from "@/lib/train/tune/marks";
 import { tuneRun } from "@/lib/train/tune/run";
+import { runHref, taskWriterModel } from "@/lib/train/writer";
 import { autoPublishOk } from "@/lib/train/tune/auto-publish";
 import { latestTuneJob, readRunMarks, saveRunAutoPublish, saveRunDatasetOnly, saveRunBase, saveRunProduct, saveRunSteps, saveRunTrainer, saveRunVisitor } from "@/lib/train/tune/run-store";
 import type { FolderDraft } from "@/lib/train/tune/folder";
@@ -57,10 +58,7 @@ function giveBackProductDay(day: { key: string; until: Date } | null): Promise<v
   return adjustCounter(day.key, day.until, -1).catch((e) => console.error("[train/tune] release day", e));
 }
 
-/** The room's address for a run. */
-export function runHref(runId: string): string {
-  return `/fine-tuning/runs/${runId}`;
-}
+export { runHref } from "@/lib/train/writer";
 
 /**
  * Starts the tuneRun workflow for a run, which trains it once its examples are ready. Logged, never thrown: without
@@ -161,7 +159,7 @@ export async function startTuneRun(i: {
       title: plan.name,
       task: plan.task,
       requested: plan.settings.examples,
-      writerModel: testModel() ?? DATASET_MODEL,
+      writerModel: taskWriterModel(),
       createdBy: i.callerId,
     });
   } catch (err) {
