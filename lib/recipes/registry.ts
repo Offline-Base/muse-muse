@@ -61,18 +61,22 @@ export const RECIPES: readonly Recipe[] = [
     oneLine: "Muse Image conversations: editing a person's photo in turns, generation grounded by search, a consistent series from anchor images, and careful region edits.",
     limit: "Text inside images can come out wrong, size sets only the aspect ratio, and search-grounded images are illustrations.",
     longRun: false,
+    models: ["muse-image-1.0"],
   },
   {
     id: "recipe-voice",
     oneLine: "Recorded speech with speaker labels, keywords and language hints, push-to-talk voice chess on the page, and a see-and-ask page using a phone's camera.",
     limit: "It works on recordings of at most 10 minutes or 32 MB, not a live microphone. Speaker labels are anonymous and can be wrong or missing, and it doesn't control other apps.",
     longRun: false,
+    models: ["muse-voice-transcribe-1.0"],
   },
   {
     id: "recipe-sam-media",
     oneLine: "SAM 3.1 video patterns: masks over clips, transparent animated sticker packs, and speech bubble captions that follow each speaker, drawn in the browser.",
     limit: "Clips stay short. Stickers are one object per pack, and captions export as WebM recorded in real time, not H.264 MP4.",
     longRun: false,
+    // Captions put the transcriber's speaker turns on the tracked people, so both models.
+    models: ["sam-3.1", "muse-voice-transcribe-1.0"],
   },
   {
     id: "recipe-simulated-loops",

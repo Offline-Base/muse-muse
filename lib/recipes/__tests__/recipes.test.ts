@@ -72,6 +72,18 @@ describe("recipes", () => {
     assert.equal(liveDailyBudgetFor(BRIEF), liveDailyBudgetFor({ ...BRIEF, recipes: null }));
   });
 
+  it("a media recipe allows its own model even when the writer left it out of capabilities", () => {
+    process.env.RECIPES_ENABLED = "1";
+    const allowed = (id: string) => allowedModelsFor({ ...BRIEF, recipes: [id] });
+    assert.ok(allowed("recipe-image").includes("muse-image-1.0"));
+    assert.ok(allowed("recipe-voice").includes("muse-voice-transcribe-1.0"));
+    assert.ok(allowed("recipe-sam-media").includes("sam-3.1"));
+    assert.ok(allowed("recipe-sam-media").includes("muse-voice-transcribe-1.0"));
+    assert.ok(!allowed("recipe-games").includes("muse-image-1.0"), "a recipe without models adds none");
+    process.env.RECIPES_ENABLED = "";
+    assert.ok(!allowed("recipe-image").includes("muse-image-1.0"), "flag off: a stored pick adds nothing");
+  });
+
   it("run limits: a build token keeps build limits, and long comes before agent", () => {
     const limits = (scope: string, allowedModels: string[]) => runLimitsFor({ scope, allowedModels });
     assert.equal(limits("build", ["agent-long", "agent"]), RUN_LIMITS.build);

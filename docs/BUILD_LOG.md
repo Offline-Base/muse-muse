@@ -3276,3 +3276,20 @@ The organizers ruled on Nov 2 that every model the project calls at runtime must
   - `BUILD_SHARED_KEYS`, which waits on the owner's dedicated keys;
   - `STORY_PAGES`, until `/offline` and `/private` are checked before filming;
   - `LOOK_FIRST`, until a test build passes on the new snapshot.
+
+## Nov 2, 2026, late night: what the cookbook, the legal agent and Meta's lessons still need (two read-only audits), and one fix
+
+- **Owner ask:** figure out what else is needed to get every demo working: Meta's 30 lessons (/learn), the cookbook recipes and the legal case agent.
+- **Recipes audit (origin/main c56a8beb, nothing run):**
+  - **Long recipes can't be picked on Production:** `recipe-case-agent` and `recipe-simulated-loops` need `AGENT_LONG_RUNS`, which is set on Preview only.
+  - **Code sessions can't be reached:** `recipe-code-sessions` needs the builder-only `code` cap, which Production drops while `TRUST_SIGNED_IN_CAPS` is off, plus `CODE_ENABLED` and `MUSE_CODE_ENABLED`.
+  - **Old snapshot:** the newest builder snapshot (Nov 2, 00:20 UTC) is older than #77 and #79, so the muse-agent fix for verified agents needs `npm run snapshot`.
+  - **Risk until the Wonder flip:** a build that rewrites the footer's Contributor notice gets every Wonder call refused.
+  - **Coverage:** 52 of 60 cookbook pages map to a recipe. The other 8 (contained execution, immutable guardrails, loop and cron, and the open-weight run and training pages) are out of scope for a hosted product.
+- **Lessons audit:**
+  - **None of the 30 has run.** U1 and U3 to U8 aren't started, and U2 is partly done (6 of 12 owning notes match the plan, and there's no `sharesWith`).
+  - **Before batch 1:** about 10 agent hours of prep, `TUNE_GENERAL_CHECKS` on Production, and the owner's go.
+  - **New gate:** data-rights Q1 (r30b's training text includes Spark Open output).
+  - **When:** the plan still says start after judging.
+- **Fixed (lib/recipes/registry.ts):** recipe-image, recipe-voice and recipe-sam-media now add the models they always call (`muse-image-1.0`, `muse-voice-transcribe-1.0`, `sam-3.1`) to the product's allowed models, as the case agent already did. Before, a writer that left the model out of capabilities shipped a product whose own calls got 404. Test added in lib/recipes/__tests__/recipes.test.ts, 7 of 7 pass, typecheck clean. Nothing changes with `RECIPES_ENABLED` off.
+- Spend $0.
