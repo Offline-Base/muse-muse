@@ -310,8 +310,23 @@ describe("the conversation", () => {
     assert.equal(current.title, "Muse Code is building");
     assert.equal(current.description, "I'm starting with the upload page, then the route that counts birds.");
     assert.deepEqual(current.children.map((c) => c.title), ["Install the packages", "Subagent helper is working", "Smoke test"]);
+    // Only agents get a little Muse: the tool doesn't.
+    assert.deepEqual(current.children.map((c) => Boolean(c.agent)), [false, true, true]);
     assert.equal(steps.currentStep(roomOf("finished")), null);
     assert.ok(!steps.conversationItems(roomOf("running")).some((i) => i.type === "thinking"));
+  });
+
+  it("gives Muse mode every agent of the live round, running or done, and no tools", () => {
+    assert.deepEqual(
+      steps.museCrew(roomOf("running"))!.map((a) => [a.title, a.state]),
+      [
+        ["Scout finished: Found 3 pages.", "done"],
+        ["Helper is working", "running"],
+        ["Typecheck", "done"],
+        ["Smoke test", "running"],
+      ],
+    );
+    assert.equal(steps.museCrew(roomOf("finished")), null);
   });
 
   it("puts a shipped build's last words under what it made, not above", () => {

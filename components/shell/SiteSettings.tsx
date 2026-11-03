@@ -7,6 +7,7 @@ import type { AccountUser } from "@/components/shell/AccountMenu";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { SettingsWindow, type SettingsWindowHandle } from "@/components/shell/SettingsWindow";
 import { initials } from "@/lib/format";
+import { useMuseMode } from "@/components/mascot/AgentMuse";
 import { readMascotOn, setMascotOn } from "@/lib/mascot";
 import { THEME_CHOICES, applyTheme, isThemeChoice, readTheme, type ThemeChoice } from "@/lib/theme";
 
@@ -65,6 +66,18 @@ function MascotRow() {
   );
 }
 
+/** Muse mode: while a build works, its agents show as a crew of Muses (components/mascot/MuseCrew.tsx). Off by default. */
+function MuseModeRow() {
+  const id = useId();
+  const [on, setOn] = useMuseMode();
+  return (
+    <div className="settings-row">
+      <span id={id}>Muse mode</span>
+      <button type="button" role="switch" className="switch" aria-checked={on} aria-labelledby={id} onClick={() => setOn(!on)} />
+    </div>
+  );
+}
+
 /**
  * Settings, opened from the account chip: General (who you are here, and the theme) and About (what Muse Muse is).
  * Laid out like meta.ai's Settings through SettingsWindow.
@@ -108,6 +121,7 @@ export function SiteSettings({ user, signInHref, ref }: { user: AccountUser | nu
               <div className="settings-list">
                 <ThemeRow />
                 <MascotRow />
+                <MuseModeRow />
               </div>
             </>
           ),

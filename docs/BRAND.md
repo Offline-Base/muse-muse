@@ -346,6 +346,16 @@ Muse Muse's own character, from the owner's videos (Nov 2). Not a Meta mark. Bui
 - **Close:** pointing at it stops it and shows a round X just above its head ("Hide Muse"; always shown on touch screens, and reachable with Tab). The X hides it, saves that in this browser and shows a note for 5 s: "Muse is hidden. Bring him back in Settings, under Muse on screen."
 - **Choice:** Settings, General, "Muse on screen" (on by default, kept in this browser). With reduced motion it stands still in the corner.
 
+### Muse as the build's agents (`components/mascot/AgentMuse.tsx`, `MuseCrew.tsx`, `public/muse/agent-*`)
+
+From the owner's three agent clips (Nov 2): the orchestrator (thinks, then points as if handing out work), and a
+sub-agent waving and giving a thumbs up toward the top left, or the top right.
+
+- **Clips:** cut from plain white by `scripts/dev/mascot/agents.sh` and `key_white.py`, all three in one 248 x 240 frame so they stand at one scale on one floor line. Transparent loops (the orchestrator stops at the frame closest to its first, so it loops cleanly), VP9 WebM with alpha for Chrome and Firefox (58 to 103 KB), HEVC with alpha for Safari (116 to 191 KB), and a still first frame. The floor shadow is a faint black, so they work on both themes.
+- **Small, always on:** in the build room, a running step gets a little Muse at the right of its title. The orchestrator is 26 px tall on Muse Code's own step, and each running sub-agent gets 22 px under it, turning each way in turn. In the steps panel, each agent row still running gets a 20 px one at its right edge. Tools get none, and finished agents lose theirs.
+- **Muse mode** (Settings, General, "Muse mode", or the "Muse mode" link beside Show steps; off by default, kept in this browser): while a build works, a crew card under the working step shows Muse Code, the lead, at 120 px with what it last said, and every agent it sent off in the live round (newest 12), each as a 72 px Muse with its task and state. Working ones wave; finished ones stand still and faded. The small Muses on the working step give way to the crew.
+- **Reduced motion:** every agent Muse shows its still frame. They are decorative (`aria-hidden`) and never take the pointer: the row or caption beside each one says what the agent is doing.
+
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 
 Track 36 px, `--panel-line`, radius 16 px, 4 px inset. Chosen segment 28 px, radius 16 px, `--chat-segment`,

@@ -521,8 +521,8 @@ export function conversationItems(room: RoomState): ConvoItem[] {
 export interface CurrentStep {
   title: string;
   description?: string;
-  /** What's running under it: tools, subagents, a workflow's children. */
-  children: Array<{ id: string; title: string }>;
+  /** What's running under it: tools, subagents, a workflow's children. `agent` marks the ones that are agents. */
+  children: Array<{ id: string; title: string; agent?: boolean }>;
 }
 
 const MAX_CURRENT = 4;
@@ -546,13 +546,51 @@ export function currentStep(room: RoomState): CurrentStep | null {
     if (g.type === "activity") {
       g.items.forEach((it, j) => {
         const moving = (it.type === "tool" && it.running) || (it.type === "subagent" && statusState(it.status) === "running");
-        if (moving) running.push({ id: `${i}/${j}`, title: it.text });
+        if (moving) running.push({ id: `${i}/${j}`, title: it.text, ...(it.type === "subagent" ? { agent: true } : {}) });
       });
     } else if (g.type === "workflow" && statusState(g.status) === "running") {
       const child = g.children.filter((c) => statusState(c.status) === "running");
-      if (child.length) child.forEach((c, j) => running.push({ id: `${i}/${j}`, title: c.label }));
-      else running.push({ id: String(i), title: g.text });
+      if (child.length) child.forEach((c, j) => running.push({ id: `${i}/${j}`, title: c.label, agent: true }));
+      else running.push({ id: String(i), title: g.text, agent: true });
     }
   });
   return { title, ...(line ? { description: truncate(line, 240) } : {}), children: running.slice(-MAX_CURRENT) };
+}
+
+export interface CrewAgent {
+  id: string;
+  title: string;
+  state: StepState;
+}
+
+/** The most sub-agents Muse mode shows at once: the newest, so a long run doesn't fill the room. */
+export const MAX_CREW = 12;
+
+/**
+ * Muse mode's crew (components/mascot/MuseCrew.tsx): every agent Muse Code started in the live turn, running or
+ * finished: its subagents, and a workflow's children (or the workflow itself until it names them). Tools aren't agents,
+ * so they stay out. Null once the build is over, like currentStep.
+ */
+export function museCrew(room: RoomState): CrewAgent[] | null {
+  if (room.terminal) return null;
+  const key = liveSegmentKey(room);
+  const seg = room.segments.find((s) => s.key === key);
+  if (seg?.type !== "muse") return [];
+  const { groups } = groupLog(seg.lines);
+  const crew: CrewAgent[] = [];
+  groups.forEach((g, i) => {
+    if (g.type === "activity") {
+      g.items.forEach((it, j) => {
+        if (it.type !== "subagent") return;
+        const failed = "ok" in it && it.ok === false;
+        // The Muse already says it's an agent, so "Subagent scout finished" reads as "Scout finished".
+        const title = it.text.replace(/^subagent\s+/i, "").replace(/^./, (c) => c.toUpperCase());
+        crew.push({ id: `${i}/${j}`, title, state: failed ? "failed" : statusState(it.status) });
+      });
+    } else if (g.type === "workflow") {
+      if (g.children.length) g.children.forEach((c, j) => crew.push({ id: `${i}/${j}`, title: c.label, state: statusState(c.status) }));
+      else crew.push({ id: String(i), title: g.text, state: statusState(g.status) });
+    }
+  });
+  return crew.slice(-MAX_CREW);
 }

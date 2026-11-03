@@ -161,6 +161,22 @@
   margin-left: 7px;
 }
 
+/* A little Muse at the right of a running agent step's title (components/mascot/AgentMuse.tsx): the build room's
+   orchestrator on its own step, a sub-agent on each nested one. */
+.chat-step.has-muse {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+
+.chat-step.is-nested.has-muse {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+.chat-step-muse {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+}
+
 /* ---------- Show thinking ---------- */
 
 .chat-thinking {
@@ -374,6 +390,18 @@
 
 .chat-steplist-text {
   min-width: 0;
+}
+
+/* In the build room, a running agent row's little sub-agent Muse, at the row's right edge beside its title. */
+.chat-steplist-row.has-muse {
+  position: relative;
+  padding-right: 26px;
+}
+
+.chat-steplist-muse {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .chat-steplist-title {

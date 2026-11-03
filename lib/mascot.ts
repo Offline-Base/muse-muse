@@ -25,6 +25,43 @@ export function setMascotOn(on: boolean): void {
   window.dispatchEvent(new CustomEvent(MASCOT_EVENT, { detail: { on } }));
 }
 
+/**
+ * Muse mode: the build room shows its agents as a crew of Muses (components/mascot/MuseCrew.tsx), the orchestrator and
+ * one Muse per sub-agent. Off unless switched on, in Settings or in the build room; kept in this browser.
+ */
+export const MUSE_MODE_KEY = "musemuse-muse-mode";
+export const MUSE_MODE_EVENT = "musemuse-muse-mode";
+
+export function readMuseMode(): boolean {
+  try {
+    return localStorage.getItem(MUSE_MODE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setMuseMode(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(MUSE_MODE_KEY, "on");
+    else localStorage.removeItem(MUSE_MODE_KEY);
+  } catch {
+    // Blocked storage: the switch still applies to this page.
+  }
+  window.dispatchEvent(new CustomEvent(MUSE_MODE_EVENT, { detail: { on } }));
+}
+
+/**
+ * The agent clips (public/muse/agent-*, cut by scripts/dev/mascot/agents.sh): the orchestrator, and a sub-agent waving
+ * toward the top left or the top right. All three share one frame, so they stand at one scale on one floor line.
+ */
+export type AgentRole = "orchestrator" | "sub-left" | "sub-right";
+export const AGENT_FRAME = { width: 248, height: 240 };
+
+/** Which way a sub-agent looks: toward the orchestrator when it stands to his right (looks left), else right. */
+export function subRole(i: number): AgentRole {
+  return i % 2 === 0 ? "sub-left" : "sub-right";
+}
+
 /** The walk loop's frame size (public/muse/muse-walk.*), for the drawn width at a given height. */
 export const WALK_FRAME = { width: 196, height: 256 };
 
