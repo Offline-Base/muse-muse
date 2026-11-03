@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { docsFont } from "@/app/docs/font";
 import { interFont } from "@/app/fonts/inter";
+import { Intro } from "@/components/mascot/Intro";
 import { Mascot } from "@/components/mascot/Mascot";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -54,6 +56,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         </div>
         <VoiceInputLayer />
         <Mascot />
+        <Suspense fallback={null}>
+          <Intro />
+        </Suspense>
       </body>
     </html>
   );

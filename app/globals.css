@@ -8122,10 +8122,84 @@ div.md.md-plain {
   box-shadow: var(--shadow-pop);
 }
 
+/* The first-open intro (components/mascot/Intro.tsx, lib/intro.ts). The walking Muse waits off stage while it plays. */
+:root[data-intro] .mascot,
+:root[data-intro] .mascot-climb {
+  visibility: hidden;
+}
+
+.intro-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #fbfbfb;
+  opacity: 1;
+  transition: opacity 650ms ease;
+}
+
+.intro-curtain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fbfbfb;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 450ms ease;
+}
+
+.intro-curtain.is-white::after {
+  opacity: 1;
+}
+
+.intro-curtain.is-leaving {
+  opacity: 0;
+}
+
+/* The see-through clip: the page itself is the stage, so no backdrop. Clicks still go to the intro until it ends. */
+.intro-curtain.is-see-through {
+  background: transparent;
+}
+
+.intro-curtain.is-see-through::after {
+  display: none;
+}
+
+.intro-curtain-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.intro-skip {
+  position: absolute;
+  z-index: 1;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1c2b33;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
+}
+
+.intro-skip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-curtain,
+  .intro-curtain::after {
+    transition: none;
+  }
+}
+
 @media print {
   .mascot,
   .mascot-climb,
-  .mascot-note {
+  .mascot-note,
+  .intro-curtain {
     display: none;
   }
 }

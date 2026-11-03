@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { INTRO_DONE_EVENT } from "@/lib/intro";
 import {
   CLIMB_SPEED_PER_HEIGHT,
   MASCOT_EVENT,
@@ -185,11 +186,27 @@ export function Mascot() {
       }
     };
 
+    // When an intro ends, Muse has just walked off its stage to the right (every clip ends so): come back in from there.
+    const onIntroDone = (e: Event) => {
+      if (!(e as CustomEvent<{ kind?: string }>).detail?.kind) return;
+      mode = "walk";
+      x = bounds().right;
+      dir = -1;
+      restUntil = 0;
+      placeClimb(0);
+      placeWalk(x, dir);
+      show("walk", true);
+    };
+    window.addEventListener(INTRO_DONE_EVENT, onIntroDone);
+
     placeWalk(x, dir);
     placeClimb(0);
     show("walk", true);
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener(INTRO_DONE_EVENT, onIntroDone);
+    };
   }, [on, still, src]);
 
   if (!on || !src)

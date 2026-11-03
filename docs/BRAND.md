@@ -297,6 +297,15 @@ From meta.ai's Settings window, captured by Ethan on Nov 2 in both themes (S). U
 - **Close:** a 40 px circle in the top right corner, `--settings-close` (white, dark `#3d3d3e`) with `--shadow-chip`. Escape and a backdrop click close it too, and focus goes back to the button that opened it.
 - **Phones:** one column, the sections as a row of pills over the cards.
 
+### First-open intro (`components/mascot/Intro.tsx`, `lib/intro.ts`, `public/muse/intro-*`)
+
+The owner's clips, Nov 2. The default is `shirt`: Muse in an Offline Base T-shirt in front of a pale grey curtain waves, puts on sunglasses, throws the curtain open and walks off right (6 s). Its white stage is cut out of every frame (`scripts/dev/mascot/key_stage.py`), so the curtain opens onto the real page in either theme, with a faint real shadow at his feet. `shades` (a cream curtain) is cut out the same way; `curtain` (a blue curtain, 9.4 s) is full frame and washes out to white before fading.
+
+- **When:** the first visit to `/` in a browser, never with reduced motion. `?intro=shirt`, `shades`, `curtain` or `off` on any page overrides that, for trying them.
+- **Never in the way:** "Skip intro" is focused from the start, Escape skips, it closes itself if the clip can't play, after 15 s at most, and even when there is no fade to wait for. Focus goes back to what had it. Muted.
+- **Hand-off:** the walking Muse hides while it plays, then comes in from the right, where the clip's Muse walked off.
+- **Files:** VP9 with alpha for Chrome and Firefox, HEVC with alpha for Safari (picked by browser), about 0.7 MB each, plus a first-frame poster. Rebuilt from the owner's videos by `scripts/dev/mascot/intro.sh`.
+
 ### Device stage (`components/product/DeviceStage.tsx`, `lib/devices/runs.ts`)
 
 "Where it ran" on a product page: each device the product was recorded on, drawn as that device, with the recording playing on its screen. Owner request, Nov 2: a template of an actual MacBook with the test inside its screen.
