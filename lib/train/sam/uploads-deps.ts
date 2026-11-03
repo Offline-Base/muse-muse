@@ -8,7 +8,6 @@ import { platformSpendToday, recordUsage } from "@/lib/usage";
 import { LOOKALIKE_TIMEOUT_MS, type DistractorDeps } from "@/lib/train/sam/distractors";
 import { LABEL_TIMEOUT_MS, type LabelDeps } from "@/lib/train/sam/label";
 import { runCapUsd, type SpendDeps, type SpendLimits } from "@/lib/train/sam/spend";
-import { SAMTUNE_PREFIX, samTuneDailyUsd, samTuneMaxUsd } from "@/lib/train/sam/u1-shim";
 import { addDistractor, addRunCost, savePhoto, type UploadRun } from "@/lib/train/sam/uploads-store";
 
 /**
@@ -26,7 +25,7 @@ export function spendDeps(): SpendDeps {
 }
 
 export function spendLimits(run: Pick<UploadRun, "id" | "maxUsd">): SpendLimits {
-  return { runId: run.id, runMaxUsd: runCapUsd(run.maxUsd, samTuneMaxUsd()), dailyUsd: samTuneDailyUsd() };
+  return { runId: run.id, runMaxUsd: runCapUsd(run.maxUsd, env.samTuneMaxUsd), dailyUsd: env.samTuneDailyUsd };
 }
 
 /** A stored file's URL as Meta can fetch it: local runs give a path, which gets the platform's own address. */
@@ -66,7 +65,7 @@ export function distractorDeps(run: UploadRun): DistractorDeps {
     ...spendDeps(),
     draw: (request, signal) =>
       metaPlatform().post<EditReply>(request.path, { body: fetchableBody(request.body), signal, maxRetries: 0, timeout: LOOKALIKE_TIMEOUT_MS }),
-    store: (bytes, type) => putFile(SAMTUNE_PREFIX, `${run.id}/lookalikes/muse-image.${type.ext}`, bytes, type.contentType),
+    store: (bytes, type) => putFile("samtune", `${run.id}/lookalikes/muse-image.${type.ext}`, bytes, type.contentType),
     save: async (distractor) => (await addDistractor(run.id, distractor)) !== null,
     charge: charge(run.id, "images"),
     log: log("look-alikes", run.id),

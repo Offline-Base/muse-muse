@@ -237,7 +237,10 @@ export function newBriefSchemaFor(opts: {
   fullBuilds?: boolean;
   /** BUILD_RANGE: requires a direction, and raises the flow and screen limits unless fullBuilds has already. */
   buildRange?: boolean;
-  /** META_UI_ONLY: BUILD_RANGE still raises the limits, but asks for no direction, since every product is on meta-ui. */
+  /**
+   * META_UI_ONLY: every product is on the Meta AI app look (muse-app-ui), so no askedLook even with museAppLook, and with
+   * BUILD_RANGE no direction, though it still raises the limits.
+   */
   metaUiOnly?: boolean;
   /** FLEET_PRODUCTS: the writer may also pick jetson-fleet. */
   fleet?: boolean;
@@ -245,7 +248,8 @@ export function newBriefSchemaFor(opts: {
   sparkOpen?: boolean;
 }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
-  const look = opts.museAppLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
+  const asksLook = opts.museAppLook === true && !opts.metaUiOnly;
+  const look = asksLook ? { askedLook: z.string().max(ASKED_LOOK_MAX).nullable() } : {};
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
   const extra: Record<string, z.ZodTypeAny> = {};
   for (const cap of opts.caps ?? []) {
@@ -271,7 +275,7 @@ export function newBriefSchemaFor(opts: {
       extra.screens = z.array(z.object({ name: z.string(), purpose: z.string() })).max(RANGE_LIMITS.screens);
     }
   }
-  if (ids.length === 1 && !Object.keys(extra).length && !opts.museAppLook) return base;
+  if (ids.length === 1 && !Object.keys(extra).length && !asksLook) return base;
   const shape: Record<string, z.ZodTypeAny> = {};
   if (ids.length > 1) {
     shape.targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);

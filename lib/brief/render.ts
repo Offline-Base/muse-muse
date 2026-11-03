@@ -236,15 +236,17 @@ interface SessionNotes {
 interface LookNote {
   museAppLook?: boolean;
   /**
-   * A polish with look "meta" switched this product to meta-ui (lib/polish/logic.ts isMetaLookPolish), or is doing so
-   * now. The fix and change prompts then name meta-ui only, and a fix keeps the Meta look rather than a Design direction.
+   * A polish with look "meta" set this product's look on purpose (lib/polish/logic.ts isLookPolish): the Meta AI app look,
+   * muse-app-ui, or, for one from the afternoon of Nov 3, meta-ui. No Design direction or asked look sets it any more:
+   * the fix and change prompts keep the look the product's own files have (app/muse-app.css), with no direction.
    */
   metaLook?: boolean;
   /** BUILD_RANGE (docs/BUILD_RANGE.md): the brief's direction drives the look, and a complex build must use its agents. */
   buildRange?: boolean;
   /**
-   * META_UI_ONLY (owner, Nov 3): every new product on meta-ui. BUILD_RANGE keeps its depth, agents and limits on any brief,
-   * but its direction never sets the look, and a fix or change keeps the look the product's own files have.
+   * META_UI_ONLY (owner, Nov 3, evening): every new product on the Meta AI app look, muse-app-ui (museAppLook is on with
+   * it). BUILD_RANGE keeps its depth, agents and limits on any brief, but neither its direction nor an asked look ever
+   * sets the look, and a fix or change keeps the look the product's own files have.
    */
   metaUiOnly?: boolean;
   /** FAST_BUILDS on a complex build: the run's agent capacity, for How you must work. */
@@ -281,9 +283,12 @@ function lookSkill(note: LookNote): string {
   return note.museAppLook ? "muse-app-ui" : "meta-ui";
 }
 
-/** The person's own words asking for a look, when the muse-app look is on and the brief carries one. */
+/**
+ * The person's own words asking for a look, when the muse-app look is on and the brief carries one. Never with
+ * META_UI_ONLY or after a look polish (metaLook), where the look is muse-app-ui's (or meta-ui's) with nothing asked.
+ */
 export function askedLookOf(brief: Pick<Brief, "askedLook">, note: LookNote): string | null {
-  const asked = note.museAppLook ? brief.askedLook?.trim() : "";
+  const asked = note.museAppLook && !note.metaUiOnly && !note.metaLook ? brief.askedLook?.trim() : "";
   return asked ? asked : null;
 }
 
@@ -305,8 +310,12 @@ function lookLine(brief: Brief, note: LookNote): string {
 
 /** The fix and change prompts' look line, up to its last sentence. */
 function keepLookLine(note: LookNote): string {
-  // META_UI_ONLY: a product from before it may have the muse-app look, so its own files decide, as with MUSE_APP_LOOK.
-  if (note.metaLook) return "- Keep the product's current look, the Meta UI look: the tokens and parts in `app/globals.css` and `.agents/skills/meta-ui`.";
+  // A look polish: the product's files say which look it has now (the Meta AI app look with app/muse-app.css, or meta-ui
+  // from an older polish), and no Design direction sets it.
+  if (note.metaLook) {
+    return "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` (the Meta AI app look) when the product has them, or else `.agents/skills/meta-ui`. No Design direction sets it: leave any Design direction in brief.md and `.agents/skills/design-looks` out of the look.";
+  }
+  // META_UI_ONLY: a product from before it may have meta-ui or its own direction, so its own files decide, as with MUSE_APP_LOOK.
   return note.museAppLook || note.metaUiOnly
     ? "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` when the product has them, or else `.agents/skills/meta-ui` if it exists."
     : "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists.";

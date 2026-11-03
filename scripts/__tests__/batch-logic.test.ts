@@ -322,19 +322,23 @@ describe("a pass with --look=meta and --again", () => {
     applyAnswer(started, { status: 201, json: { buildId: id(31), look: "meta" } }, SITE, now, META);
     assert.equal(started.state, "polishing");
     assert.equal(started.look, "meta");
-    const plain = item(4, "ready", { look: "meta" });
+    assert.equal(started.appLook, true, "look meta is the Meta AI app look now");
+    const plain = item(4, "ready", { look: "meta", appLook: true });
     applyAnswer(plain, { status: 201, json: { buildId: id(41) } }, SITE, now);
     assert.equal(plain.look, undefined);
+    assert.equal(plain.appLook, undefined);
   });
   it("resumes: polishes again what an earlier pass did in another look, never twice in the same pass", () => {
     const resumed = [
       item(1, "polished", { refineIds: [id(11)] }),
-      item(2, "polished", { refineIds: [id(21)], look: "meta" }),
+      item(2, "polished", { refineIds: [id(21)], look: "meta", appLook: true }),
       item(3, "polishing", { refineIds: [id(31)] }),
       item(4, "skipped"),
       item(5, "refused", { note: "already_polished" }),
+      // A file from the afternoon of Nov 3: look "meta" was meta-ui then, so --look=meta --again polishes it again.
+      item(6, "polished", { refineIds: [id(61)], look: "meta" }),
     ];
-    const builds = [1, 2, 3, 4, 5].map((n) => ({ label: `b${n}`, buildId: id(n) }));
+    const builds = [1, 2, 3, 4, 5, 6].map((n) => ({ label: `b${n}`, buildId: id(n) }));
     const items = initialItems(builds, resumed, META);
     assert.deepEqual(items.map((i) => [i.state, i.refineIds, i.earlierRefineIds ?? []]), [
       ["waiting", [], [id(11)]],
@@ -342,10 +346,12 @@ describe("a pass with --look=meta and --again", () => {
       ["waiting", [], [id(31)]],
       ["skipped", [], []],
       ["waiting", [], []],
+      ["waiting", [], [id(61)]],
     ]);
+    assert.match(items[5].note ?? "", /^polished with look meta-ui before; polishing again with look meta$/);
     // Without --again, or resumed into the same pass, nothing is polished twice.
-    assert.deepEqual(initialItems(builds, resumed, { look: "meta" }).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused"]);
-    assert.deepEqual(initialItems(builds, resumed).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused"]);
+    assert.deepEqual(initialItems(builds, resumed, { look: "meta" }).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused", "polished"]);
+    assert.deepEqual(initialItems(builds, resumed).map((i) => i.state), ["polished", "polished", "polishing", "skipped", "refused", "polished"]);
     assert.equal(resumedItem(items[0], META).state, "waiting");
     // The earlier polishes stay in the ledger.
     assert.deepEqual(refineIdsFrom([{ items }]).get(id(1)), [id(11)]);
@@ -370,6 +376,7 @@ describe("a pass with --look=meta and --again", () => {
     applyAnswer(followed, { status: 409, json: { error: "busy", buildId: id(8), look: "meta" } }, SITE, now, META);
     assert.equal(followed.state, "polishing");
     assert.equal(followed.look, "meta");
+    assert.equal(followed.appLook, true);
     assert.deepEqual(followed.refineIds, [id(8)]);
     assert.equal(followed.attempts, 0);
   });

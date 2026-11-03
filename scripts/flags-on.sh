@@ -28,7 +28,7 @@ FLAGS_NOW=(
   TUNE_GENERAL_CHECKS
   CODE_BROWSE
   HARDWARE_GADGET_OWNER_CHECK
-  # Added Nov 3, afternoon (owner: every product on the meta-ui skill)
+  # Added Nov 3, afternoon; since that evening it means every product on the Meta AI app look, muse-app-ui (docs/FLAGS.md)
   META_UI_ONLY
   # Already present on Nov 3 (docs/FLAGS.md, "Already present: keep these 36")
   AGENTS_ENABLED

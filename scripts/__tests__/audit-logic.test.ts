@@ -102,7 +102,7 @@ describe("pass, fail and focus", () => {
     assert.equal(a.problems.length, 2);
     assert.match(a.focus!, /^An automated audit opened Rustic Bakery Boards on desktop at 1440x900 and on a phone at 390x844 and pressed "Try the sample", then "Make my board"\./);
     assert.match(a.focus!, /\(1\) the page scrolls sideways by 12 px on a phone \(390x844\); \(2\) 1 control\(s\) are under 44x44 px/);
-    assert.match(a.focus!, /Keep the Meta UI look/);
+    assert.match(a.focus!, /muse-app-ui, once the product has app\/muse-app\.css/);
     assert.doesNotMatch(a.focus!, /—|\n/);
   });
   it("fails a product with no runs", () => {

@@ -438,6 +438,29 @@ export const env = {
   get boardLoop(): boolean {
     return flag("BOARD_LOOP");
   },
+  /**
+   * SAM_TUNE: teach SAM 3.1 a new object on the office board (lib/train/sam/, the /fine-tuning card and room, the worker
+   * routes under /api/train/sam/worker/). Off when unset: every SAM tune route is a 404 and no page changes.
+   */
+  get samTune(): boolean {
+    return flag("SAM_TUNE");
+  },
+  /**
+   * SAM_WORKER_TOKEN_SHA256: the sha256 (64 hex) of the office board's worker secret. The plain secret stays on the board.
+   * Null when unset or not 64 hex, and then no worker call is accepted.
+   */
+  get samWorkerTokenSha256(): string | null {
+    const value = optional("SAM_WORKER_TOKEN_SHA256")?.toLowerCase() ?? null;
+    return value && /^[0-9a-f]{64}$/.test(value) ? value : null;
+  },
+  /** SAM_TUNE_DAILY_USD: what SAM tune runs may spend on Meta (labels, look-alikes) in one UTC day. "0" spends nothing. */
+  get samTuneDailyUsd(): number {
+    return dollars("SAM_TUNE_DAILY_USD", 5);
+  },
+  /** SAM_TUNE_MAX_USD: what one SAM tune run may spend on Meta. "0" spends nothing. */
+  get samTuneMaxUsd(): number {
+    return dollars("SAM_TUNE_MAX_USD", 1);
+  },
   /** Which board the loop reaches: "simulated" (the default), "fleet" or "device". */
   get boardLoopTarget(): "simulated" | "fleet" | "device" {
     const target = process.env.BOARD_LOOP_TARGET?.trim();
@@ -736,17 +759,19 @@ export const env = {
    * it was. Turn it on only after the builder snapshot has the overlay: the live site can't add it.
    */
   get museAppLook(): boolean {
-    // META_UI_ONLY (owner, Nov 3) wins over all three: every new build is on meta-ui.
-    if (flag("META_UI_ONLY")) return false;
+    // META_UI_ONLY (owner, Nov 3, evening): every new build is on the Meta AI app look, muse-app-ui, whatever the rest say.
+    if (flag("META_UI_ONLY")) return true;
     // Builds on Contributor always get the look (BUILDS_ON_CONTRIBUTOR, the owner's Nov 1 decision).
     return flag("MUSE_APP_LOOK") || contributorBuildsOn() || flag("BUILD_RANGE");
   },
   /**
-   * META_UI_ONLY (owner, Nov 3): every new product uses the meta-ui skill (template/.agents/skills/meta-ui: a gray page,
-   * flat white cards, Meta blue, Inter and Montserrat), whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR or BUILD_RANGE say.
-   * museAppLook is false, so no build gets the muse-app overlay, and BUILD_RANGE's design direction is gone from the brief
-   * writer, the build prompt, the fix prompt and the judge. BUILD_RANGE's depth, limits, subagents and workflows stay. A
-   * fix or change keeps an older product's look from its own files (app/muse-app.css). Off, everything is as it was.
+   * META_UI_ONLY (owner, Nov 3, corrected that evening): every new product has the Meta AI app look, muse-app-ui (the
+   * muse-app overlay, template/targets/muse-app: a white page, hairline cards, regular-weight Inter, one blue for actions,
+   * a purple gradient only for AI, a floating composer). museAppLook is true whatever MUSE_APP_LOOK, BUILDS_ON_CONTRIBUTOR
+   * or BUILD_RANGE say, and no part of a design direction or an asked look reaches the brief writer, the schema, the build
+   * prompt, the fix prompt or the judge, and the build-range overlay is left out. BUILD_RANGE's depth, limits, subagents
+   * and workflows stay. A fix or change keeps an older product's look from its own files (app/muse-app.css). The name is
+   * from the first version of the flag, which set meta-ui; production already has it set. Off, everything is as it was.
    */
   get metaUiOnly(): boolean {
     return flag("META_UI_ONLY");

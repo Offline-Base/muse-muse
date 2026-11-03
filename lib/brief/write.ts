@@ -86,7 +86,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
   const buildRange = env.buildRange;
   const recent = input.range?.recent ?? [];
   const range = buildRange ? { start: directionStart(input.range?.seed ?? `${input.note ?? ""}${references.map((r) => r.fileName).join()}`), recent } : null;
-  // META_UI_ONLY (owner, Nov 3): every product on meta-ui, so no direction is asked for or checked. BUILD_RANGE's limits stay.
+  // META_UI_ONLY (owner, Nov 3): every product on the Meta AI app look, so no direction or askedLook is asked for or checked. BUILD_RANGE's limits stay.
   const metaUiOnly = env.metaUiOnly;
   const write = (parts: ContentPart[]) => respondStructured({
     model,
@@ -94,7 +94,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     content: parts,
     sources: prepared.sources,
     // With no targets, caps, milestones or MUSE_APP_LOOK this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}), ...(buildRange && metaUiOnly ? { metaUiOnly: true } : {}), ...(env.fleetProductsForBuilds ? { fleet: true } : {}), ...(env.sparkOpenProductsForBuilds ? { sparkOpen: true } : {}) }),
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps, milestones: env.engineMilestones, museAppLook: env.museAppLook, recipes: availableRecipes(caps).map((r) => r.id), ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}), ...(metaUiOnly ? { metaUiOnly: true } : {}), ...(env.fleetProductsForBuilds ? { fleet: true } : {}), ...(env.sparkOpenProductsForBuilds ? { sparkOpen: true } : {}) }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references, { ...(full ? { fullBuilds: true } : {}), ...(buildRange ? { buildRange: true } : {}) }),

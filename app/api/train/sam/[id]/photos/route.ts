@@ -1,8 +1,8 @@
 import { requireAdminOrAutomation } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { putFile } from "@/lib/storage";
 import { checkPhoto, photoProblemText, splitFor } from "@/lib/train/sam/photo";
-import { SAMTUNE_PREFIX, samTuneOn } from "@/lib/train/sam/u1-shim";
 import { addDistractor, addPhoto, editProblem, getUploadRun } from "@/lib/train/sam/uploads-store";
 import { SAM_TUNE_LIMITS, type SamDistractor, type SamPhoto } from "@/lib/train/sam/types";
 
@@ -28,7 +28,7 @@ const EDIT_TEXT = {
  * 400 {message} for a photo that can't be used.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
-  if (!samTuneOn()) return errorJson(404, "not_found");
+  if (!env.samTune) return errorJson(404, "not_found");
   await requireAdminOrAutomation(req);
   const { id } = await params;
   if (!isUuid(id)) return errorJson(404, "not_found");
@@ -48,7 +48,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if ("problem" in checked) return errorJson(400, checked.problem, { message: photoProblemText(checked.problem) });
 
   const folder = kind === "photo" ? "photos" : "lookalikes";
-  const url = await putFile(SAMTUNE_PREFIX, `${id}/${folder}/${kind}.${checked.ext}`, checked.bytes, checked.contentType);
+  const url = await putFile("samtune", `${id}/${folder}/${kind}.${checked.ext}`, checked.bytes, checked.contentType);
   // The count was read before the upload; the append holds the cap again in one statement. A photo that lost the race
   // stays in Blob until the cleanup cron's 7 days.
   if (kind === "photo") {

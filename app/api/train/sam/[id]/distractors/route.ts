@@ -1,8 +1,8 @@
 import { requireAdminOrAutomation } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { LOOKALIKE_BATCH, lookalikesToMake, makeLookalikes } from "@/lib/train/sam/distractors";
 import { refusalText } from "@/lib/train/sam/spend";
-import { samTuneOn } from "@/lib/train/sam/u1-shim";
 import { distractorDeps, spendLimits } from "@/lib/train/sam/uploads-deps";
 import { editProblem, getUploadRun, setDistractorKept } from "@/lib/train/sam/uploads-store";
 
@@ -17,7 +17,7 @@ const EDIT_TEXT = {
 } as const;
 
 async function editableRun(req: Request, params: Ctx["params"]) {
-  if (!samTuneOn()) return { response: errorJson(404, "not_found") };
+  if (!env.samTune) return { response: errorJson(404, "not_found") };
   await requireAdminOrAutomation(req);
   const { id } = await params;
   if (!isUuid(id)) return { response: errorJson(404, "not_found") };

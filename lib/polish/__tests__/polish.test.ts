@@ -6,11 +6,11 @@
  */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { MAX_NOTE_CHARS } from "@/lib/pipeline/references";
-import { LOOK_COMMIT, LOOK_CSS, RANGE_COMMIT } from "@/lib/sandbox/look";
-import { changeLabel, isMetaLookPolish, isPolishMessage, metaLookShipped, POLISH_META_STEP, passedPolish, POLISH_HEADER, POLISH_LABEL, POLISH_MAX_FOCUS_CHARS, polishBudgetLine, polishEnding, polishFixSteps, POLISH_MIN_USD, polishNote, polishPlan, polishRoomLine } from "@/lib/polish/logic";
+import { APP_LOOK_COMMIT, APP_LOOK_NOTE, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, RANGE_COMMIT } from "@/lib/sandbox/look";
+import { changeLabel, isLookPolish, isMetaLookPolish, isMetaUiLookPolish, isPolishMessage, metaLookShipped, POLISH_META_STEP, POLISH_META_UI_STEP, passedPolish, POLISH_HEADER, POLISH_LABEL, POLISH_MAX_FOCUS_CHARS, polishBudgetLine, polishEnding, polishFixSteps, POLISH_MIN_USD, polishNote, polishPlan, polishRoomLine } from "@/lib/polish/logic";
 import { startPolish, type PolishDeps } from "@/lib/polish/start";
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -39,18 +39,46 @@ describe("the polish note", () => {
 describe("the polish note with look meta", () => {
   const OVERLAY = join(import.meta.dirname, "../../../template/targets/muse-app");
   const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+  /** The step-1 note from the afternoon of Nov 3, as polishes that moved products to meta-ui stored it (its first line). */
+  const OLD_META_UI = `${POLISH_HEADER} This is a polish round on a live product.\n\n${POLISH_META_UI_STEP} This round changes the look on purpose.\n2. Phones first.`;
 
-  it("switches the product to meta-ui, and is still a polish note with the same header", () => {
+  it("puts the product on the muse-app look (muse-app-ui), names no Meta product, and is still a polish note with the same header", () => {
     const note = polishNote(null, "meta");
     assert.ok(note.startsWith(POLISH_HEADER));
+    // The platform's own change check refused notes that named Meta's app or "Meta would feature" (Nov 3, 2 PM).
+    for (const n of [note, polishNote(null), polishNote("fix the header", "meta")]) assert.doesNotMatch(n, /Meta AI|Meta would|Meta featur|Meta's own/);
     assert.equal(isPolishMessage(note), true);
     assert.equal(isMetaLookPolish(note), true);
     assert.ok(note.includes(`\n${POLISH_META_STEP} `));
-    assert.match(POLISH_META_STEP, /switch this product to the Meta UI look/);
-    for (const want of [`Delete ${LOOK_CSS}`, `"${LOOK_COMMIT}"`, `"${RANGE_COMMIT}"`, "git show <commit>^:<path>", "@fontsource-variable/montserrat", "AGENTS.md", "/taste", "meta-ui wins", "44 by 44", "no fake or sample data", "keep every real model call", "npm run verify"]) {
+    assert.match(POLISH_META_STEP, /the muse-app look, \.agents\/skills\/muse-app-ui/);
+    for (const want of [
+      `${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files`,
+      "isn't in this sandbox",
+      ".agents/skills/muse-app-ui/reference/tokens.md",
+      `"${RANGE_COMMIT}"`,
+      ".agents/skills/design-looks",
+      "@fontsource-variable/inter/opsz.css",
+      "#181819",
+      "#0064d4",
+      `git commit -qm "${APP_LOOK_COMMIT}"`,
+      `"${APP_LOOK_NOTE}" at the top of BUILD_NOTES.md`,
+      `D=${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/files; for s in muse-app-ui product-ui meta-ui; do [ -d $D/.agents/skills/$s ] && rm -rf .agents/skills/$s && cp -R`,
+      "chmod -R u+w .agents/skills",
+      "white page, hairline cards, regular-weight Inter, one blue for actions, a purple gradient only on what a model made, a floating composer, and a left sidebar",
+      "AGENTS.md",
+      "/taste",
+      "muse-app-ui wins",
+      "44 by 44",
+      "no fake or sample data",
+      "keep every real model call",
+      "npm run verify",
+    ]) {
       assert.ok(note.includes(want), want);
     }
-    assert.ok(!note.includes("follow .agents/skills/muse-app-ui"));
+    // Nothing sends the product back to meta-ui, or keeps a direction.
+    assert.ok(!note.includes("follow .agents/skills/meta-ui"));
+    assert.ok(!note.includes("meta-ui wins"));
+    assert.ok(!note.includes(`Delete ${LOOK_CSS}`));
     assert.ok(!note.includes(String.fromCharCode(0x2014)));
     // The rest of the note is the same as without a look.
     assert.deepEqual(note.split("\n").filter((l) => l.startsWith("2.") || l.startsWith("5.") || l.startsWith("6.")), polishNote().split("\n").filter((l) => l.startsWith("2.") || l.startsWith("5.") || l.startsWith("6.")));
@@ -60,20 +88,18 @@ describe("the polish note with look meta", () => {
     assert.match(polishNote(" Tabs clip. ", "meta"), /audit of this product:\nTabs clip\.$/);
   });
 
-  it("names every file the muse-app overlay writes that the platform doesn't put back itself", () => {
+  it("names every file the muse-app overlay writes, except the starter page the product replaced", () => {
     const note = polishNote(null, "meta");
-    const restored = JSON.parse(readFileSync(join(OVERLAY, "platform-files.json"), "utf8")) as string[];
     const files = walk(join(OVERLAY, "files")).map((f) => relative(join(OVERLAY, "files"), f));
     assert.ok(files.length > 5);
     for (const f of files) {
-      // The platform puts these back before every check, so the note leaves them in place and names them.
-      const kept = restored.find((r) => f === r || f.startsWith(`${r}/`));
-      if (kept) assert.ok(note.includes(`Leave ${kept}`), f);
-      else assert.ok(note.includes(f) || note.includes(`${dirname(f)}/*.md`), f);
+      if (f === "app/page.tsx") continue;
+      const skill = /^\.agents\/skills\/[^/]+/.exec(f)?.[0];
+      assert.ok(note.includes(skill ?? f), f);
     }
   });
 
-  it("tells a shipped meta polish from one that failed or kept the look", () => {
+  it("tells a shipped look polish from one that failed or kept the look, and the afternoon's meta-ui one from today's", () => {
     const meta = polishNote(null, "meta");
     assert.equal(isMetaLookPolish(polishNote()), false);
     assert.equal(isMetaLookPolish("Make it Meta blue"), false);
@@ -81,6 +107,14 @@ describe("the polish note with look meta", () => {
     assert.equal(metaLookShipped([{ kind: "refine", message: meta, status: "partial" }]), true);
     assert.equal(metaLookShipped([{ kind: "refine", message: meta, status: "failed" }, { kind: "refine", message: polishNote(), status: "live" }]), false);
     assert.equal(changeLabel(meta, "Change"), POLISH_LABEL);
+    // The afternoon's meta-ui polish is a look polish, so a later judge reads no direction, but not look "meta" now.
+    assert.equal(isMetaLookPolish(OLD_META_UI), false);
+    assert.equal(isMetaUiLookPolish(OLD_META_UI), true);
+    assert.equal(isLookPolish(OLD_META_UI), true);
+    assert.equal(isLookPolish(meta), true);
+    assert.equal(isMetaUiLookPolish(meta), false);
+    assert.equal(isLookPolish(polishNote()), false);
+    assert.equal(metaLookShipped([{ kind: "refine", message: OLD_META_UI, status: "live" }]), true);
   });
 });
 
@@ -230,7 +264,7 @@ describe("POST /api/builds/{id}/polish", () => {
     assert.equal(done.calls.insert.length, 0);
     assert.equal((await startPolish(done.deps, BUILD, { again: true })).status, 201);
 
-    // A 409 naming a polish that switched the product to the Meta UI look says so, for polish-batch --look=meta.
+    // A 409 naming a polish that put the product on the Meta AI app look says so, for polish-batch --look=meta.
     const meta = polishNote(null, "meta");
     assert.deepEqual((await startPolish(deps({ lastPolish: async () => ({ buildId: "p1", status: "building", message: meta }) }).deps, BUILD, { look: "meta" })).body, { error: "busy", buildId: "p1", look: "meta" });
     const metaDone = await startPolish(deps({ lastPolish: async () => ({ buildId: "p1", status: "live", message: meta }) }).deps, BUILD, { look: "meta" });
@@ -238,6 +272,16 @@ describe("POST /api/builds/{id}/polish", () => {
     assert.equal(metaDone.body.look, "meta");
     const keptDone = await startPolish(deps({ lastPolish: async () => ({ buildId: "p2", status: "live", message: polishNote() }) }).deps, BUILD, { look: "meta" });
     assert.equal("look" in keptDone.body, false);
+    // A polish from the afternoon of Nov 3 that moved the product to meta-ui isn't this look: never followed as it, and
+    // --look=meta --again puts the product on the Meta AI app look.
+    const oldMetaUi = `${POLISH_HEADER} This is a polish round on a live product.\n\n${POLISH_META_UI_STEP} This round changes the look on purpose.`;
+    const oldDone = await startPolish(deps({ lastPolish: async () => ({ buildId: "p3", status: "live", message: oldMetaUi }) }).deps, BUILD, { look: "meta" });
+    assert.equal(oldDone.body.error, "already_polished");
+    assert.equal("look" in oldDone.body, false);
+    const redo = deps({ lastPolish: async () => ({ buildId: "p3", status: "live", message: oldMetaUi }) });
+    const again = await startPolish(redo.deps, BUILD, { look: "meta", again: true });
+    assert.equal(again.status, 201);
+    assert.equal((redo.calls.insert[0] as { message: string }).message, polishNote(null, "meta"));
 
     // insertRefineBuild's own check: another build of the product runs.
     const busy = deps({ insert: async () => null });

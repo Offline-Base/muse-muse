@@ -244,7 +244,7 @@ export function parsePolishAnswer(
   // --look without --again: a polish in another look never stands in for this one, and the route won't run a second.
   if (other && opts.look) {
     if (json.error === "already_polished") {
-      return { kind: "refused", reason: `409 already_polished: the product's polish ${json.buildId} kept its look, and this pass didn't send again: true. Run with --again (and --resume=<this file>) to switch it to look ${opts.look}.` };
+      return { kind: "refused", reason: `409 already_polished: the product's polish ${json.buildId} was in another look, and this pass didn't send again: true. Run with --again (and --resume=<this file>) to switch it to look ${opts.look}.` };
     }
     return { kind: "wait", reason: `409 ${reason}: the product's polish ${json.buildId} in another look still runs, so this pass asks again after it`, afterSeconds: 300 };
   }
@@ -304,10 +304,21 @@ export interface PolishItem {
   note?: string;
   /** The look this item's polish was started with (--look), absent for one that kept the product's look. */
   look?: PolishBatchLook;
+  /**
+   * With look "meta": true when it meant the Meta AI app look, muse-app-ui (from the evening of Nov 3). A file from
+   * before has look "meta" without it, which was meta-ui, so --again polishes that build again (resumedItem).
+   */
+  appLook?: boolean;
   /** --again: the polishes an earlier pass started on this build, kept for the ledger and never followed. */
   earlierRefineIds?: string[];
   /** One of earlierRefineIds still runs (readRound): the queue holds a reserve for it, as for a polish in flight. */
   earlierInFlight?: boolean;
+}
+
+/** The look an item was polished in: look "meta" without appLook is the meta-ui pass of the afternoon of Nov 3. */
+function itemLook(item: PolishItem): string | null {
+  if (item.look === "meta" && item.appLook !== true) return "meta-ui";
+  return item.look ?? null;
 }
 
 /**
@@ -318,7 +329,7 @@ export interface PolishItem {
 export function resumedItem(prior: PolishItem, pass: PolishPass = {}): PolishItem {
   const started = ["polishing", "polished", "polish_failed"].includes(prior.state);
   // A refused item started nothing, so with --again it is tried again whatever its look (its note may say to resume).
-  const again = pass.again && (prior.state === "refused" || (started && (prior.look ?? null) !== (pass.look ?? null)));
+  const again = pass.again && (prior.state === "refused" || (started && itemLook(prior) !== (pass.look ?? null)));
   if (!again) return { ...prior, state: prior.state === "ready" ? "waiting" : prior.state };
   return {
     label: prior.label,
@@ -327,7 +338,7 @@ export function resumedItem(prior: PolishItem, pass: PolishPass = {}): PolishIte
     refineIds: [],
     attempts: 0,
     earlierRefineIds: [...new Set([...(prior.earlierRefineIds ?? []), ...prior.refineIds])],
-    note: `${prior.state}${prior.look ? ` with look ${prior.look}` : ""} before; polishing again${pass.look ? ` with look ${pass.look}` : ""}`,
+    note: `${prior.state}${itemLook(prior) ? ` with look ${itemLook(prior)}` : ""} before; polishing again${pass.look ? ` with look ${pass.look}` : ""}`,
   };
 }
 

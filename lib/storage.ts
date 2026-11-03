@@ -27,6 +27,8 @@ import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localF
  *   source/<productId>/<sha>  a product's saved source files, by content (lib/versions/store.ts). Kept. Read only by
  *                             the server: a browser is never sent one of these URLs.
  *   caps/code/<session>/...   a Muse Code session's result zip, under an unguessable name. Deleted after 24 hours by the sweep.
+ *   samtune/<runId>/...       a SAM 3.1 tune run's own photos and look-alikes (lib/train/sam/). Deleted after 7 days by
+ *                             the cleanup cron, except samtune/<runId>/report/..., the board's report files, which are kept.
  *
  * Local runs keep the same paths in .data/files instead (lib/local-files.ts).
  */

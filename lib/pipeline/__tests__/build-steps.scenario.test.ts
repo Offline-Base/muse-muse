@@ -15,7 +15,7 @@ import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
 import { goalObjective, renderRefinePrompt } from "@/lib/brief/render";
-import { polishNote } from "@/lib/polish/logic";
+import { POLISH_META_UI_STEP, polishNote } from "@/lib/polish/logic";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import type { Brief, ModelUsage } from "@/lib/types";
 import { z } from "zod";
@@ -411,8 +411,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(emitted[0]!.body.type, "judge");
     });
 
-    it("judges a polish with look meta, and later changes to its product, on the Meta UI look", async () => {
+    it("judges a look polish, and later changes to its product, with no direction or asked look", async () => {
       const meta = polishNote(null, "meta");
+      // A look "meta" polish from the afternoon of Nov 3, which moved the product to meta-ui: still a look polish.
+      const oldMetaUi = `${polishNote().split("\n")[0]}\n\n${POLISH_META_UI_STEP} This round changes the look on purpose.`;
       const judgeWith = async (row: Record<string, unknown>, polishes: Array<Record<string, unknown>>) => {
         judgeInputs = [];
         selects = { builds: [[{ ...refineRow, brief: BRIEF, ...row }], polishes], inspirations: [[{ references: [] }], [{ references: [] }]], products: [[{ id: "prod-1", inspirationId: "insp-original" }]] };
@@ -423,6 +425,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(await judgeWith({ message: meta }, []), true);
       assert.equal(await judgeWith({ message: "Add a dark mode" }, [{ kind: "refine", message: meta, status: "live" }]), true);
       assert.equal(await judgeWith({ message: "Add a dark mode" }, [{ kind: "refine", message: meta, status: "failed" }]), undefined);
+      assert.equal(await judgeWith({ message: oldMetaUi }, []), true);
+      assert.equal(await judgeWith({ message: "Add a dark mode" }, [{ kind: "refine", message: oldMetaUi, status: "live" }]), true);
       assert.equal(await judgeWith({ kind: "build", message: null }, []), undefined);
     });
 
@@ -637,19 +641,20 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     const verdict = { pass: false, blocking: false, reasons: ["The result is cut off."], mismatches: ["No total."] };
     const FIXING = { id: "b1", kind: "build", brief: null, message: null, productId: "prod-1", capsDropped: null };
 
-    it("keeps the Meta UI look in a polish with look meta, and in a later change once one shipped", async () => {
+    it("keeps the Meta AI app look with no direction in a polish with look meta, and in a later change once one shipped", async () => {
       const meta = polishNote(null, "meta");
+      const KEEP = /`\.agents\/skills\/muse-app-ui` \(the Meta AI app look\) when the product has them, or else `\.agents\/skills\/meta-ui`\. No Design direction sets it/;
       selects = { builds: [[{ ...FIXING, kind: "refine", message: meta }]], build_events: [[verifyEvent(false)]] };
       await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
-      assert.match(productFiles[0]!.content, /- Keep the product's current look, the Meta UI look: /);
+      assert.match(productFiles[0]!.content, KEEP);
       productFiles = [];
       selects = { builds: [[{ ...FIXING, kind: "refine", message: "Add a dark theme." }], [{ kind: "refine", message: meta, status: "live" }]], build_events: [[verifyEvent(false)]] };
       await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
-      assert.match(productFiles[0]!.content, /the Meta UI look: /);
+      assert.match(productFiles[0]!.content, KEEP);
       productFiles = [];
       selects = { builds: [[{ ...FIXING, kind: "refine", message: "Add a dark theme." }], [{ kind: "refine", message: polishNote(), status: "live" }]], build_events: [[verifyEvent(false)]] };
       await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
-      assert.doesNotMatch(productFiles[0]!.content, /the Meta UI look/);
+      assert.doesNotMatch(productFiles[0]!.content, /the Meta AI app look|No Design direction sets it/);
     });
 
     it("copies in the screenshots the judge saw and names them in fix-<n>.md", async () => {

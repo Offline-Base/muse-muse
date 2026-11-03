@@ -1,14 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import type { CocoBox } from "@/lib/train/sam/label";
-import { samTuneRunsShim as t } from "@/lib/train/sam/u1-shim";
+import { samTuneRuns as t } from "@/lib/db/schema";
 import { SAM_TUNE_LIMITS, type SamData, type SamDistractor, type SamPhoto, type SamStatus } from "@/lib/train/sam/types";
 
 /**
  * U6's writes to a SAM tune run: the person's own photos, their boxes and the look-alikes, all while the run is a draft
  * on the person's own photos (data "uploads"). Each write is one UPDATE whose WHERE holds the rule, so two requests at
- * once can't pass a count cap or edit a run that was started meanwhile. On merge the table is U1's samTuneRuns
- * (lib/train/sam/u1-shim.ts says how).
+ * once can't pass a count cap or edit a run that was started meanwhile. The table is U1's samTuneRuns (migration 0033).
  */
 
 export interface UploadRun {
