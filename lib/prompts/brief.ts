@@ -2,7 +2,7 @@ import type { TargetId } from "@/lib/brief/schema";
 import { capsWriterRules } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { engineWriterRules } from "@/lib/engine/prompts";
-import { FULL_ACTIONS_LINE, FULL_COMPLEXITY_LINE, FULL_FLOW_LINES, FULL_LIMITS_LINE, FULL_WRITER_SECTION } from "@/lib/full/prompts";
+import { FOLLOW_UP_WRITER_RULE, FULL_ACTIONS_LINE, FULL_COMPLEXITY_LINE, FULL_FLOW_LINES, FULL_LIMITS_LINE, FULL_WRITER_SECTION } from "@/lib/full/prompts";
 import { env } from "@/lib/env";
 import { targetLabel } from "@/lib/format";
 import { PERSONAL_TOOLS_GUIDE, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
@@ -60,6 +60,13 @@ function whereItRuns(enabled: readonly TargetId[]): string {
  */
 export const SAMPLE_WRITER_RULE =
   'Together the fixtures must exercise every requirement and every word in the note that says what the input is like, so the test can prove each one. A "long" policy is 3,000 to 6,000 characters across many sections, not one paragraph. A "noisy" feed has at least 15 entries, one per line, with repeats, junk lines and out-of-order times among the real ones. A totals check needs a sample whose printed total doesn\'t match its rows. "Several speakers" means at least three named voices. A chart to explain prints its values and names its series. Never pick a sample that can show a feature only as zero, empty or "nothing to check".';
+
+/**
+ * Flows end after the person answers, and games end on their own (audit, Nov 3): the judge saw a screen waiting for an
+ * approval, not what it did, and a missed quota left a level playing forever.
+ */
+export const FLOW_END_WRITER_RULE =
+  "When the flow stops for the person (an approval, a pause, a sign-off), primaryFlow goes on past it to what happens after they answer. In a game, every level ends on its own by time, distance or lives, not only when the player wins.";
 
 /** Hex values are what BUILD_RANGE's direction needs from a reference, so this is the one sentence it swaps. */
 const REFERENCE_COLORS = "Describe colors as roles (a dark header, a warm accent), not hex values.";
@@ -137,7 +144,8 @@ ${opts.fullBuilds || range ? FULL_COMPLEXITY_LINE : `- complexity is "complex" o
 - costItems split one run of the primary flow into its parts, from the prices above: one entry per call, or per kind of tool use such as the web searches. what names the part in a few words with its counts (tokens in and out, how many searches), and usd is that part's cost in dollars. Code adds the parts up and that sum is the run's total, so estimatedCostPerRunUsd is your own sum of the same parts. costNotes says in a sentence or two what a run assumes, with no dollar figures.
 - fixtures are one to three sample inputs the automated test feeds the primary flow. fromUserSample is true when one of the person's references is itself a good input of that kind (their own photo for a photo-reading tool, their PDF for a tool that reads that kind of document). When the product takes a file of the same kind the person gave, include that reference as a fixture. referenceIndex is that reference's index when fromUserSample is true, otherwise null. For an image fixture that isn't from the person, description is a picture Muse Image can draw: subject, setting, angle, light, with no logos, brands or real people. For a text fixture, description is the sample text itself, ready to paste, under 1,000 characters, or 3,000 to 6,000 when the note asks for a long one.
 - ${SAMPLE_WRITER_RULE}
-${opts.fullBuilds || range ? FULL_ACTIONS_LINE : `- actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words.`}
+- ${FLOW_END_WRITER_RULE}
+${opts.fullBuilds || range ? FULL_ACTIONS_LINE : `- actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words. ${FOLLOW_UP_WRITER_RULE}`}
 - Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.${engineRules()}${opts.builderRule ? `\n- ${opts.builderRule}` : ""}${opts.fullBuilds ? FULL_WRITER_SECTION : ""}${whereItRuns(env.enabledTargets)}${capsRules(caps)}${recipesWriterRules(caps)}${range ? rangeWriterSection(range.start, range.recent) : ""}`;
   return range ? text.replace(REFERENCE_COLORS, RANGE_REFERENCE_COLORS) : text;
 }

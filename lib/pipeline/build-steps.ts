@@ -24,7 +24,7 @@ import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/mo
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
-import { judgeBuild, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
+import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
 import { briefRequirements, buildableRequirements, fullMilestones, requirementsFile, unmetLines } from "@/lib/full/requirements";
 import { scopeLine } from "@/lib/full/scope";
@@ -1234,7 +1234,19 @@ async function sentNotes(buildId: string): Promise<string[]> {
   return rows.flatMap(({ payload: p }) => (p.type === "control" && p.ok && p.text && (p.action === "steer" || p.action === "queue") ? [p.text] : []));
 }
 
-/** The judge model (env.judgeModel) checks the screenshots against the brief and the image inspo. */
+/**
+ * The product's own samples for the judge, read from its sandbox (collectJudgeSamples). They help but aren't needed, so
+ * a sandbox that can't be read gives none.
+ */
+async function judgeSamplesFor(sandboxName: string | null | undefined, buildId: string, round: number): Promise<JudgeSample[]> {
+  if (!sandboxName) return [];
+  return sandbox.collectJudgeSamples({ sandboxName, buildId, round }).catch((err: unknown) => {
+    console.warn(`judge samples for build ${buildId}: ${String(err)}`);
+    return [];
+  });
+}
+
+/** The judge model (env.judgeModel) checks the screenshots against the brief, the image inspo and the product's samples. */
 export async function judgeStep(input: {
   buildId: string;
   productId: string;
@@ -1264,7 +1276,9 @@ export async function judgeStep(input: {
   // FULL_BUILDS: every requirement is judged, with what its own test did. Null means no test results reached here.
   const requirementTests = fullBuildOf(brief) ? ((await verifySummaryFor(input.buildId, input.round))?.requirements ?? null) : undefined;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
+  const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
   const result = await judgeBuild({
+    ...(samples.length ? { samples } : {}),
     ...(requirementTests !== undefined ? { requirementTests } : {}),
     ...(ownerNotes.length ? { ownerNotes } : {}),
     brief,

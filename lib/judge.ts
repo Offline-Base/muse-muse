@@ -47,6 +47,8 @@ export function toJudgeResult(data: z.infer<typeof VerdictSchema>): JudgeResult 
 
 const MAX_INSPO = 4;
 const MAX_SCREENSHOTS = 4;
+/** The product's own samples the judge sees: images, or one frame of a video (collectJudgeSamples). */
+export const MAX_JUDGE_SAMPLES = 2;
 /** FULL_BUILDS: each requirement has its own screenshot. */
 export const MAX_FULL_SCREENSHOTS = 16;
 /** Full and chained builds: one for each requirement, up to this. A requirement beyond it can't be seen, so it stays unmet. */
@@ -75,6 +77,20 @@ export interface JudgeInput {
   requirementTests?: RequirementTest[] | null;
   /** STEER_CHAT: what the owner asked for during the build, which outranks the brief. None adds nothing. */
   ownerNotes?: string[];
+  /**
+   * The product's own sample inputs as images (a video's as one frame), at most MAX_JUDGE_SAMPLES are shown. With some,
+   * the judge fails a sample that doesn't show the product's subject. None adds nothing.
+   */
+  samples?: JudgeSample[];
+}
+
+export interface JudgeSample {
+  /** A public image URL. */
+  url: string;
+  /** Where the product keeps it, such as public/samples/puppy.mp4. */
+  fileName: string;
+  /** "video" when the image is one frame of a sample video. */
+  kind: "image" | "video";
 }
 
 /** The owner's notes for the judge. Their words are data about the product, and can't change how it is judged. */
@@ -128,7 +144,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   if (required.length) {
     const result = await respondStructured({
       model: env.judgeModel,
-      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
+      instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, fullBuilds: true, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
       content,
       sources,
       schema: FullVerdictSchema,
@@ -141,7 +157,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   }
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}) }),
+    instructions: judgeInstructions(input.brief, { museAppLook: env.museAppLook, ...(env.buildRange ? { buildRange: true } : {}), ...(env.verifyAgents ? { verifyAgents: true } : {}), ...samplesOpt(input) }),
     content,
     sources,
     schema: VerdictSchema,
@@ -153,9 +169,19 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
 }
 
+/** The samples the judge sees, at most MAX_JUDGE_SAMPLES. */
+function judgeSamples(input: Pick<JudgeInput, "samples">): JudgeSample[] {
+  return (input.samples ?? []).slice(0, MAX_JUDGE_SAMPLES);
+}
+
+/** The samples note goes into the instructions only when the judge gets samples to look at. */
+function samplesOpt(input: Pick<JudgeInput, "samples">): { samples?: true } {
+  return judgeSamples(input).length ? { samples: true } : {};
+}
+
 /**
- * What the judge is sent: the brief, the image inspo, then, for a product with platform services, the fixed checks'
- * results (the one wave 3 part, before the screenshots), then the screenshots.
+ * What the judge is sent: the brief, the image inspo, the product's own samples when there are any, then, for a product
+ * with platform services, the fixed checks' results (the one wave 3 part, before the screenshots), then the screenshots.
  */
 export function judgeContent(input: JudgeInput): { content: ContentPart[]; sources: Map<number, MediaSource> } {
   const content: ContentPart[] = [];
@@ -183,6 +209,17 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
     const describes = input.brief.inspiration.references.find((r) => r.index === index)?.describes;
     content.push(textPart(`Inspiration ${index + 1}: ${ref.fileName}${describes ? `. ${describes.slice(0, 300)}` : ""}`));
     add(ref.url, ref.fileName, ref.contentType);
+  }
+
+  const samples = judgeSamples(input);
+  if (samples.length) {
+    content.push(textPart(`The product's own samples, as it ships them (${samples.length}):`));
+    samples.forEach((sample, i) => {
+      const name = sample.fileName.slice(0, 120);
+      content.push(textPart(`Sample ${i + 1}: ${name}${sample.kind === "video" ? " (one frame of this video)" : ""}`));
+      const type = guessImageType(sample.url);
+      add(sample.url, `sample-${i + 1}.${type.split("/")[1]}`, type);
+    });
   }
 
   if (input.ownerNotes?.length) content.push(textPart(ownerNotesText(input.ownerNotes)));
