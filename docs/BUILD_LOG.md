@@ -2854,4 +2854,16 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - didn't ship: "This one didn't ship, but the plan still stands."
   - Rendered with sample data in light and dark and looked at (docs/log/shots/2026-11-02/plan-talk-*.png). Two fixes from looking: the bubble slid under the floated picture in the wide card (now its own block), and the tail smudged in dark (now a clean point).
   - Tests: plan-card 36 of 37 and tune-room pass. The one failure, raw colors in plan-card.css, was already on main (#59) and isn't from this change. Typecheck clean.
+- **Later, same branch: Muse talks with no background, then fades to the plan's picture after 8 s (owner: "remove the off white background", "slowly transition it to the generated image ... after 8 seconds").**
+  - `scripts/dev/mascot/talk.sh` keys the clip's flat off-white (about 250, neutral) the way walk.sh does: warm fur stays solid, neutral light greys go fully transparent.
+  - Encoded at 424 x 480, twice the card's widest picture: transparent VP9 WebM (400 KB) for Chrome and Firefox, HEVC with alpha (760 KB) for Safari, picked in the browser, with a transparent PNG poster. The white-background MP4 is gone.
+  - `PlanCard.tsx`: on a plan that's new when the card opens, Muse talks for 8 s (`TALK_MS`). Then the card fades over 1.6 s (`TALK_FADE_MS`, slower than a state swap) to the picture it would show otherwise: the build's own generated picture once it's in, else the stock one. He keeps moving through the fade, then stops.
+  - Checked on the local seeded site in Chromium, light and dark:
+    - talking at 2 s, with no picture shown;
+    - fading at about 9 s, still moving;
+    - the picture fully in at 11 s, with the clip hidden and paused;
+    - no page errors.
+  - Screenshots: docs/log/shots/2026-11-02/plan-talk-fade-*.png.
+  - Not yet seen in Safari.
+  - plan-card tests updated for the talk-first order: 70 of 71 with tune-room. The one failure is main's own (#59). Typecheck clean.
 

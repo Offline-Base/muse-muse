@@ -181,6 +181,11 @@ describe("the build's own picture (PLAN_ART)", () => {
       for (const running of [true, false]) {
         const html = card({}, { art, running, artUrl: OWN });
         assert.equal(count(html, "<img"), 1, `${art}, running ${running}: only its own picture loads`);
+        if (art === "present" && running) {
+          // A new plan: Muse talks first (TALK_MS), and the build's picture waits under him for the slow fade.
+          assert.match(html, new RegExp(`<div class="plan-card-stack"><video class="is-on" [^>]*></video><img src="${OWN.replace(/[./]/g, "\\$&")}" alt="" width="564" height="640" decoding="async"/></div>`));
+          continue;
+        }
         assert.match(html, new RegExp(`<div class="plan-card plan-card-wrap" data-art="${art}"><div class="plan-card-art"><div class="plan-card-stack"><img class="is-on" src="${OWN.replace(/[./]/g, "\\$&")}" alt="" width="564" height="640" decoding="async"/></div></div>`));
       }
     }
@@ -209,7 +214,8 @@ describe("the build's own picture (PLAN_ART)", () => {
       build: { ...f.build, status: "briefing", step: "brief", previewUrl: null, costUsd: 0 },
       events: stamp([{ type: "status", status: "briefing", step: "brief" }, { type: "brief", brief }, { type: "plan_art", url: OWN }]),
     });
-    assert.match(html, new RegExp(`<img class="is-on" src="${OWN.replace(/[./]/g, "\\$&")}"`));
+    // Muse talks first on a new plan; the build's own picture is the only one fetched, waiting for the fade.
+    assert.match(html, new RegExp(`<video class="is-on" [^>]*></video><img src="${OWN.replace(/[./]/g, "\\$&")}"`));
     assert.doesNotMatch(html, /rel="preload"[^>]*\/muse\/muse-/);
   });
 
@@ -431,8 +437,9 @@ describe("the card's look", () => {
   it("fades a picture that comes in later over the stock mascot, once it has loaded, in the same box", () => {
     const src = readFileSync(path.join(ROOT, "components/build/PlanCard.tsx"), "utf8");
     // The stock picture keeps is-on until the build's own has loaded, so the swap never fades to an empty box.
-    assert.match(src, /className=\{a === art && !own \? "is-on" : undefined\}/);
-    assert.match(src, /className=\{own \? "is-on" : undefined\}[\s\S]*?onLoad=\{\(\) => setOwnLoaded\(true\)\}/);
+    // While Muse talks on a new plan (TALK_MS) neither shows; then the same rule, with a slower fade.
+    assert.match(src, /className=\{a === art && !own && !talking \? "is-on" : undefined\}/);
+    assert.match(src, /className=\{own && !talking \? "is-on" : undefined\}[\s\S]*?onLoad=\{\(\) => setOwnLoaded\(true\)\}/);
     assert.match(css(), /\.plan-card-stack > img \{[^}]*position: absolute;[^}]*object-fit: cover;/, "every picture fills the one box");
   });
 
@@ -464,16 +471,25 @@ describe("Muse talking beside the plan (owner, Nov 2)", () => {
     for (const art of ["present", "building", "shield"] as const) for (const r of [true, false]) assert.doesNotMatch(planSays(art, r), /—/);
   });
 
-  it("plays the talking clip only on the build room's card while the plan is new, never over a build's own picture", async () => {
+  it("talks first on a new plan, under every picture's own fade, and only on the build room's card", async () => {
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { createElement } = await import("react");
-    const { PlanViewCard } = await import("@/components/build/PlanCard");
+    const { PlanViewCard, PLAN_TALK, TALK_MS } = await import("@/components/build/PlanCard");
     const view = { name: "Made-up plan", sections: [] };
     const html = (props: Record<string, unknown>) => renderToStaticMarkup(createElement(PlanViewCard as never, { view, running: true, ...props } as never));
-    assert.match(html({ art: "present", say: "Hi" }), /<video class="is-on" src="\/muse\/muse-talk\.mp4"/);
-    assert.match(html({ art: "present", say: "Hi" }), /<p class="plan-card-say">Hi<\/p>/);
+    const talking = html({ art: "present", say: "Hi" });
+    assert.match(talking, /<video class="is-on" poster="\/muse\/muse-talk\.png"/, "the transparent clip, its file picked in the browser");
+    assert.doesNotMatch(talking, /<img class="is-on"/, "no picture shows while Muse talks");
+    assert.match(talking, /<p class="plan-card-say">Hi<\/p>/);
+    assert.equal(TALK_MS, 8000);
+    assert.match(PLAN_TALK.webm, /\.webm$/);
+    assert.match(PLAN_TALK.hevc, /\.mov$/);
+    // A build's own picture is there from the start: Muse still talks first, then fades to it.
+    const own = html({ art: "present", say: "Hi", artUrl: "https://blob.example/x.jpg" });
+    assert.match(own, /<video class="is-on"/);
+    assert.match(own, /<img src="https:\/\/blob\.example\/x\.jpg"/, "the build's picture waits under him");
     assert.doesNotMatch(html({ art: "present" }), /<video/, "the fine-tune room's card has no bubble and no clip");
-    assert.doesNotMatch(html({ art: "present", say: "Hi", artUrl: "https://blob.example/x.jpg" }), /<video/, "a picture of its own wins");
-    assert.doesNotMatch(html({ art: "building", say: "Hi" }), /<video class="is-on"/);
+    assert.doesNotMatch(html({ art: "present", say: "Hi", running: false }), /<video/, "a plan that's over doesn't talk");
+    assert.doesNotMatch(html({ art: "building", say: "Hi" }), /<video/, "a build already under way doesn't talk");
   });
 });
