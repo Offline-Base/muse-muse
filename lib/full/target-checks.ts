@@ -21,7 +21,7 @@ const NATIVE = /\b(?:android|iphone|ios|mac|macos|windows|desktop)\s+(?:app|appl
 // The board's backup: an edge board, a Jetson, an answer when the cloud or the network is down.
 const BOARD = /\b(?:edge board|jetson|on (?:the|a|an) (?:[a-z-]+ )?board|board(?:'s)? (?:backup|model|answer)|backup (?:model|answer)|offline|outage)\b|\b(?:cloud|network|internet|wi-?fi) (?:is |goes |stays )?(?:cut|down|out|unreachable|lost|unavailable)\b|\bwithout (?:the )?(?:cloud|internet|network)\b/i;
 // A photo look on the board, which the SAM drills prove.
-const BOARD_LOOK = /\b(?:photo|picture|image|camera|door|sam|outline|mask|look at)\b/i;
+const BOARD_LOOK = /\b(?:photos?|pictures?|images?|camera|sam|outline|mask|look at)\b/i;
 // A question that comes in by voice. An answer spoken out ("speaks the answer") is not this.
 const VOICE_IN = /\b(?:voice|spoken)\s+(?:question|request|command|query|note|input|prompt)s?\b|\b(?:ask|asks|asking|asked|say|says|speak|speaks)\b[^.]{0,40}\b(?:out loud|aloud|by voice|with (?:their|your|the) voice|into the (?:mic|microphone))\b|\bmicrophone\b|\btranscrib\w*|\bhears? (?:the|a|their|your) (?:short )?question\b|\bhearing the question\b/i;
 // The headset itself: Quest, Quest Browser, a headset. "In VR" alone is what the simulated screenshots show the judge.
@@ -73,7 +73,7 @@ export interface TargetFacts {
   smokePassed: boolean | null;
   /** The outage drills on this round: whether the four main ones and the four photo ones all passed, or null when they didn't run. */
   drills: { main: boolean | null; look: boolean | null } | null;
-  /** The models the gateway recorded for this build's tests, or null when its record can't speak for the product. */
+  /** The models the gateway recorded for this build's token since it started, or null when its record can't speak for the product. */
   modelsCalled: readonly string[] | null;
   /** True when the brief lists Muse Voice Transcribe, so the gateway would have served it. */
   transcribeListed: boolean;
@@ -134,12 +134,12 @@ export function targetCheckVerdict(requirement: Pick<Requirement, "text">, kind:
       return unproven(look ? "no photo drill ran, so nothing showed Meta SAM 3.1 answering from a board. An answer from the cloud doesn't count." : "no outage drill ran, so nothing showed a board answering. An answer from the cloud doesn't count.");
     }
     case "voice": {
-      if (facts.modelsCalled?.includes(TRANSCRIBE_MODEL)) return { state: "met", detail: "The gateway recorded Muse Voice Transcribe calls from this build's tests." };
+      if (facts.modelsCalled?.includes(TRANSCRIBE_MODEL)) return { state: "met", detail: "The gateway recorded Muse Voice Transcribe calls while this build ran." };
       if (facts.modelsCalled && facts.transcribeListed) {
         return {
           state: "unmet",
           detail:
-            "No spoken question was transcribed: the gateway recorded no Muse Voice Transcribe call in this build's tests. Send the recorded question to muse-voice-transcribe-1.0 with transcribeFile and answer what it says, and have the smoke test give the glasses a spoken question (fixtures/question.wav). Never drop the recording for a typed question.",
+            "No spoken question was transcribed: the gateway recorded no Muse Voice Transcribe call while this build ran. Send the recorded question to muse-voice-transcribe-1.0 with transcribeFile and answer what it says, and have the smoke test send a sample spoken question (a 16 kHz WAV in fixtures/, as the target's skill shows). Never drop the recording for a typed question.",
         };
       }
       return unproven("nothing recorded a spoken question going to Muse Voice Transcribe.");
@@ -162,7 +162,7 @@ export function targetCheckResults(brief: TargetBrief | null | undefined, facts:
 
 /** How the build is told each target-only requirement is checked, so its tests give that check something to see. */
 export const TARGET_CHECK_HOW: Record<TargetCheckKind, string> = {
-  native: "the platform packages the app after the product goes live, so no screenshot can show it. Build the web product it opens.",
+  native: "the platform makes the app package after the product goes live, when packaging is set up, so no screenshot can show it. Build the web product it opens.",
   board: "the outage drills prove it, with the cloud cut and a simulated board. A cloud answer never counts for it.",
   voice: "the gateway's record must show a Muse Voice Transcribe call from your tests, so the smoke test gives the product a spoken question and the product transcribes it.",
   headset: "the smoke test must enter VR with xr.enter(page) and take a judge screenshot inside it.",

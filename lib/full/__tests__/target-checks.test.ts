@@ -116,6 +116,11 @@ describe("the verdict on a target requirement", () => {
     const both = targetFactsFrom({ steps: drillSteps([1, 2, 3, 4, 12, 13, 14, 15]) });
     assert.equal(targetCheckVerdict(look, "board", both).state, "met");
     assert.match(targetCheckVerdict(look, "board", both).detail!, /Meta SAM 3\.1 on a simulated board/);
+    // Plural photos count as a look; a door alone doesn't (a door sensor reading is the main answer).
+    const photos = req(2, "Keep checking door photos on the board when the cloud is down.");
+    assert.equal(targetCheckVerdict(photos, "board", both).detail, targetCheckVerdict(look, "board", both).detail);
+    const sensor = req(3, "Keep showing the door sensor status on the board when the cloud is down.");
+    assert.equal(targetCheckVerdict(sensor, "board", targetFactsFrom({ steps: drillSteps([1, 2, 3, 4]) })).state, "met");
   });
 
   it("a voice question needs the gateway's record of Muse Voice Transcribe", () => {
@@ -126,6 +131,7 @@ describe("the verdict on a target requirement", () => {
     assert.equal(thrownAway.state, "unmet");
     assert.match(thrownAway.detail!, /Never drop the recording for a typed question/);
     assert.ok(!/^not proven/i.test(thrownAway.detail!), "its own fix, not the sample one");
+    assert.ok(!/glasses/i.test(thrownAway.detail!), "the same fix reads right for a VR product");
     assert.equal(targetCheckVerdict(r, "voice", { ...NO_TARGET_FACTS, modelsCalled: ["muse-wonder-1.0"] }).state, "unchecked", "not listed, so the gateway would refuse it");
     assert.equal(targetCheckVerdict(r, "voice", { ...NO_TARGET_FACTS, modelsCalled: [TRANSCRIBE_MODEL] }).state, "met");
     const brief = withTargets(["glasses"], [r]);
