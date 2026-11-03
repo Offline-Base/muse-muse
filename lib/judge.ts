@@ -94,6 +94,7 @@ export interface JudgeInput {
    * or a build that started before the flag, and the judge keeps both house styles for it. Ignored with the flag off.
    */
   productHasMuseAppLook?: boolean;
+  /**
    * The polish round's no-worse gate: the requirements the live version already failed (polishBaseline). The judge
    * still reports them, but its own call doesn't fail the product for them alone. None adds nothing.
    */
