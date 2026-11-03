@@ -2862,4 +2862,31 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
   - Left off: the partial recheck (FAST_BUILDS). It only skips a full verify when a fix round fails again, so it saves little with 2 fix rounds.
   - The template and skill changes reach production builds only after `npm run snapshot`; the rest ships with the site.
   - Tests for the touched code: 257 pass. The 3 that fail (plan-art-flag-off twice, plan-card's raw colors) fail the same way on main before this change; plan-card's raw colors came in with #59. Brief writer and full-build tests 148 of 148, template agent overlay 119 of 119. Typecheck clean. The workflow scenarios pin `MAX_FIX_ROUNDS=3`, since they walk the loop itself.
+- **Nov 2, evening: Muse talks beside the plan, with a speech bubble (owner: show the talking video when the plan is made, with a text bubble, like the screenshot).**
+  - From the owner's clip (`generated_video (2).mp4`, 10 s, 960 x 960): cropped to the card's 564 x 640 box on the same white the pictures use, H.264 with no sound, 192 KB (`public/muse/muse-talk.mp4`), its first frame as the poster.
+  - It loops as it is: a search over every start and end pair found the clip's own last frame closest to its first (mean difference 0.32, under a normal frame step of 0.73).
+  - `components/build/PlanCard.tsx`:
+    - while the plan is new (the presenting state), the card plays the clip in place of the presenting picture, in the same box and crossfade;
+    - a build's own picture still wins;
+    - the fine-tune room's card is unchanged;
+    - it plays only while shown, and stays on its first frame with reduced motion.
+  - A speech bubble beside him, above the plan's name, says one line by state (`planSays`):
+    - new: "Here's my plan! I'm getting set up to build it.";
+    - building: "I'm building it now. Follow along in the steps.";
+    - live: "It's live! Open it and give it a try.";
+    - didn't ship: "This one didn't ship, but the plan still stands."
+  - Rendered with sample data in light and dark and looked at (docs/log/shots/2026-11-02/plan-talk-*.png). Two fixes from looking: the bubble slid under the floated picture in the wide card (now its own block), and the tail smudged in dark (now a clean point).
+  - Tests: plan-card 36 of 37 and tune-room pass. The one failure, raw colors in plan-card.css, was already on main (#59) and isn't from this change. Typecheck clean.
+- **Later, same branch: Muse talks with no background, then fades to the plan's picture after 8 s (owner: "remove the off white background", "slowly transition it to the generated image ... after 8 seconds").**
+  - `scripts/dev/mascot/talk.sh` keys the clip's flat off-white (about 250, neutral) the way walk.sh does: warm fur stays solid, neutral light greys go fully transparent.
+  - Encoded at 424 x 480, twice the card's widest picture: transparent VP9 WebM (400 KB) for Chrome and Firefox, HEVC with alpha (760 KB) for Safari, picked in the browser, with a transparent PNG poster. The white-background MP4 is gone.
+  - `PlanCard.tsx`: on a plan that's new when the card opens, Muse talks for 8 s (`TALK_MS`). Then the card fades over 1.6 s (`TALK_FADE_MS`, slower than a state swap) to the picture it would show otherwise: the build's own generated picture once it's in, else the stock one. He keeps moving through the fade, then stops.
+  - Checked on the local seeded site in Chromium, light and dark:
+    - talking at 2 s, with no picture shown;
+    - fading at about 9 s, still moving;
+    - the picture fully in at 11 s, with the clip hidden and paused;
+    - no page errors.
+  - Screenshots: docs/log/shots/2026-11-02/plan-talk-fade-*.png.
+  - Not yet seen in Safari.
+  - plan-card tests updated for the talk-first order: 70 of 71 with tune-room. The one failure is main's own (#59). Typecheck clean.
 
