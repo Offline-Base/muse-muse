@@ -180,7 +180,7 @@ def test_a_refused_setting_in_dotenv_is_refused_too(tmp_path, monkeypatch):
 def test_the_off_values_still_load(tmp_path, env):
     s = load_settings({"BASE_HOME": str(tmp_path), **env})
     assert s.checker_backend == s.primary_model == "glimmer"
-    assert not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm)
+    assert not (s.search_embeddings or s.has_jetson_lfm)
 
 
 def test_meta_model_ids_and_a_local_alias_still_load(tmp_path):
@@ -195,7 +195,8 @@ def test_defaults_are_meta_models_only(tmp_path):
     s = load_settings({"BASE_HOME": str(tmp_path)})
     assert s.primary_model == s.checker_backend == "glimmer"
     assert s.answer_model == s.router_model == "meta/muse-glimmer-30b"
-    assert not (s.search_embeddings or s.prompt_guard or s.has_jetson_lfm or s.device_only)
+    assert not (s.search_embeddings or s.has_jetson_lfm or s.device_only)
+    assert not hasattr(s, "prompt_guard"), "Prompt Guard's settings are gone, and PROMPT_GUARD=1 is refused"
 
 
 def test_device_only_now_needs_glimmer_on_this_device(tmp_path):

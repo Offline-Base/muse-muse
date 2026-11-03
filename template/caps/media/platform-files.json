@@ -1,13 +1,11 @@
 [
   "lib/platform/media-assets.ts",
-  "lib/platform/speech.ts",
   "lib/platform/video.ts",
   "lib/platform/mp4.ts",
   "lib/platform/midi.ts",
   "lib/platform/sam-tiles.ts",
   "lib/platform/sam-boxes.ts",
   "public/notices/media.txt",
-  "public/notices/onnxruntime.txt",
   "tests/caps/media.ts",
   "scripts/caps/media.mjs",
   ".agents/skills/muse-media/SKILL.md"

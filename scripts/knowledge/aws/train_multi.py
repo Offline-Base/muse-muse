@@ -623,14 +623,14 @@ def remote_path(p):
 def start_run(a):
     """Starts run_multi.sh on a Lambda training machine (detached with setsid, so no SSH session holds it) and, unless
     --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while anything holds a
-    GPU there (nvidia-smi, and the job names run_student.sh checks), so it can't disturb a run in progress."""
+    GPU there (nvidia-smi, and the known job names), so it can't disturb a run in progress."""
     ip = machine(a.name)["ip"]
     run = a.run
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", run):
         raise SystemExit("--run: letters, digits, . _ - only")
     # [t] keeps pgrep from matching this very command line. "checked" last, so a lost connection doesn't read as free.
     busy = ssh(ip, "{ nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader; pgrep -af "
-                   "'[t]rain_glimmer.py|[t]rain_student.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
+                   "'[t]rain_glimmer.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
                    "echo checked").stdout.strip()
     if busy != "checked":
         raise SystemExit(f"{a.name}: something holds a GPU there ({busy or 'no answer'}); not starting {run}")

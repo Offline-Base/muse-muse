@@ -8,6 +8,7 @@ gets, the decision and the decision rows are the same every time. Everything her
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -19,7 +20,7 @@ from base.approvals import ApprovalStore
 from base.egress import Egress
 from base.policy import PolicyError, UserPolicy
 from base.router import Router
-from base.types import Hit, TagResult
+from base.types import STRICTNESS, Hit, TagResult
 
 CURRENT = {
     "name": "Current (invented)",
@@ -174,12 +175,17 @@ def test_an_observe_line_holds_no_text(runs):
 
 
 def test_a_result_a_later_check_held_is_never_counted_as_would_allow(tmp_path):
-    """Prompt Guard (or a toggle) holds a result after the router and would hold it under the
-    candidate too, so the loose candidate's rules-path share is not logged as would_allow."""
-    flagged = SimpleNamespace(floors=["prompt_attack:request"], flagged_sources=[], request_flagged=True)
-    scanner = SimpleNamespace(check=lambda sources, request: flagged)
-    plain, plain_services = build(tmp_path, "pg_enforce", None, prompt_guard=scanner)
-    watched, services = build(tmp_path, "pg_loose", LOOSE, prompt_guard=scanner)
+    """A privacy toggle holds a result after the router and would hold it under the candidate too,
+    so the loose candidate's rules-path share is not logged as would_allow."""
+
+    def toggle_holds(self, route, *args, **kwargs):
+        decision = route.decision if STRICTNESS[route.decision] >= STRICTNESS["ask_user"] else "ask_user"
+        return replace(route, decision=decision, floors=[*route.floors, "toggle:test"], code="toggle:test")
+
+    patch = mock.patch.object(Egress, "_with_toggles", toggle_holds)
+    patch.start()
+    plain, plain_services = build(tmp_path, "toggle_enforce", None)
+    watched, services = build(tmp_path, "toggle_loose", LOOSE)
     try:
         assert release_all(watched) == release_all(plain)
         lines = observe.read_log(services.settings.home / observe.LOG_NAME)
@@ -187,6 +193,7 @@ def test_a_result_a_later_check_held_is_never_counted_as_would_allow(tmp_path):
         assert not any(x["would_allow"] for x in lines)
         assert [x["candidate_decision"] for x in lines][:5] == ["share_tagged"] * 5  # what the rules path says
     finally:
+        patch.stop()
         plain_services.approvals.close()
         services.approvals.close()
 

@@ -60,8 +60,9 @@ META_CLOUD_PREFIX = "meta/muse-"  # OpenRouter ids of Meta's Muse models, such a
 def refuse_non_meta(values: Mapping[str, str]) -> None:
     """Refuse every setting that would reach a model that is not a Meta model, with a plain reason.
 
-    The code behind these settings stays in the repo (the owner has not decided whether to delete
-    it), but nothing that starts from load_settings can reach it.
+    The owner decided on Nov 2 to take non-Meta model code out of the public tree. Prompt Guard's
+    code is gone; the LFM and EmbeddingGemma code behind the other settings is still here until it
+    is removed, but nothing that starts from load_settings can reach it.
     """
     get = values.get
     for key in ("PRIMARY_MODEL", "CHECKER_BACKEND"):
@@ -247,12 +248,6 @@ class Settings:
     # barcodes before the local model reads an image, and an image it cannot check is not read.
     sam_enabled: bool = False
     sam_url: str = f"http://127.0.0.1:{SAM_PORT}"
-    # PROMPT_GUARD=1: Llama Prompt Guard 2 (22M, onnxruntime on the CPU) reads each source document
-    # and Muse's request for text that tries to give the model orders; a hit asks the user. Refused
-    # by load_settings since the Nov 2 ruling (Llama does not count as a Meta model).
-    prompt_guard: bool = False
-    prompt_guard_dir: Path = REPO_ROOT / "models" / "prompt-guard-2-22m"
-    prompt_guard_threshold: float = 0.5
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # Since the Nov 2 ruling that means Muse Glimmer on this device's llama-server.
     device_only: bool = False
@@ -442,12 +437,6 @@ def _build(merged: Mapping[str, str], *, lfm_device_default: bool = False) -> Se
         grace = 0.0
     if not grace > 0:
         raise ValueError("TAG_GRACE_HOURS must be a number of hours above 0")
-    try:
-        pg_threshold = float(get("PROMPT_GUARD_THRESHOLD", "0.5"))
-    except ValueError:
-        pg_threshold = -1.0
-    if not 0 < pg_threshold < 1:
-        raise ValueError("PROMPT_GUARD_THRESHOLD must be a number between 0 and 1")
 
     return Settings(
         device=device,  # type: ignore[arg-type]
@@ -496,9 +485,6 @@ def _build(merged: Mapping[str, str], *, lfm_device_default: bool = False) -> Se
         pdftotext_bin=pdftotext,
         sam_enabled=get("SAM_ENABLED", "0") == "1",
         sam_url=sam_url,
-        prompt_guard=get("PROMPT_GUARD", "0") == "1",
-        prompt_guard_dir=Path(get("PROMPT_GUARD_DIR", str(REPO_ROOT / "models" / "prompt-guard-2-22m"))).expanduser(),
-        prompt_guard_threshold=pg_threshold,
         device_only=device_only,
         tag_rotation=rotation,  # type: ignore[arg-type]
         tag_grace_hours=grace,

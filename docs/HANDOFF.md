@@ -7,7 +7,7 @@ Change a line here when its fact changes. History goes in docs/BUILD_LOG.md.
 ## Now
 
 - **Meta models only (organizer ruling, Nov 2, 3:57 PM; docs/MESSAGING.md, "What the rules say").** Llama does not count as a Meta model here, and every model the project calls at runtime must be Meta's. Until the fix plan from the Nov 2 audit lands, this overrides every line below that names Llama, LFM, Bolt or Prompt Guard:
-  - Don't run the Kaggle notebook (it tunes Llama 3.2 3B), and don't start a Llama tune on the site. `TUNE_ANY_BASE` stays off.
+  - The Kaggle notebook (it tuned Llama 3.2 3B) is deleted from the tree on branch tg-meta-only-tree. Don't start a Llama tune on the site; `TUNE_ANY_BASE` stays off.
   - The chain run (to-do 2) is on hold until it's re-costed on the default Glimmer base.
   - O5's Hugging Face repo will hold a Glimmer file, not `Llama-3.2-3B-ColdRoom-Watch-GGUF`.
   - The edge board model, Muse Privacy's device model (LFM3-VL-2B), #67's Llama 3.2 1B on jetson-04, Bolt on jetson-03 and 04, and Prompt Guard on jetson-05 all need a Meta model or must stay off in the demo.
@@ -133,11 +133,24 @@ Nov 2 night, from the audit's fix plan. Yes or no each. Until answered, agents t
 5. If the gate fails, accept a no-model, fixed-rule board fallback plus the shot-10 Glimmer clip as the edge act?
 6. Muse Privacy's submission mode: Glimmer 30B on OpenRouter on invented data, with the "device-only" wording dropped?
 7. If the Muse Privacy swap misses Tue 6 PM, cut Muse Privacy from the video and submission and take `privacy/` off the public branch?
-8. Delete, rather than just flag off, the Llama, LFM, SpeechT5, EmbeddingGemma and Prompt Guard code before the repo goes public?
+8. Delete, rather than just flag off, the Llama, LFM, SpeechT5, EmbeddingGemma and Prompt Guard code before the repo goes public? **Answered yes (owner, Nov 2 night).** Done in part on branch tg-meta-only-tree (see "Meta-only tree" below); git history still shows it, which the owner accepted.
 9. Drop read-aloud entirely, including the browser's own speech fallback?
 10. Unset `BOARD_FLEET_URL` and `BOARD_FLEET_TOKEN` on production for judging, on top of the model allowlist?
 11. Hussam deletes the Llama files on jetson-04 and Prompt Guard on jetson-05?
 12. Send Cerebral Valley a one-line check that Glimmer on OpenRouter and a no-model fallback are fine?
+
+## Meta-only tree (branch tg-meta-only-tree, Nov 2 night)
+
+The owner decided to leave code that downloads, loads, trains, serves or calls non-Meta models out of the public tree. The branch's PR body has the full inventory.
+
+- **Removed:** the Kaggle notebook (Llama 3.2 3B), the Jetson student chain in `scripts/knowledge/aws` (Nemotron Bolt and Gemma), `scripts/dev/receipt-eval-board.py` (#67's Llama adapter loader), the media cap's SpeechT5 read-aloud in `template/caps/media`, Llama adapter publishing in `lib/train` (a Llama-based job is now refused by `hubJobProblem`), and Prompt Guard in `privacy/`. The Llama harness results moved from `public/open-weights/` to `docs/log/open-weights/`, so the site no longer serves them.
+- **Left, and why:**
+  - Muse Privacy's LFM and EmbeddingGemma code (`privacy/base/config.py`, `local_llm.py`, `services.py`, `router.py`, `ui_app.py`, `scripts/start.sh`, `start_checker.sh`, `start_embedder.sh`, `bench_device.py`, `model_matrix.py`, `health.py`, `workspace/embed.py`, and about 15 tests that mock LFM). All of it is refused at load (`refuse_non_meta`). Removing it is about 30 files and moves the test suite's LFM mock to Glimmer, so it gets its own PR.
+  - The board path, which is Hussam's: the drive's board-run export (a board's Llama 3.2 1B and the Llama license on a USB stick: `lib/drive/plan.ts`, `layout.ts`, `kit.ts`, `kit-files.json`, `scripts/drive-kit.ts`), `DEVICE_LLAMA_TRAINING` (`lib/env.ts`, `app/api/device/*`, `lib/device/agent.ts`, `components/device/DeviceTrain.tsx`) and `muse-device/`. Off behind `DRIVE_EXPORT_ENABLED` and `BOARD_TRAINING_OFF`; needs Hussam's yes.
+  - Dead Llama branches that are unreachable now: the `FAMILIES` dict in `lib/train/recipes/glimmer.ts` (a golden-checked GPU recipe), `smallModelfile` in `lib/train/export/installers.ts`, the small-base branches behind the empty `QUANT_BASES`, and `licenseDuties`' Llama branch (kept so old Llama records stay labeled as Llama).
+  - `native/lab`'s emulator runs whatever GGUF `pickSimTuneFile` (`lib/train/sim-tune.ts`) picks, with no Meta-name check. A one-line refusal there would close it.
+  - `onnxruntime` and `tokenizers` in `privacy/pyproject.toml`, which only Prompt Guard used. Dropping them needs `uv lock` with the network.
+  - The browser's own voice (`speechSynthesis` in the catalog's text-to-speech line, the glasses target, native `expo-speech`). It's the device's voice, not a model the project ships. Owner question 9.
 
 ## Going public
 

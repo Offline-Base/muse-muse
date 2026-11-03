@@ -1,6 +1,6 @@
 ---
 name: muse-media
-description: Use when the brief has a media block, to read text aloud, make a video from pictures, write or play music as MIDI, turn a hummed tune into notes, or count more than 16 objects in a photo with SAM 3.1.
+description: Use when the brief has a media block, to make a video from pictures, write or play music as MIDI, turn a hummed tune into notes, or count more than 16 objects in a photo with SAM 3.1.
 ---
 
 # Media made in the browser
@@ -10,36 +10,6 @@ Every helper is a platform file in `lib/platform/`: import it, never edit or cop
 (from `lib/platform/media-assets.ts`) whose message is plain words: show `err.message` as it is.
 
 All of this runs in the user's browser (`"use client"` components), except `samBoxes`, which runs on the server.
-
-## Speech: `lib/platform/speech.ts`
-
-```tsx
-"use client";
-import { prepareSpeech, speak, stopSpeech } from "@/lib/platform/speech";
-
-const [state, setState] = useState<"idle" | "loading" | "reading">("idle");
-const [progress, setProgress] = useState(0);
-const [note, setNote] = useState<string | null>(null);
-
-async function readAloud(text: string) {
-  setState("loading");
-  const res = await speak(text, { onProgress: (p) => setProgress(p.done) });
-  setNote(res.note ?? null); // set when it fell back to the browser's own voice
-  setState("idle");
-}
-```
-
-- `speak(text)` reads up to 600 characters in English with an open model (SpeechT5) in the page. The first use downloads
-  about 190 MB from Muse Muse; the browser keeps it, so later uses start at once and work offline. Show the download as a
-  progress bar with words ("Getting the reading voice ready, 40%"), only on the first use.
-- It answers `{ by: "model" | "browser" | "none", durationMs, note? }`. With no WebAssembly or no connection to the
-  files it reads with the browser's own voice and sets `note`: show that one line under the button. `by: "none"` means
-  the browser has no voice at all: say so.
-- Show a Stop button while reading: `stopSpeech()`.
-- Longer text: split it into parts the user picks, each under 600 characters. Never read on page load: a tap starts it.
-- Call `speak()` (or `prepareSpeech()`) straight from the tap's handler, with no `await` before it, as above. Safari and
-  phones let a page make sound only during the tap, and speak() unlocks it first thing.
-- Limit to show once: "The reading voice is plain and English only."
 
 ## Video from pictures: `lib/platform/video.ts`
 
@@ -132,18 +102,15 @@ page's footer area. The platform's check fails without the link.
 ## Smoke test (`tests/caps/media.ts`)
 
 ```ts
-import { expectMidi, expectSpeech, expectTiles, expectVideoPlays } from "./caps/media";
+import { expectMidi, expectTiles, expectVideoPlays } from "./caps/media";
 
 await expectVideoPlays(page, { make: page.getByRole("button", { name: "Make video" }), shot: "03-video" });
 await expectMidi(page, { click: page.getByRole("link", { name: "Save MIDI file" }), shot: "04-tune" });
-await expectSpeech(page, { click: page.getByRole("button", { name: "Read aloud" }) });
 await expectTiles(page, { shot: "05-count" }); // after the product ran findAll
 ```
 
 - Call only the helpers for the parts brief.md lists. Each records a check and saves the file it checked.
-- Keep test media small: 10 frames, a few notes, one short sentence, one photo with `{ tiles: 4 }`.
+- Keep test media small: 10 frames, a few notes, one photo with `{ tiles: 4 }`.
 - Make a hummed-tune fixture with ffmpeg, no model needed:
   `ffmpeg -f lavfi -i "sine=frequency=262:duration=0.5" -f lavfi -i "sine=frequency=330:duration=0.5" -f lavfi -i "sine=frequency=392:duration=0.5" -filter_complex "[0][1][2]concat=n=3:v=0:a=1" -ar 16000 -ac 1 fixtures/hum.wav`
   (C4, E4, G4).
-- In the test browser speech may come from the model or from the browser's voice: assert only that `expectSpeech`
-  passed, never which voice read it.

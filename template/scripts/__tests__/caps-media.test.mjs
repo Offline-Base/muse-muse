@@ -1,13 +1,11 @@
 // The media cap's overlay (docs/CAPABILITIES.md, section 14): MIDI bytes, pitch finding, tile math and merging, the MP4
-// writer and reader, the speech tokenizer, the platform's checker (scripts/caps/media.mjs), and that the overlay writes
-// no path anything else writes. Then, in a real Chromium: a video from 10 frames that plays and passes
-// expectVideoPlays, a MIDI download that passes expectMidi, findAll on a fake SAM that passes expectTiles, and speech
-// falling back to the browser's voice when the model can't load. The browser parts need template/node_modules,
-// esbuild (the repo's) and Playwright's Chromium, and are skipped without them. With MEDIA_TEST_ASSETS_DIR set to a
-// folder holding the vetted files by name, one more test reads aloud with the real model. Run from the repo root:
+// writer and reader, the platform's checker (scripts/caps/media.mjs), and that the overlay writes no path anything else
+// writes. Then, in a real Chromium: a video from 10 frames that plays and passes expectVideoPlays, a MIDI download that
+// passes expectMidi, and findAll on a fake SAM that passes expectTiles. The browser parts need template/node_modules,
+// esbuild (the repo's) and Playwright's Chromium, and are skipped without them. The speech helper (SpeechT5, not a Meta
+// model) was removed on Nov 2, 2026. Run from the repo root:
 //   npx tsx --test template/scripts/__tests__/caps-media.test.mjs
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -26,7 +24,6 @@ const load = (f) => import(pathToFileURL(path.join(PLATFORM, f)).href);
 const M = await load("midi.ts");
 const T = await load("sam-tiles.ts");
 const P = await load("mp4.ts");
-const S = await load("speech.ts");
 const C = await import(pathToFileURL(path.join(FILES, "scripts/caps/media.mjs")).href);
 
 function walk(dir, base = dir) {
@@ -241,47 +238,16 @@ describe("muxMp4 and readMp4Info (lib/platform/mp4.ts)", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// Speech text
-
-describe("the speech tokenizer (lib/platform/speech.ts)", () => {
-  test("matches SpeechT5's own tokenizer on a sample, with numbers read as words", () => {
-    // From Xenova/speecht5_tts tokenizer.json at 1723781b, for "Hello! The library opens at nine today, and the story
-    // hour starts at ten." (Metaspace, one id per character, then </s>).
-    const want = [4, 35, 5, 15, 15, 8, 44, 4, 32, 11, 5, 4, 15, 10, 25, 13, 7, 13, 22, 4, 8, 24, 5, 9, 12, 4, 7, 6, 4, 9, 10, 9, 5, 4, 6, 8, 14, 7, 22, 23, 4, 7, 9, 14, 4, 6, 11, 5, 4, 12, 6, 8, 13, 22, 4, 11, 8, 16, 13, 4, 12, 6, 7, 13, 6, 12, 4, 7, 6, 4, 6, 5, 9, 26, 2];
-    assert.deepEqual(S.speechTokens("Hello! The library opens at 9 today, and the story hour starts at 10."), want);
-    assert.equal(S.numberWords("1984"), "one thousand nine hundred eighty four");
-    assert.equal(S.numberWords("0"), "zero");
-    assert.equal(S.numberWords("12345678901"), "one two three four five six seven eight nine zero one");
-    assert.equal(S.speechText("It’s 3.5 km — 50% off & more"), "It's three point five km, fifty percent off and more");
-    assert.deepEqual(S.speechTokens(""), [2]);
-    assert.equal(S.speechTokens("ç").at(0), 4);
-    assert.equal(S.speechTokens("ç").at(1), 3, "a character outside the alphabet is <unk>");
-  });
-
-  test("splits long text into pieces the model takes, and carries the MIT x-vector voice", () => {
-    const text = `${"A short sentence. ".repeat(3)}${"word ".repeat(80)}end.`;
-    const pieces = S.speechPieces(text, 200);
-    assert.ok(pieces.length >= 4);
-    for (const p of pieces) assert.ok(p.length <= 200, p);
-    const voice = S.speakerEmbedding();
-    assert.equal(voice.length, 512);
-    // The same 2,048 bytes as cmu_us_slt_arctic-wav-arctic_a0508.npy in Matthijs/cmu-arctic-xvectors (MIT).
-    assert.equal(createHash("sha256").update(Buffer.from(voice.buffer)).digest("hex"), "7384027325428d6eda21f47213572541443f5864044295a2e5c07fbaaf372bb3");
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-// The platform's checker
+// The checker
 
 describe("the media checker (scripts/caps/media.mjs)", () => {
   const rec = (...checks) => ({ cap: "media", checks });
   const good = {
     video: { id: "video", ok: true, detail: "played" },
     music: { id: "music", ok: true, detail: "notes" },
-    speech: { id: "speech", ok: true, detail: "read [by=browser]" },
     tiles: { id: "tiles", ok: true, detail: "tiles=4 raw=20 merged=17 saturated=0 capped=0" },
   };
-  function product({ parts = "speech, video, music, samTiling", files = {}, link = true } = {}) {
+  function product({ parts = "video, music, samTiling", files = {}, link = true } = {}) {
     const dir = mkdtempSync(path.join(tmpdir(), "mm-media-check-"));
     dirs.push(dir);
     writeFileSync(path.join(dir, "brief.md"), `# A product\n\n### Media in the browser\n\n${parts === null ? "" : `- Media parts: ${parts}\n`}`);
@@ -300,7 +266,7 @@ describe("the media checker (scripts/caps/media.mjs)", () => {
 
   test("passes every part with its record, the saved files, the notices link and nothing from another site", async () => {
     const checks = await C.check({ record: rec(...Object.values(good)), root: product() });
-    assert.deepEqual(byId(checks), { video: true, music: true, speech: true, tiles: true, "no-cdn": true, notices: true });
+    assert.deepEqual(byId(checks), { video: true, music: true, tiles: true, "no-cdn": true, notices: true });
     assert.match(checks.find((c) => c.id === "video").detail, /avc1 MP4, 1\.5 seconds, 3 frames/);
     assert.match(checks.find((c) => c.id === "music").detail, /1 notes/);
   });
@@ -322,7 +288,7 @@ describe("the media checker (scripts/caps/media.mjs)", () => {
     const silent = await C.check({ record: rec(...Object.values(good)), root: product({ files: { "tune.mid": Buffer.from(M.toMidi([])) } }) });
     assert.equal(byId(silent).music, false);
     const noRecord = await C.check({ record: rec(), root: product() });
-    assert.deepEqual([byId(noRecord).video, byId(noRecord).speech, byId(noRecord).tiles], [false, false, false]);
+    assert.deepEqual([byId(noRecord).video, byId(noRecord).tiles], [false, false]);
     const many = await C.check({ record: rec(...Object.values(good).filter((c) => c.id !== "tiles"), { id: "tiles", ok: true, detail: "tiles=9 raw=40 merged=30 saturated=2 capped=0" }), root: product() });
     assert.equal(byId(many).tiles, false);
     assert.match(many.find((c) => c.id === "tiles").detail, /at most 4/);
@@ -332,22 +298,22 @@ describe("the media checker (scripts/caps/media.mjs)", () => {
     writeFileSync(path.join(dir, "app", "voice.ts"), 'export const MODEL = "https://huggingface.co/x/resolve/main/model.onnx";\n');
     assert.equal(byId(await C.check({ record: rec(...Object.values(good)), root: dir }))["no-cdn"], false);
     assert.equal(byId(await C.check({ record: rec(...Object.values(good)), root: product({ link: false }) })).notices, false);
-    const noOrt = product();
-    rmSync(path.join(noOrt, "public/notices/onnxruntime.txt"));
-    const ort = (await C.check({ record: rec(...Object.values(good)), root: noOrt })).find((c) => c.id === "notices");
-    assert.equal(ort.ok, false);
-    assert.match(ort.detail, /onnxruntime\.txt is missing/);
+    const noNotices = product();
+    rmSync(path.join(noNotices, "public/notices/media.txt"));
+    const gone = (await C.check({ record: rec(...Object.values(good)), root: noNotices })).find((c) => c.id === "notices");
+    assert.equal(gone.ok, false);
+    assert.match(gone.detail, /media\.txt is missing/);
+    const old = await C.check({ record: rec(good.video), root: product({ parts: "speech, video" }) });
+    assert.deepEqual(byId(old), { video: true, "no-cdn": true, notices: true }, "an old brief's speech part has no check");
   });
 });
 
 describe("the open source notices (public/notices)", () => {
-  test("carry ONNX Runtime 1.30.0's third-party notices for the code built into its wasm, linked from media.txt", () => {
+  test("media.txt is the only notice, and names no model run in the page", () => {
+    assert.deepEqual(readdirSync(path.join(FILES, "public/notices")), ["media.txt"]);
     const media = readFileSync(path.join(FILES, "public/notices/media.txt"), "utf8");
-    assert.match(media, /\/notices\/onnxruntime\.txt/);
-    const ort = readFileSync(path.join(FILES, "public/notices/onnxruntime.txt"), "utf8");
-    assert.match(ort, /blob\/v1\.30\.0\/ThirdPartyNotices\.txt/);
-    for (const part of ["protocolbuffers/protobuf", "abseil-cpp", "google/flatbuffers", "Eigen", "SafeInt"]) assert.ok(ort.includes(part), part);
-    assert.ok(ort.length > 300_000, "the whole upstream file");
+    assert.doesNotMatch(media, /SpeechT5|onnx|reads? text aloud/i);
+    assert.match(media, /SAM 3\.1/);
   });
 });
 
@@ -397,8 +363,7 @@ async function bundle(assetsUrl) {
     import { midiBlob, toMidi } from "./midi.ts";
     import { findAll, videoChunks } from "./sam-tiles.ts";
     import { readMp4Info } from "./mp4.ts";
-    import { playSamples, speak } from "./speech.ts";
-    window.Media = { imagesToVideo, midiBlob, toMidi, findAll, videoChunks, readMp4Info, playSamples, speak };
+    window.Media = { imagesToVideo, midiBlob, toMidi, findAll, videoChunks, readMp4Info };
   `;
   const out = await esbuild.build({
     stdin: { contents: entry, resolveDir: PLATFORM, loader: "ts" },
@@ -416,7 +381,6 @@ const PAGE = (js) => `<!doctype html><meta charset=utf-8><body>
 <button id=make>Make video</button><video controls playsinline muted></video>
 <a id=save download="tune.mid">Save MIDI file</a>
 <button id=count>Count</button><p id=count-out></p>
-<button id=read>Read aloud</button><p id=read-out></p>
 <script>${js}</script>
 <script>
   document.getElementById("make").onclick = async () => {
@@ -435,10 +399,6 @@ const PAGE = (js) => `<!doctype html><meta charset=utf-8><body>
     const x = c.getContext("2d"); x.fillStyle = "#eee"; x.fillRect(0, 0, 800, 400);
     const r = await Media.findAll(c, "dot", { tiles: 4, segment: async (tile, phrase, info) => [{ left: 5, top: 5, right: 25, bottom: 25, confidence: 0.9 }] });
     document.getElementById("count-out").textContent = r.boxes.length + " found in " + r.tiles + " tiles";
-  };
-  document.getElementById("read").onclick = async () => {
-    const r = await Media.speak("Hello there. This is a short test.");
-    document.getElementById("read-out").textContent = r.by + " " + (r.note ?? "");
   };
 </script>`;
 
@@ -612,95 +572,6 @@ describe("the media helpers in Chromium", { skip: browserProblem ?? false }, () 
       assert.deepEqual(refused.configured, ["avc1.4D0028"]);
     } finally {
       await close();
-    }
-  });
-
-  test("speech: one sound context made during the tap, and a context the browser won't start falls back in time", async () => {
-    const { page, close } = await open();
-    try {
-      const made = await page.evaluate(async () => {
-        const Real = window.AudioContext;
-        let n = 0;
-        window.AudioContext = class extends Real { constructor(o) { super(o); n++; } };
-        const p = Media.speak("Hello there.");
-        const during = n;
-        await p;
-        window.AudioContext = Real;
-        return during;
-      });
-      assert.equal(made, 1, "the AudioContext exists before speak() first waits");
-      const stuck = await page.evaluate(async () => {
-        const ctx = { state: "suspended", currentTime: 0, sampleRate: 16000, resume: () => new Promise(() => {}), createBuffer: () => ({ duration: 1, getChannelData: () => new Float32Array(16000) }), createBufferSource: () => ({ connect() {}, start() {}, stop() {}, disconnect() {} }), destination: {} };
-        async function* one() { yield new Float32Array(16000).fill(0.1); }
-        const started = performance.now();
-        const out = await Promise.race([
-          Media.playSamples(one(), new AbortController(), ctx).then(() => "played", (e) => e.message),
-          new Promise((r) => setTimeout(() => r("hung"), 5000)),
-        ]);
-        return { out, ms: performance.now() - started };
-      });
-      assert.match(stuck.out, /didn't let the page play sound/);
-      assert.ok(stuck.ms < 3000, `${Math.round(stuck.ms)} ms`);
-    } finally {
-      await close();
-    }
-  });
-
-  test("speech falls back to the browser's voice when the model's files can't be reached, and says so", async () => {
-    const { page, close } = await open();
-    try {
-      const res = await page.evaluate(() => Media.speak("Hello there."));
-      assert.ok(["browser", "none"].includes(res.by), res.by);
-      if (res.by === "browser") assert.match(res.note, /couldn't|can't/);
-      const recordedBy = await page.evaluate(() => window.__musemuseMedia.speech.by);
-      assert.equal(recordedBy, res.by);
-      await assert.rejects(page.evaluate(() => Media.speak("x".repeat(601))), /too long to read aloud/);
-    } finally {
-      await close();
-    }
-  });
-
-  test("speech reads aloud with the real model from the gateway's files", { skip: process.env.MEDIA_TEST_ASSETS_DIR ? false : "set MEDIA_TEST_ASSETS_DIR to a folder with the vetted files" }, async () => {
-    // A real HTTP server for the files (Playwright's route can't carry files this big) and the page, on 127.0.0.1,
-    // which the browser treats as a secure origin.
-    const http = await import("node:http");
-    const { createReadStream, statSync } = await import("node:fs");
-    const A = await load("media-assets.ts");
-    const byHash = new Map(A.MEDIA_ASSETS.map((a) => [a.sha256, path.join(process.env.MEDIA_TEST_ASSETS_DIR, a.name)]));
-    let served = 0;
-    const server = http.createServer();
-    await new Promise((r) => server.listen(0, "127.0.0.1", r));
-    const origin = `http://127.0.0.1:${server.address().port}`;
-    const script = await bundle(`${origin}/assets`);
-    server.on("request", (req, res) => {
-      const m = req.url.match(/^\/assets\/([0-9a-f]{64})$/);
-      if (m && byHash.has(m[1])) {
-        served++;
-        res.writeHead(200, { "content-type": "application/octet-stream", "content-length": statSync(byHash.get(m[1])).size, "access-control-allow-origin": "*" });
-        return createReadStream(byHash.get(m[1])).pipe(res);
-      }
-      res.writeHead(200, { "content-type": "text/html" });
-      res.end(PAGE(script));
-    });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    try {
-      await page.goto(`${origin}/`);
-      const started = Date.now();
-      await H.expectSpeech(page, { click: "#read", timeoutMs: 300_000 });
-      const first = Date.now() - started;
-      const s = await page.evaluate(() => window.__musemuseMedia.speech);
-      assert.equal(s.by, "model");
-      assert.ok(s.samples > 16000, "over a second of audio");
-      // The second read comes from the browser's cache: nothing more is downloaded.
-      const before = served;
-      const again = Date.now();
-      await H.expectSpeech(page, { click: "#read", timeoutMs: 120_000 });
-      console.log(`speech with the model: ${JSON.stringify(s)}; first read ${first} ms with the download, second ${Date.now() - again} ms; ${served} files served`);
-      assert.equal(served, before);
-    } finally {
-      await context.close();
-      server.close();
     }
   });
 });

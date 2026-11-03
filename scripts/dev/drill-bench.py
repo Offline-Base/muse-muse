@@ -571,7 +571,7 @@ def main(argv=None):
     a.add_argument("--url", required=True, help="an OpenAI-compatible base, ending in /v1")
     a.add_argument("--model", required=True)
     a.add_argument("--out", required=True)
-    a.add_argument("--label", help="how the report names this row, e.g. 'Llama 3.2 3B base'")
+    a.add_argument("--label", help="how the report names this row, e.g. 'Muse Glimmer 30B IQ1_S base'")
     a.add_argument("--key-env", default="DRILL_API_KEY", help="the environment variable holding a bearer key, if the endpoint needs one")
     a.add_argument("--header", action="append", help="an extra header, 'Name: value'")
     a.add_argument("--schema", action="store_true", help="send response_format json_schema")
