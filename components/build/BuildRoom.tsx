@@ -21,6 +21,8 @@ import { appsLine, nativeRows } from "@/components/build/apps";
 import { proveRows } from "@/components/build/prove-rows";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
+import { LookCard } from "@/components/build/LookCard";
+import { lookState } from "@/components/build/look";
 import { PlanChecklist } from "@/components/build/PlanChecklist";
 import { StepsFeed } from "@/components/build/StepsFeed";
 import { buildChecklist } from "@/lib/steps-feed/checklist";
@@ -43,6 +45,8 @@ export interface BuildRoomProps {
   editsByPass?: boolean;
   /** The viewer may steer the build while Muse Code runs: owner powers as for canRefine, with steering switched on. */
   canSteer?: boolean;
+  /** LOOK_FIRST: the viewer may answer the screens the build made first (owner powers as for canRefine). */
+  canLook?: boolean;
   signedIn: boolean;
   origin: string;
   serverNow: number;
@@ -109,6 +113,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
   const room = useMemo(() => deriveRoom(build, events), [build, events]);
   const nativeRuns = useMemo(() => condenseNativeEvents(events), [events]);
+  const look = useMemo(() => lookState(events), [events]);
   const nativeLive = !nativeEnded && nativeRuns.some((r) => r.active);
   const rail = useMemo(() => railStates(room, build.kind), [room, build.kind]);
   const now = useNow(props.serverNow, !room.terminal || proveRunning(events, props.serverNow));
@@ -534,6 +539,7 @@ export function BuildRoom(props: BuildRoomProps) {
               </ol>
               <div ref={end} className="convo-end" />
               {!atBottom ? <ScrollButton className="room-jump" onClick={() => end.current?.scrollIntoView({ block: "end", behavior: smooth() })} /> : null}
+              {look && !room.terminal ? <LookCard buildId={build.id} look={look} canAnswer={Boolean(props.canLook)} now={now} /> : null}
               {steering ? (
                 <div className="room-composer">
                   <SteerBox buildId={build.id} contributorNotice={props.contributorNotice} />
@@ -691,6 +697,7 @@ export function BuildRoom(props: BuildRoomProps) {
           <ScrollButton className="room-jump" onClick={() => end.current?.scrollIntoView({ block: "end", behavior: smooth() })} />
         ) : null}
 
+        {look && !room.terminal ? <LookCard buildId={build.id} look={look} canAnswer={Boolean(props.canLook)} now={now} /> : null}
         {steering ? (
           <div className="room-composer">
             <SteerBox buildId={build.id} contributorNotice={props.contributorNotice} />

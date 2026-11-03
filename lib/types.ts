@@ -219,6 +219,13 @@ export type BuildEventBody =
   | { type: "caps"; cap: string; check: string; ok: boolean; detail?: string }
   | { type: "milestone"; index: number; of: number; title: string; state: MilestoneState }
   | { type: "live_check"; ok: boolean; url: string; reason?: string }
+  /**
+   * LOOK_FIRST (docs/LOOK_FIRST.md): where the screens-first stage is. "ready" waits for the owner until `waitUntil`;
+   * "changing" applies their note; "wiring" means the look is settled and everything is being wired in.
+   */
+  | { type: "look"; state: "building" | "ready" | "changing" | "wiring"; round: number; waitUntil?: string; text?: string; why?: "approved" | "waited" | "changes_used" }
+  /** LOOK_FIRST: the owner's answer to the screens, from POST /api/builds/{id}/look. */
+  | { type: "look_reply"; action: "approve" | "change"; text?: string }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

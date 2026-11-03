@@ -56,6 +56,8 @@ interface Scenario {
   plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }>; full?: boolean; chain?: Record<string, number> };
   /** CHAINED_BUILDS: what each chainReadStep answers, in order, then $1 and no Stop. */
   chainReads?: Array<{ costUsd?: number; stopRequested?: boolean }>;
+  /** LOOK_FIRST: what each lookReplyStep poll answers, in order, then nothing. */
+  lookReplies?: Array<{ id: number; action: "approve" | "change"; text: string | null } | null>;
   /** FULL_BUILDS: what judgeStep says is still not met. */
   judgeUnmet?: string[];
   /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
@@ -272,6 +274,19 @@ const fakeSteps = {
     return { promptFile: `milestone-${input.index}.md` };
   },
   milestoneStep: async (...args: unknown[]) => record("milestoneStep", ...args),
+  // LOOK_FIRST: the screens first.
+  writeLookPromptStep: async (input: { kind: "look" | "change" | "wire" }) => {
+    record("writeLookPromptStep", input);
+    return { promptFile: { look: "look.md", change: "look-change.md", wire: "wire.md" }[input.kind] };
+  },
+  lookReplyStep: async (...args: unknown[]) => {
+    record("lookReplyStep", ...args);
+    return scenario.lookReplies?.shift() ?? null;
+  },
+  lastEventIdStep: async (...args: unknown[]) => {
+    record("lastEventIdStep", ...args);
+    return 0;
+  },
   chainReadStep: async (...args: unknown[]) => {
     record("chainReadStep", ...args);
     const read = scenario.chainReads?.shift();
@@ -1358,3 +1373,59 @@ describe("a cap's step after deploy (docs/CAPABILITIES.md, section 20)", { skip:
     assert.equal(named("capsShipStep").length, 1);
   });
 });
+
+describe("LOOK_FIRST: the screens first, then the wiring (docs/LOOK_FIRST.md)", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const saved = { LOOK_FIRST: process.env.LOOK_FIRST, LOOK_WAIT_SECONDS: process.env.LOOK_WAIT_SECONDS };
+  const runs = () => named("startMuseStep").map((c) => { const r = c.args[0] as { round: number; promptFile: string; lookOnly?: boolean }; return [r.round, r.promptFile, r.lookOnly === true]; });
+  const looks = () =>
+    named("emitStep")
+      .map((c) => c.args[1] as { type: string; state?: string; why?: string })
+      .filter((b) => b.type === "look");
+
+  before(async () => {
+    wf ??= await import("../workflow");
+  });
+  after(() => {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  });
+
+  it("makes the screens, applies the owner's change, wires them in after a go, and checks from the wiring round", async () => {
+    process.env.LOOK_FIRST = "1";
+    process.env.LOOK_WAIT_SECONDS = "30";
+    reset({ lookReplies: [null, { id: 5, action: "change", text: "Bigger cards" }, null, { id: 9, action: "approve", text: null }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "look-1" }), { status: "live" });
+    assert.deepEqual(runs(), [
+      [0, "look.md", true],
+      [1, "look-change.md", true],
+      [2, "wire.md", false],
+    ]);
+    assert.deepEqual(looks().map((l) => l.state), ["building", "ready", "changing", "ready", "wiring"]);
+    assert.equal(looks().at(-1)!.why, "approved");
+    const changeNote = named("writeLookPromptStep").map((c) => c.args[0] as { kind: string; note?: string; changed?: boolean });
+    assert.deepEqual(changeNote.map((w) => w.kind), ["look", "change", "wire"]);
+    assert.equal(changeNote[1]!.note, "Bigger cards");
+    assert.equal(changeNote[2]!.changed, true);
+  });
+
+  it("wires the screens in by itself when nobody answers before the wait ends", async () => {
+    process.env.LOOK_FIRST = "1";
+    process.env.LOOK_WAIT_SECONDS = "15";
+    reset({});
+    assert.deepEqual(await wf.buildProduct({ buildId: "look-2" }), { status: "live" });
+    assert.deepEqual(runs(), [
+      [0, "look.md", true],
+      [1, "wire.md", false],
+    ]);
+    assert.equal(looks().at(-1)!.why, "waited");
+    assert.equal(named("lookReplyStep").length, 3, "15 s of polls every 5 s");
+  });
+
+  it("builds from brief.md in one round with the flag off", async () => {
+    delete process.env.LOOK_FIRST;
+    reset({});
+    assert.deepEqual(await wf.buildProduct({ buildId: "look-3" }), { status: "live" });
+    assert.deepEqual(runs()[0], [0, "brief.md", false]);
+    assert.equal(looks().length, 0);
+  });
+});
+

@@ -723,6 +723,18 @@ export const env = {
     return flag("BUILD_RANGE");
   },
   /**
+   * LOOK_FIRST (docs/LOOK_FIRST.md): a build makes its screens first, with sample data and no model calls, shows them in
+   * the preview, and waits a short while for the owner to change the look or say go before it wires everything in.
+   * Builds with milestones or a chain skip it. Off by default.
+   */
+  get lookFirst(): boolean {
+    return flag("LOOK_FIRST");
+  },
+  /** LOOK_FIRST: how long the build waits on the screens for a change or a go before it wires them in by itself. */
+  get lookWaitMs(): number {
+    return Math.min(10 * 60_000, Math.max(15_000, number("LOOK_WAIT_SECONDS", 120) * 1000));
+  },
+  /**
    * PLAN_ART: once a new build's brief is written, one Muse Image edit of the owner's mascot (public/muse/muse-present.jpg)
    * doing something that fits the plan, about $0.01 a build, metered like the platform's other calls. The build room's
    * plan card shows it in place of the stock mascot (lib/pipeline/plan-art.ts). Off by default: no call, no picture, and

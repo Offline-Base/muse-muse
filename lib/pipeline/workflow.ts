@@ -21,6 +21,7 @@
  * Start them with start() from "workflow/api". Never call them directly.
  */
 import { sleep } from "workflow";
+import { LOOK_CHANGES_MAX } from "@/lib/engine/look";
 import { capsShipping } from "@/lib/caps/ship";
 import { env } from "@/lib/env";
 import {
@@ -67,6 +68,9 @@ import {
   warmSandboxStep,
   writeFixPromptStep,
   writeMilestonePromptStep,
+  writeLookPromptStep,
+  lookReplyStep,
+  lastEventIdStep,
   type MusePollResult,
   type TaskPollResult,
   type VerifyResult,
@@ -76,6 +80,7 @@ import {
   decideOutcome,
   failureMessage,
   pollTimedOut,
+  pollLimit,
   SPEND_PAUSED_MESSAGE,
   type JudgeCall,
   type Outcome,
@@ -213,7 +218,7 @@ interface MuseRunEnd {
  */
 async function runMuse(
   ctx: Ctx,
-  run: { promptFile: string; images: string[]; round: number; capMs: number },
+  run: { promptFile: string; images: string[]; round: number; capMs: number; lookOnly?: boolean },
 ): Promise<MuseRunEnd> {
   const round = ctx.roundBase + run.round;
   const cmd = await startMuseStep({
@@ -226,6 +231,7 @@ async function runMuse(
     buildId: ctx.buildId,
     // A scaled round asks for its own session time (lib/sandbox/builder.ts startMuse). Today's rounds don't pass it.
     ...(ctx.plan ? { capMs: run.capMs } : {}),
+    ...(run.lookOnly ? { lookOnly: true } : {}),
   });
   if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
@@ -453,6 +459,53 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     // stopped is not, and no fix round comes after it.
     const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap });
     if (fixed.stopped) throw stoppedByOwner(kind);
+  }
+}
+
+/** LOOK_FIRST: how long the screens round and each look change may run. They make screens, not the product. */
+const LOOK_ROUND_MS = 12 * 60_000;
+const LOOK_CHANGE_MS = 6 * 60_000;
+/** LOOK_FIRST: how often the build checks for the owner's answer while it waits on the screens. */
+const LOOK_POLL_MS = 5_000;
+
+/**
+ * LOOK_FIRST (docs/LOOK_FIRST.md). Round 0 makes the screens with sample data and no model calls, and the preview shows
+ * them. The build then waits up to env.lookWaitMs for the owner: a change runs one short round on the screens and shows
+ * them again (at most LOOK_CHANGES_MAX), and a go, or no answer, moves on. Returns the round the wiring run takes and
+ * whether the look was changed.
+ */
+async function runLook(ctx: Ctx, images: string[]): Promise<{ wireRound: number; changed: boolean }> {
+  await emitStep(ctx.buildId, { type: "look", state: "building", round: 0 });
+  await setStatusStep(ctx.buildId, "building", { step: "build", message: "Making your screens first, with sample data" });
+  const first = await writeLookPromptStep({ sandboxName: ctx.sandboxName, kind: "look" });
+  const made = await runMuse(ctx, { promptFile: first.promptFile, images, round: 0, capMs: Math.min(capFor(ctx, "build"), LOOK_ROUND_MS), lookOnly: true });
+  if (made.stopped) throw stoppedByOwner("build");
+  await preview(ctx);
+  let round = 0;
+  let changed = false;
+  for (let changes = 0; ; ) {
+    const afterId = await lastEventIdStep(ctx.buildId);
+    const waitMs = env.lookWaitMs;
+    await emitStep(ctx.buildId, { type: "look", state: "ready", round, waitUntil: new Date(Date.now() + waitMs).toISOString() });
+    await setStatusStep(ctx.buildId, "building", { step: "build", message: "Your screens are ready to look at" });
+    let reply: Awaited<ReturnType<typeof lookReplyStep>> = null;
+    for (let polls = 0, most = pollLimit(waitMs, LOOK_POLL_MS); polls < most && !reply; polls++) {
+      await sleep(LOOK_POLL_MS);
+      reply = await lookReplyStep({ buildId: ctx.buildId, afterId });
+    }
+    if (!reply || reply.action === "approve" || !reply.text || changes >= LOOK_CHANGES_MAX) {
+      const why = reply?.action === "approve" ? "approved" : reply ? "changes_used" : "waited";
+      await emitStep(ctx.buildId, { type: "look", state: "wiring", round, why });
+      return { wireRound: round + 1, changed };
+    }
+    changes++;
+    round++;
+    changed = true;
+    await emitStep(ctx.buildId, { type: "look", state: "changing", round, text: reply.text });
+    await setStatusStep(ctx.buildId, "building", { step: "build", message: "Changing the look" });
+    const prompt = await writeLookPromptStep({ sandboxName: ctx.sandboxName, kind: "change", note: reply.text });
+    const ran = await runMuse(ctx, { promptFile: prompt.promptFile, images: [], round, capMs: LOOK_CHANGE_MS, lookOnly: true });
+    if (ran.stopped) throw stoppedByOwner("build");
   }
 }
 
@@ -832,8 +885,20 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
     if (milestones.length > 1) await milestoneStep(buildId, { index: 1, of: milestones.length, title: milestones[0]!.title, state: "building" });
+    // LOOK_FIRST: the screens first, then the wiring run takes brief.md's place. Milestone and chain builds skip it.
+    let firstRound = 0;
+    let firstPrompt = "brief.md";
+    let firstImages = box.images;
+    if (env.lookFirst && milestones.length <= 1 && !ctx.chain) {
+      const look = await runLook(ctx, box.images);
+      firstRound = look.wireRound;
+      firstPrompt = (await writeLookPromptStep({ sandboxName, kind: "wire", changed: look.changed })).promptFile;
+      firstImages = [];
+      await setStatusStep(buildId, "building", { step: "build", message: "Wiring everything into your screens" });
+      await assertSpendOk();
+    }
     const firstCap = (ctx.plan?.full && !ctx.chain ? fullRoundCap({ plan: ctx.plan, startedAt, now: Date.now(), milestonesLeft: Math.max(1, milestones.length) }) : null) ?? capFor(ctx, "build");
-    const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: firstCap });
+    const built = await runMuse(ctx, { promptFile: firstPrompt, images: firstImages, round: firstRound, capMs: firstCap });
     if (built.stopped) throw stoppedByOwner("build");
     if (built.timedOut) {
       // A first round stopped at its cap is checked like a fix round (ENGINE_CHECK_ON_TIMEOUT): it may have built enough.
@@ -845,7 +910,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
         await emitStep(buildId, { type: "log", text: "Muse Code ended with an error. Checking what it wrote." });
       }
     }
-    const offset = milestones.length > 1 ? await (ctx.chain ? runChain(ctx, track, milestones) : runMilestones(ctx, track, milestones)) : 0;
+    const offset = milestones.length > 1 ? await (ctx.chain ? runChain(ctx, track, milestones) : runMilestones(ctx, track, milestones)) : firstRound;
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });
