@@ -1,6 +1,6 @@
 # Third-party notices
 
-Muse Privacy is built on the models, tools and libraries below. Each one stays under its own license. This repo does not copy their code or weights: model files are downloaded by whoever runs the device and are never committed (`models/` and `*.gguf` are gitignored), and the libraries are installed by uv or npm from their own packages. Muse Privacy's own code has no LICENSE file yet; Ethan chooses one before the repo goes public.
+Muse Privacy is built on the models, tools and libraries below. Each one stays under its own license. This repo does not copy their code or weights: model files are downloaded by whoever runs the device and are never committed (`models/` and `*.gguf` are gitignored), and the libraries are installed by uv or npm from their own packages. Muse Privacy's own code is under the Apache License 2.0 with the rest of the Muse Muse repo (LICENSE and NOTICE at the repo root, added Nov 2, 2026).
 
 License names were checked on Oct 30, 2026 against the pages linked in each row. The rows for the SAM sidecar's weights and packages and for pdftotext were added on Oct 31 from the sidecar's README, the installed package metadata and poppler's own files, with no page fetched, so check them against the linked pages too. Read the license itself before you redistribute a model file or use one commercially.
 

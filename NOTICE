@@ -1,0 +1,69 @@
+Muse Muse
+Copyright 2026 Offline Base
+
+Offline Base's code in this repository is licensed under the Apache License, Version 2.0 (see LICENSE). That includes
+privacy/ (Muse Privacy), which was started in a separate Offline Base repository during the event and merged here on
+Nov 1, 2026.
+
+The license does not cover the items below. Each keeps its own owner and terms.
+
+
+1. Meta's documentation: content/meta-docs/
+
+   An offline copy of Meta's developer docs (https://dev.meta.ai/docs), mirrored by scripts/docs/sync-meta-docs.ts as
+   reference. The text is Meta's and is not licensed by Offline Base. It is kept here with a Meta organizer's
+   permission: [owner: who said so, and when]. Ask Meta before reusing it.
+
+
+2. Model files and weights
+
+   No model weights are committed to this repository. Files that the code downloads, makes or publishes carry the
+   model's own terms, not this license:
+
+   - Muse Glimmer (Meta): the terms on its model card, https://huggingface.co/meta-models/Muse-Glimmer-30B, which
+     include Meta's Muse Glimmer Usage Policy (a copy is in lib/train/licenses/USAGE_POLICY.md). The policy says
+     Muse Glimmer is not intended for anyone under 18.
+   - Muse Spark Open (Meta) and its Derivatives: the Muse Model License (a copy is in
+     lib/train/licenses/MUSE_MODEL_LICENSE.md). A model trained on data that Muse Spark Open wrote is a Derivative.
+     Anything that uses one must show "Built with Muse Spark Open", ship the license and its Usage Policy, and is for
+     people 18 and over. The knowledge-run model (r30b) is such a Derivative.
+   - SAM 3.1 (Meta): the SAM License, https://github.com/facebookresearch/sam3/blob/main/LICENSE.
+   - Outputs of Meta's Model API, such as the Muse Image pictures in public/examples/ and public/docs-samples/ and the
+     training and eval rows written by Muse Spark models, are used under the Meta Model API Terms of Service,
+     https://dev.meta.ai/legal/terms-of-service. docs/DATA_RIGHTS.md lists who wrote each data set and what may be
+     published.
+
+
+3. Meta's names and marks
+
+   Meta, Muse, Muse Spark, Muse Glimmer, Muse Wonder, Muse Code, Muse Image, SAM and Meta's other names and marks
+   belong to Meta Platforms, Inc. Muse Muse is a hackathon project made for the Meta Global AI Developer Hackathon
+   (Nov 2026). It is not an official Meta product, and Meta has not reviewed or endorsed it. "Muse Muse" is a working
+   name; anyone building on this code should pick their own.
+
+
+4. Third-party files in this repository with their own licenses
+
+   - Inter typeface, SIL Open Font License 1.1, Copyright 2016 The Inter Project Authors:
+       app/fonts/inter-latin-opsz-normal.woff2 (license: app/fonts/Inter.LICENSE.txt)
+       template/scripts/demo-inter.woff2 (license: template/scripts/demo-inter.LICENSE.txt)
+   - WebXR Input Profiles (the controller and hand models, .glb, and profilesList.json), MIT License,
+     Copyright (c) 2019 Amazon:
+       template/targets/vr/files/public/xr/profiles/ (license: LICENSE.md in that folder)
+   - "Alice's Adventures in Wonderland", chapters I to III, by Lewis Carroll (1865), from Project Gutenberg eBook #11
+     with Project Gutenberg's header, footer and license removed. Public domain in the US:
+       public/docs-samples/alice-chapters-1-3.txt (see public/docs-samples/README.md)
+   - Notices that products built from template/ ship for libraries they install from npm (the libraries themselves are
+     not in this repository):
+       template/caps/games-phaser/files/public/notices/phaser.txt (Phaser, MIT License)
+       template/caps/games-babylon/files/public/notices/babylonjs.txt (Babylon.js, Apache License 2.0)
+       template/caps/media/files/public/notices/media.txt and onnxruntime.txt (SpeechT5 models, MIT License, and
+       ONNX Runtime's third-party notices)
+   - privacy/THIRD_PARTY_NOTICES.md lists the models, tools and packages Muse Privacy uses, each under its own license.
+
+   npm and Python packages are installed from their own registries and keep their own licenses.
+
+   The Muse mascot pictures and clips in public/muse/ were supplied by the owner: [owner: how they were made, and
+   their terms]. Other files made for this project and not listed above, such as the device recordings in
+   public/devices/ and the charts, screenshots and synthesized speech in public/docs-samples/, are covered by LICENSE
+   unless their own notice says otherwise.
