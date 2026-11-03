@@ -352,6 +352,43 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
   describe("judgeStep on a refinement", () => {
     const refineRow = { id: "r1", kind: "refine", brief: null, inspirationId: "insp-refine", productId: "prod-1" };
 
+    it("POLISH_ENABLED: on a polish with known failures it tells the judge and returns the model's own call and each requirement's state", async () => {
+      const req = (n: number) => ({ id: `R${n}`, text: `Thing ${n}`, kind: "asked", words: "", savesData: false, canDo: true, cantDoWhy: null });
+      const REQ_BRIEF = { ...BRIEF, requirements: [req(1), req(2)] };
+      const requirements = [
+        { id: "R1", text: "Thing 1", state: "met" },
+        { id: "R2", text: "Thing 2", state: "unmet", detail: "Its test failed." },
+      ];
+      const old = process.env.FULL_BUILDS;
+      process.env.FULL_BUILDS = "1";
+      try {
+        for (const knownFailing of [["R2"], undefined]) {
+          judgeInputs = [];
+          selects = {
+            builds: [[{ ...refineRow, brief: REQ_BRIEF }], [{ brief: REQ_BRIEF }]],
+            inspirations: [[{ references: [] }], [{ references: [] }]],
+            products: [[{ id: "prod-1", inspirationId: "insp-original" }]],
+            build_events: [[{ payload: { type: "verify", round: 0, summary: { passed: true, steps: [], failureOutput: "", requirements: [{ id: "R1", ok: true }, { id: "R2", ok: false }] }, screenshots: [] } }]],
+          };
+          judgeImpl = async () => ({ verdict: { pass: false, blocking: false, reasons: ["Fine otherwise."], mismatches: ["R2 is not met: Thing 2. Its test failed."], requirements }, usage: [], ownPass: true });
+          const out = await steps.judgeStep({ buildId: "r1", productId: "prod-1", round: 0, screenshots: [], ...(knownFailing ? { knownFailing } : {}) });
+          const sent = judgeInputs[0] as { knownFailing?: string[] };
+          if (knownFailing) {
+            assert.deepEqual(sent.knownFailing, ["R2"]);
+            assert.equal(out.ownPass, true);
+            assert.deepEqual(out.requirements, [{ id: "R1", state: "met" }, { id: "R2", state: "unmet" }]);
+          } else {
+            // Every other judge call is as it was.
+            assert.equal(sent.knownFailing, undefined);
+            assert.deepEqual(Object.keys(out).sort(), ["blocking", "pass", "unmet"]);
+          }
+        }
+      } finally {
+        if (old === undefined) delete process.env.FULL_BUILDS;
+        else process.env.FULL_BUILDS = old;
+      }
+    });
+
     it("uses the product's brief and its original references, then the change's new files", async () => {
       selects = {
         builds: [[refineRow], [{ brief: BRIEF }]],
@@ -613,6 +650,23 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(productFiles[0]!.path, "fix-3.md");
       assert.match(productFiles[0]!.content, /The result is cut off\./);
       assert.doesNotMatch(productFiles[0]!.content, /attached/);
+    });
+    it("POLISH_ENABLED: a polish's fix round drops what already failed on the live version from the judge's notes and says to leave it", async () => {
+      const failed = { ...verdict, mismatches: ["R2 is not met: Thing 2. Its test failed.", "R4 is not met: Thing 4. Its test failed.", "The header is clipped at 360 px."] };
+      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
+      await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0, knownFailing: ["R2"] });
+      const text = productFiles[0]!.content;
+      assert.doesNotMatch(text, /R2 is not met/);
+      assert.match(text, /R4 is not met/);
+      assert.match(text, /The header is clipped/);
+      assert.match(text, /## Already failing before this pass\n\nR2 already failed on the live version before this UI pass\. Leave it as it is: don't spend steps on it/);
+      assert.ok(!text.includes("\u2014"));
+      // Without it, the fix round is written as before.
+      productFiles = [];
+      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict: failed } }, verifyEvent(true)]] };
+      await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      assert.match(productFiles[0]!.content, /R2 is not met/);
+      assert.doesNotMatch(productFiles[0]!.content, /Already failing/);
     });
   });
 
@@ -1051,6 +1105,44 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       } finally {
         if (old === undefined) delete process.env.BUILDS_ON_CONTRIBUTOR;
         else process.env.BUILDS_ON_CONTRIBUTOR = old;
+      }
+    });
+
+    it("POLISH_ENABLED: a polish of a product with requirements reads what the live build's last judge said of each, and unknown when it said nothing", async () => {
+      const { polishNote } = await import("@/lib/polish/logic");
+      const req = (n: number) => ({ id: `R${n}`, text: `Thing ${n}`, kind: "asked", words: "", savesData: false, canDo: true, cantDoWhy: null });
+      const REQ_BRIEF = { ...BRIEF, requirements: [req(1), req(2), req(3)] };
+      const rows = (judge: Rows, message = polishNote()) => ({
+        builds: [
+          [{ id: "r1", kind: "refine", productId: "prod-1", brief: REQ_BRIEF, startedAt: new Date(), message, buildModel: "muse-wonder-1.0" }],
+          [{ n: 1 }],
+          [{ buildModel: "muse-wonder-1.0" }],
+          [{ buildModel: "muse-wonder-1.0" }],
+        ],
+        products: [[{ id: "prod-1", name: "Bird Count", tagline: "Count birds", sandboxName: "sb", museSessionId: "sess", latestBuildId: "live-1" }]],
+        build_events: [judge],
+      });
+      const verdict = (states: string[]) => ({ type: "judge", round: 2, verdict: { pass: false, reasons: ["x"], mismatches: [], requirements: states.map((state, i) => ({ id: `R${i + 1}`, text: `Thing ${i + 1}`, state })) } });
+      const old = process.env.FULL_BUILDS;
+      process.env.FULL_BUILDS = "1";
+      try {
+        selects = rows([{ payload: verdict(["met", "unmet", "unmet"]) }]);
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: true, failing: ["R2", "R3"] });
+        // A judge event with no requirement list (the judge couldn't run), or no judge event: unknown, so every requirement must pass.
+        selects = rows([{ payload: { type: "judge", round: 0, verdict: { pass: false, reasons: ["x"], mismatches: [] } } }]);
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [] });
+        selects = rows([]);
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [] });
+        // An ordinary change never reads it.
+        selects = rows([{ payload: verdict(["met", "unmet", "unmet"]) }], "Dark mode");
+        assert.equal((await steps.loadRefineStep("r1")).polishBaseline, undefined);
+        // With FULL_BUILDS off the judge doesn't decide requirements, so the polish keeps today's gate.
+        process.env.FULL_BUILDS = "";
+        selects = rows([{ payload: verdict(["met", "unmet", "unmet"]) }]);
+        assert.equal((await steps.loadRefineStep("r1")).polishBaseline, undefined);
+      } finally {
+        if (old === undefined) delete process.env.FULL_BUILDS;
+        else process.env.FULL_BUILDS = old;
       }
     });
   });

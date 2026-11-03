@@ -90,7 +90,7 @@ import {
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
 import { NO_HELPERS, type HelperCount } from "@/lib/fast/fast";
-import { polishBudgetLine, polishEnding, polishFixSteps, polishRoomLine, type PolishPlan } from "@/lib/polish/logic";
+import { polishBaselineLine, polishBrokeLine, polishBudgetLine, polishEnding, polishFixSteps, polishKeptLine, polishNoWorse, polishRoomLine, type PolishPlan } from "@/lib/polish/logic";
 import { planArtStep } from "@/lib/pipeline/plan-art-step";
 import { stepsFeedStep } from "@/lib/pipeline/steps-feed-step";
 import { restoreFilesStep, restoreOutcomeStep } from "@/lib/pipeline/restore-steps";
@@ -190,6 +190,12 @@ interface Ctx {
   edge?: boolean;
   /** The polish round (lib/polish/logic.ts): step caps per run, one fix round at most, and a dollar budget. */
   polish?: PolishPlan;
+  /**
+   * The polish round's no-worse gate (polishNoWorse): the requirements the live version already failed. Set only on a
+   * polish whose live build's judge recorded some unmet. Its verify runs the requirement tests in warn mode, so the
+   * judge decides them, and the polish ships when nothing that passed there fails now.
+   */
+  knownFailing?: string[];
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
@@ -378,7 +384,10 @@ async function runVerify(ctx: Ctx, round: number, lastRound: boolean, opts: { dr
   const capMs = capFor(ctx, "verify");
   // A chain's verify has longer than verify.mjs's usual 25 minutes for the requirements, inside the plan's cap.
   const chainEnv = ctx.chain ? { MUSEMUSE_REQUIREMENTS_MS: String(Math.max(60_000, capMs - 5 * 60_000)) } : null;
-  const taskEnv = lastRound || chainEnv ? { ...(lastRound ? LAST_ROUND_VERIFY_ENV : {}), ...chainEnv } : undefined;
+  // The no-worse gate: a polish whose live version already fails some requirements gets every round's verify in warn
+  // mode, so their tests don't stop it before the judge, which decides each requirement. Model credits stay strict.
+  const warn = lastRound || !!ctx.knownFailing?.length;
+  const taskEnv = warn || chainEnv ? { ...(warn ? LAST_ROUND_VERIFY_ENV : {}), ...chainEnv } : undefined;
   // The model-credits check reads the gateway's record of this verify's calls from here on.
   const verifyStartedAt = Date.now();
   const task = await runTask(ctx.sandboxName, "verify", capMs, taskEnv);
@@ -416,7 +425,7 @@ async function runEdgeDrill(ctx: Ctx): Promise<{ exitCode: number | null; timedO
 /** The judge's call. A judge that can't run counts as a failed, non-blocking check, so the fix loop handles it. */
 async function judge(ctx: Ctx, round: number, screenshots: VerifyResult["screenshots"]): Promise<JudgeCall> {
   try {
-    return await judgeStep({ buildId: ctx.buildId, productId: ctx.productId, round, screenshots });
+    return await judgeStep({ buildId: ctx.buildId, productId: ctx.productId, round, screenshots, ...(ctx.knownFailing?.length ? { knownFailing: ctx.knownFailing } : {}) });
   } catch (err) {
     const verdict = {
       pass: false,
@@ -435,6 +444,8 @@ interface Checks {
   fixes: number;
   /** The judge's call on the last round, or null when that round's verify failed. */
   judge: JudgeCall | null;
+  /** The no-worse gate passed a polish with these requirements failing as they did on the live version: it ships as partial. */
+  stillFailing?: string[];
 }
 
 /**
@@ -476,9 +487,13 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     verify ??= await runVerify(ctx, round, kind === "build" && last, ctx.edge ? { drill: true } : {});
     if (ctx.fast && !scoped) recheck = verify.recheck ?? [];
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
-    const passed = verify.passed && judged?.pass === true;
+    // The no-worse gate (polish only): nothing that passed on the live version fails now. Every other build: today's.
+    const gate = ctx.knownFailing?.length ? polishNoWorse({ verifyPassed: verify.passed, judge: judged, failing: ctx.knownFailing }) : null;
+    const passed = verify.passed && (judged?.pass === true || gate?.ship === true);
+    const kept = passed && gate?.stillFailing.length ? { stillFailing: gate.stillFailing } : {};
+    if (gate?.newlyFailing.length) await emitStep(ctx.buildId, { type: "log", text: polishBrokeLine(gate.newlyFailing) });
     nudgeStepsFeed(ctx.buildId);
-    if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
+    if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged, ...kept };
     // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
     // own verify and judge after it, isn't started. Without a plan the wall is PLAIN_BUILD_WALL_MS.
     const fixCap = roomForFix ? fixCapInWall(ctx) : null;
@@ -515,6 +530,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
       sandboxName: ctx.sandboxName,
       fix,
       verifiedRound: round,
+      ...(ctx.knownFailing?.length ? { knownFailing: ctx.knownFailing } : {}),
     });
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
@@ -836,11 +852,16 @@ async function finish(
   checks: Checks,
   failedMessage: string,
 ): Promise<Ending> {
-  const decided = decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
+  // A polish the no-worse gate passed with the live version's failing requirements still failing is partial, never live.
+  const kept = checks.passed && checks.stillFailing?.length ? checks.stillFailing : null;
+  const decided = kept ? "partial" : decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
   // FULL_BUILDS: the final word names every requirement still not met.
   const unmet = checks.judge?.unmet?.length ? ` Not met: ${checks.judge.unmet.join(" ")}` : "";
   if (decided === "failed") throw new BuildStop(`${failedMessage}${unmet}`);
   const { liveUrl, outcome, liveFailure } = await ship(ctx, track, { ...product, outcome: decided });
+  if (kept) {
+    return { status: outcome, message: `${polishKeptLine(liveUrl, kept)}${liveFailure ? ` It also failed on its live link: ${liveFailure}` : ""}${unmet}` };
+  }
   return {
     status: outcome,
     message: !liveUrl
@@ -1077,10 +1098,14 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       ...(refine.plan ? { plan: refine.plan } : {}),
       ...(refine.edge ? { edge: true } : {}),
       ...(refine.polish ? { polish: refine.polish } : {}),
+      ...(refine.polish && refine.polishBaseline?.failing.length ? { knownFailing: refine.polishBaseline.failing } : {}),
     };
     polish = refine.polish ?? null;
     // The polish round says what it runs on and what it may spend before anything spends.
     if (refine.polish) await emitStep(buildId, { type: "log", text: polishRoomLine(refine.polish) });
+    // And what it is held to, when the live version's requirement results change that (or are missing).
+    const baselineLine = refine.polish && refine.polishBaseline ? polishBaselineLine(refine.polishBaseline) : null;
+    if (baselineLine) await emitStep(buildId, { type: "log", text: baselineLine });
 
     track.stage = "build";
     await setStatusStep(buildId, "building", { step: "build" });

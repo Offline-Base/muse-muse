@@ -143,3 +143,113 @@ export function passedPolish<T extends { kind: string; message: string | null; s
   const passed = history.filter((h) => h.kind === "refine" && isPolishMessage(h.message) && (h.status === "live" || h.status === "partial"));
   return passed.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0] ?? null;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The no-worse gate (owner's rule, Nov 3). A polish ships when it is no worse than the live version: verify passes,
+// the screenshot judge's own call passes, and every requirement that passed on the live build still passes. A
+// requirement that already failed there and still fails doesn't block it, and stays listed as a known issue. Anything
+// that passed before and fails now still blocks it. Every other build and change keeps today's gate.
+
+/** What the live build's last judge recorded of the product's requirements. */
+export interface PolishBaseline {
+  /** False when the live build has no per-requirement record: then every requirement must pass, as today. */
+  known: boolean;
+  /** The requirements unmet on the live build, in id order. Only these may stay unmet. */
+  failing: string[];
+}
+
+const idOrder = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b);
+
+/** The ids with state "unmet", once each, in id order. */
+function unmetIds(requirements: ReadonlyArray<{ id: string; state: string }>): string[] {
+  return [...new Set(requirements.filter((r) => r.state === "unmet").map((r) => r.id))].sort(idOrder);
+}
+
+/** The baseline from the live build's last judge verdict. No requirement list (or no verdict) is unknown, never "all passed". */
+export function polishBaseline(requirements: ReadonlyArray<{ id: string; state: string }> | null | undefined): PolishBaseline {
+  if (!Array.isArray(requirements) || !requirements.length) return { known: false, failing: [] };
+  return { known: true, failing: unmetIds(requirements) };
+}
+
+/** What the gate reads of the judge's call on the polish (JudgeCall in lib/pipeline/logic.ts). */
+export interface PolishJudge {
+  pass: boolean;
+  blocking: boolean;
+  /** The judge model's own call, before code failed it for unmet requirements. */
+  ownPass?: boolean;
+  requirements?: ReadonlyArray<{ id: string; state: string }>;
+}
+
+export interface PolishGate {
+  ship: boolean;
+  /** Unmet now and on the live build: the known issues it ships with. */
+  stillFailing: string[];
+  /** Unmet now but not unmet on the live build: these block it. */
+  newlyFailing: string[];
+}
+
+/**
+ * The no-worse gate on one checked round of a polish. `failing` is the baseline's (polishBaseline). A judge that passed
+ * is today's gate. With an empty baseline, a judge that failed for anything but those requirements, a blocking call or
+ * a failed verify, it doesn't ship.
+ */
+export function polishNoWorse(input: { verifyPassed: boolean; judge: PolishJudge | null; failing: readonly string[] }): PolishGate {
+  const no: PolishGate = { ship: false, stillFailing: [], newlyFailing: [] };
+  if (!input.verifyPassed || !input.judge) return no;
+  if (input.judge.pass) return { ship: true, stillFailing: [], newlyFailing: [] };
+  if (!input.failing.length || !input.judge.requirements?.length) return no;
+  const before = new Set(input.failing);
+  const unmet = unmetIds(input.judge.requirements);
+  const stillFailing = unmet.filter((id) => before.has(id));
+  const newlyFailing = unmet.filter((id) => !before.has(id));
+  const ship = input.judge.ownPass === true && !input.judge.blocking && stillFailing.length > 0 && newlyFailing.length === 0;
+  return { ship, stillFailing, newlyFailing };
+}
+
+/** "R3", "R3 and R7", "R3, R7 and R8". */
+function idList(ids: readonly string[]): string {
+  return ids.length <= 1 ? (ids[0] ?? "") : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
+}
+
+/** The room's line, said once at the start, on what the polish is held to. Null when nothing differs from today's gate. */
+export function polishBaselineLine(baseline: PolishBaseline): string | null {
+  if (!baseline.known) return "The live version has no per-requirement results on record, so this pass ships only if every requirement passes.";
+  if (!baseline.failing.length) return null;
+  const n = baseline.failing.length;
+  return `The live version already fails ${idList(baseline.failing)}. This pass can still ship if everything that passed there still passes, and ${n === 1 ? "that one stays" : "those stay"} listed as known issues.`;
+}
+
+/** The room's line when a polish broke a requirement the live version passed. */
+export function polishBrokeLine(newlyFailing: readonly string[]): string {
+  return `This pass broke ${idList(newlyFailing)}, which passed on the live version, so it can't ship as it is.`;
+}
+
+/** The final word on a polish that shipped with the live version's failing requirements still failing. */
+export function polishKeptLine(liveUrl: string | null, stillFailing: readonly string[]): string {
+  const n = stillFailing.length;
+  const where = liveUrl ? `Shipped as partial at ${liveUrl}.` : "Finished as partial without publishing to its own link.";
+  return `${where} Everything that passed on the live version still passes. ${idList(stillFailing)} still ${n === 1 ? "fails" : "fail"} as before, so ${n === 1 ? "it stays" : "they stay"} listed as known issues.`;
+}
+
+/** What the judge is told on a polish of a product whose live version already fails some requirements. */
+export function polishJudgeNote(failing: readonly string[]): string {
+  return [
+    `This is a UI pass on a live product. Its live version already failed ${idList(failing)} before this pass.`,
+    `Report ${failing.length === 1 ? "it" : "them"} in requirements as the screens show, but don't fail the product for ${failing.length === 1 ? "it" : "them"} alone. Fail it for anything else under the rules above, including anything that looks or works worse than a finished product should.`,
+  ].join(" ");
+}
+
+/** The judge's mismatch lines without the ones for requirements that already failed on the live version (unmetLines' wording). */
+export function withoutKnownFailing(mismatches: readonly string[], failing: readonly string[]): string[] {
+  return mismatches.filter((m) => !failing.some((id) => m.startsWith(`${id} is not met:`)));
+}
+
+/** The fix round's section on the requirements the live version already failed, so it spends no steps on them. */
+export function polishFixLines(failing: readonly string[]): string[] {
+  const n = failing.length;
+  return [
+    "## Already failing before this pass",
+    "",
+    `${idList(failing)} already failed on the live version before this UI pass. Leave ${n === 1 ? "it" : "them"} as ${n === 1 ? "it is" : "they are"}: don't spend steps on ${n === 1 ? "it" : "them"}, and don't change ${n === 1 ? "its test" : "their tests"}. \`npm run verify\` still reports ${n === 1 ? "it" : "them"}, and that doesn't block this pass. Fix only what this pass broke and what the checks above found besides ${n === 1 ? "it" : "them"}.`,
+  ];
+}

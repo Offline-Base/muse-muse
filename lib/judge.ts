@@ -10,6 +10,7 @@ import { buildableRequirements, briefRequirements, requirementResults, type Requ
 import { judgeReadRequirements, targetCheckResults, type TargetFacts } from "@/lib/full/target-checks";
 import { judgeInstructions } from "@/lib/prompts/judge";
 import { redactShared } from "@/lib/keys/shared";
+import { polishJudgeNote } from "@/lib/polish/logic";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
 
 /**
@@ -88,6 +89,11 @@ export interface JudgeInput {
    * the requirements only a target can prove. Left out, each of those stays not proven, never met.
    */
   targetFacts?: TargetFacts | null;
+  /**
+   * The polish round's no-worse gate: the requirements the live version already failed (polishBaseline). The judge
+   * still reports them, but its own call doesn't fail the product for them alone. None adds nothing.
+   */
+  knownFailing?: string[];
 }
 
 export interface JudgeSample {
@@ -132,7 +138,11 @@ export function withRequirements(
   };
 }
 
-export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number }> {
+/**
+ * `ownPass` is the judge model's own call, before code failed it for an unmet requirement (withRequirements), for the
+ * polish round's no-worse gate. Every other caller reads only the verdict.
+ */
+export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number; ownPass: boolean }> {
   if (!input.screenshots.length) {
     // Nothing cleared the product's look, so this can't ship as partial.
     return {
@@ -144,6 +154,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
       },
       usage: [],
       costUsd: 0,
+      ownPass: false,
     };
   }
 
@@ -161,7 +172,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
       normalize: (raw) => cleanStrings(raw),
     });
     const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
-    return { verdict: withRequirements(toJudgeResult(result.data), input.brief, input.requirementTests, result.data.requirements, input.targetFacts), usage: result.usage, costUsd };
+    return { verdict: withRequirements(toJudgeResult(result.data), input.brief, input.requirementTests, result.data.requirements, input.targetFacts), usage: result.usage, costUsd, ownPass: result.data.pass };
   }
   const result = await respondStructured({
     model: env.judgeModel,
@@ -174,7 +185,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
     normalize: (raw) => cleanStrings(raw),
   });
   const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
-  return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
+  return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd, ownPass: result.data.pass };
 }
 
 /** The samples the judge sees, at most MAX_JUDGE_SAMPLES. */
@@ -236,6 +247,7 @@ export function judgeContent(input: JudgeInput): { content: ContentPart[]; sourc
   // The requirements only a target can prove aren't the judge's, so their tests aren't shown to it either.
   const read = required.length ? judgeReadRequirements(input.brief) : [];
   if (read.length) content.push(textPart(requirementTestsText(input.requirementTests, read)));
+  if (read.length && input.knownFailing?.length) content.push(textPart(polishJudgeNote(input.knownFailing)));
   const shots = pickScreenshots(input.screenshots, required.length ? Math.max(MAX_FULL_SCREENSHOTS, Math.min(MAX_CHAIN_SCREENSHOTS, required.length + 2)) : MAX_SCREENSHOTS);
   content.push(textPart(`Screenshots, in order (${shots.length}${shots.length < input.screenshots.length ? ` of ${input.screenshots.length}` : ""}):`));
   shots.forEach((shot, i) => {

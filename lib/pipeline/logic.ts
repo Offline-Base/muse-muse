@@ -70,6 +70,13 @@ export interface JudgeCall {
   blocking: boolean;
   /** FULL_BUILDS: the requirements still not met, each with its id. Set only when there are some. */
   unmet?: string[];
+  /**
+   * The polish round's no-worse gate (polishNoWorse in lib/polish/logic.ts): the judge model's own call before code
+   * failed it for unmet requirements, and each requirement's state. Set only on a polish whose live version already
+   * fails some requirements.
+   */
+  ownPass?: boolean;
+  requirements?: Array<{ id: string; state: string }>;
 }
 
 /**

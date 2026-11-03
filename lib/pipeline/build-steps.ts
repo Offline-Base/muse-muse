@@ -23,7 +23,7 @@ import { BOARD_TOOLS_MARKER } from "@/lib/caps/hardware/limits";
 import { CREDITS_STEP, creditsInSource, withModelCredits } from "@/lib/verify/model-credits";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, POLISH_TOKEN_MARKER } from "@/lib/gateway/policy";
-import { isPolishMessage, POLISH_MODEL, polishPlan, type PolishPlan } from "@/lib/polish/logic";
+import { isPolishMessage, POLISH_MODEL, polishBaseline, polishFixLines, polishPlan, withoutKnownFailing, type PolishBaseline, type PolishPlan } from "@/lib/polish/logic";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, type JudgeSample, MAX_CHAIN_SCREENSHOTS, pickScreenshots } from "@/lib/judge";
 import { APP_NAV_COMPONENT, FULL_PRODUCT_SKILL } from "@/lib/full/prompts";
@@ -1266,6 +1266,8 @@ export async function judgeStep(input: {
   productId: string;
   round: number;
   screenshots: Screenshot[];
+  /** The polish round's no-worse gate: the requirements the live version already failed (loadRefineStep). */
+  knownFailing?: string[];
 }): Promise<JudgeCall> {
   "use step";
   const build = await loadBuild(input.buildId);
@@ -1293,8 +1295,10 @@ export async function judgeStep(input: {
   const targetFacts = requirementTests !== undefined && targetCheckedRequirements(brief).length ? await targetFactsFor(brief, build, input.round, input.buildId) : null;
   const ownerNotes = env.steerChat ? await sentNotes(input.buildId) : [];
   const samples = await judgeSamplesFor(build.sandboxName, input.buildId, input.round);
+  const knownFailing = requirementTests !== undefined && input.knownFailing?.length ? input.knownFailing : null;
   const result = await judgeBuild({
     ...(samples.length ? { samples } : {}),
+    ...(knownFailing ? { knownFailing } : {}),
     ...(requirementTests !== undefined ? { requirementTests } : {}),
     ...(ownerNotes.length ? { ownerNotes } : {}),
     brief,
@@ -1310,7 +1314,9 @@ export async function judgeStep(input: {
   await charge(ctx, result.usage, what);
   await emit(input.buildId, { type: "judge", round: input.round, verdict: result.verdict });
   const unmet = unmetLines(result.verdict.requirements ?? []);
-  return { pass: result.verdict.pass, blocking: result.verdict.blocking, ...(unmet.length ? { unmet } : {}) };
+  // The no-worse gate reads the model's own call and each requirement's state. Only a polish with known failures asks.
+  const gate = knownFailing ? { ownPass: result.ownPass === true, requirements: (result.verdict.requirements ?? []).map((r) => ({ id: r.id, state: r.state })) } : {};
+  return { pass: result.verdict.pass, blocking: result.verdict.blocking, ...(unmet.length ? { unmet } : {}), ...gate };
 }
 judgeStep.maxRetries = 1;
 
@@ -1366,6 +1372,8 @@ export async function writeFixPromptStep(input: {
   fix: number;
   /** The build-room round whose results this fix answers. */
   verifiedRound: number;
+  /** The polish round's no-worse gate: requirements the live version already failed, which this fix round leaves alone. */
+  knownFailing?: string[];
 }): Promise<FixPrompt> {
   "use step";
   const rows = await db()
@@ -1377,8 +1385,11 @@ export async function writeFixPromptStep(input: {
   const payloads = rows.map((r) => r.payload);
   const verified = payloads.filter(isVerifyEvent).find((p) => p.round === input.verifiedRound);
   const verify: VerifySummary | null = verified?.summary ?? null;
-  const judge: JudgeVerdict | null =
+  const lastVerdict: JudgeVerdict | null =
     payloads.filter(isJudgeEvent).find((p) => p.round === input.verifiedRound)?.verdict ?? null;
+  // A polish's fix round isn't sent after what already failed on the live version: those lines leave the judge's notes.
+  const known = input.knownFailing?.length ? input.knownFailing : null;
+  const judge: JudgeVerdict | null = lastVerdict && known ? { ...lastVerdict, mismatches: withoutKnownFailing(lastVerdict.mismatches, known) } : lastVerdict;
   // The judge only runs once verify passes, on that verify's screenshots. They help but aren't needed, so a fix round
   // whose screenshots can't be copied goes on without them.
   const judged = judge ? pickScreenshots(verified?.screenshots ?? []) : [];
@@ -1395,11 +1406,8 @@ export async function writeFixPromptStep(input: {
     const fixing = await loadBuild(input.buildId);
     if (fixing.kind === "build" && fullBuildOf(fixing.brief)) await sandbox.writeProductFile(input.sandboxName, "musemuse.requirements.json", requirementsFile(fixing.brief!));
   }
-  await sandbox.writeProductFile(
-    input.sandboxName,
-    promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...range, ...(judge?.requirements?.length ? { fullBuild: true } : {}) }),
-  );
+  const rendered = renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote(), ...range, ...(judge?.requirements?.length ? { fullBuild: true } : {}) });
+  await sandbox.writeProductFile(input.sandboxName, promptFile, known ? `${rendered}\n${polishFixLines(known).join("\n")}\n` : rendered);
   return { promptFile, images };
 }
 writeFixPromptStep.maxRetries = 2;
@@ -1980,6 +1988,27 @@ export interface RefineContext {
   edge?: boolean;
   /** The polish round (lib/polish/logic.ts): Muse Code on Muse Wonder for this change, held to these bounds. */
   polish?: PolishPlan;
+  /**
+   * The polish round's no-worse gate: what the live build's last judge recorded of each requirement. Set only on a
+   * polish of a product with requirements while FULL_BUILDS is on; otherwise the polish keeps today's gate.
+   */
+  polishBaseline?: PolishBaseline;
+}
+
+/**
+ * The live build's last judge verdict on each requirement (build_events, type "judge"), or null when it has none: a
+ * build from before FULL_BUILDS, a restore, or a judge that couldn't run.
+ */
+async function liveRequirementRecord(latestBuildId: string | null): Promise<Array<{ id: string; state: string }> | null> {
+  if (!latestBuildId) return null;
+  const [row] = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, latestBuildId), eq(schema.buildEvents.type, "judge")))
+    .orderBy(desc(schema.buildEvents.id))
+    .limit(1);
+  const payload = row?.payload;
+  return payload && isJudgeEvent(payload) ? (payload.verdict.requirements ?? null) : null;
 }
 
 /**
@@ -2088,6 +2117,8 @@ export async function loadRefineStep(buildId: string, opts: { restore?: boolean 
     ...(plan ? { plan } : {}),
     ...(brief && isEdgeBuild(brief) ? { edge: true } : {}),
     ...(override ? { polish: polishPlan(env.polishMaxUsd, buildTokenBudgetFor()) } : {}),
+    // Read before this polish can ship, so it is always the version it would replace.
+    ...(override && fullBuildOf(brief) ? { polishBaseline: polishBaseline(await liveRequirementRecord(product.latestBuildId)) } : {}),
   };
 }
 
