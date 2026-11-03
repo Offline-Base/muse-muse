@@ -81,9 +81,8 @@ export function SamReport({ report, heading = true }: { report: SamReportShown; 
         <p className="sam-note">
           Blue marks the single best value in each row; a tie gets none. For &quot;Fires on photos with no {w}&quot;, fewer is
           better. Meta&apos;s SAM 3.1 asked &quot;{w}&quot; is never marked: the word is new to it.{" "}
-          {report.apFrom === 0.5
-            ? "AP counts only boxes scored 0.5 or more (the service kept no lower ones), so it is a lower bound."
-            : `AP counts every box scored ${report.apFrom} or more.`}
+          {/* A higher cutoff (the Nov 3 numbers) is one of the server's caveats, so it isn't said twice. */}
+          {report.apFrom === 0.05 ? `AP counts every box scored ${report.apFrom} or more.` : null}
         </p>
       </div>
 

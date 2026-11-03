@@ -133,7 +133,8 @@
       "The muse cutouts were pasted into the photos, not photographed together.",
       "The look-alikes are made up (Muse Image) or come from COCO.",
       "This never shows that it tells muse apart from all look-alikes.",
-      "Scored on the same test photos as the Nov 3 run."
+      "Scored on the same test photos as the Nov 3 run.",
+      "AP counts only boxes scored 0.5 or more, so it is a lower bound."
     ]
   }
 }

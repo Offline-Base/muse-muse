@@ -115,7 +115,8 @@ describe("SAM tune report and room", { skip: canMock ? false : "needs --experime
     assert.equal(report.verdict.code, "mixed");
     assert.match(page, /data-verdict="mixed"/);
     assert.match(page, /Against Meta&#x27;s SAM 3\.1 asked &quot;toy&quot;/);
-    assert.match(page, /AP counts only boxes scored 0\.5 or more/);
+    assert.match(page, /<li>AP counts only boxes scored 0\.5 or more, so it is a lower bound\.<\/li>/);
+    assert.doesNotMatch(page, /AP counts every box/);
     assert.equal([...page.matchAll(/<figure class="sam-sbs"/g)].length, 3);
     for (const id of [249129, 20553, 113403]) assert.match(page, new RegExp(`COCO val2017 ${id} \\(Flickr\\), CC BY 2\\.0`));
     assert.match(page, /href="[^"]*scores\.json"/);
