@@ -6,6 +6,10 @@ import { INTRO_CLIPS, INTRO_DONE_EVENT, markIntroSeen, pickIntro, readIntroSeen,
 
 /** How long the clip takes to wash out to white before the page shows through. */
 const WHITE_MS = 450;
+/** The overlay's fade (globals.css, .intro-curtain) plus room; closes it even if no transitionend comes (reduced motion). */
+const LEAVE_MS = 900;
+/** The most an intro may take, however the video behaves (a stalled download): the longest clip is 9.4 s. */
+const MAX_MS = 15000;
 
 /**
  * The first-open intro (lib/intro.ts has which clip, when, and how to try both). Full screen, muted (browsers block
@@ -63,9 +67,16 @@ function Clip({ kind, onDone }: { kind: IntroKind; onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
+    // Skip takes focus; whatever had it gets it back when the intro closes.
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     skip.current?.focus();
     const v = video.current;
     if (v) void v.play().catch(onDone);
+    const cap = setTimeout(onDone, MAX_MS);
+    return () => {
+      clearTimeout(cap);
+      if (before?.isConnected && before !== document.body) before.focus();
+    };
   }, [onDone]);
 
   useEffect(() => {
@@ -74,12 +85,22 @@ function Clip({ kind, onDone }: { kind: IntroKind; onDone: () => void }) {
     return () => clearTimeout(t);
   }, [white]);
 
+  // The fade's transitionend usually closes it; this makes sure it closes even when there is no transition to end.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(onDone, LEAVE_MS);
+    return () => clearTimeout(t);
+  }, [leaving, onDone]);
+
   return (
     <div
       className={`intro-curtain${seeThrough ? " is-see-through" : ""}${white ? " is-white" : ""}${leaving ? " is-leaving" : ""}`}
       role="dialog"
       aria-label="Welcome to Muse Muse"
-      onTransitionEnd={(e) => e.target === e.currentTarget && leaving && onDone()}
+      onTransitionEnd={(e) => {
+        // Only the overlay's own fade, not the white wash on its ::after (which reports the same target).
+        if (e.target === e.currentTarget && !e.pseudoElement && e.propertyName === "opacity" && leaving) onDone();
+      }}
     >
       <video
         ref={video}
