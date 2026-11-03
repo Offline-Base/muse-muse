@@ -53,6 +53,14 @@ function whereItRuns(enabled: readonly TargetId[]): string {
   return lines.join("\n");
 }
 
+/**
+ * The samples must show the note's hard parts (audit, Nov 3): a "long" policy of 349 characters never hit the cache, a
+ * "noisy" feed of 9 clean alerts showed no noise, and a chart with no printed total left the totals check with nothing
+ * to check. sampleProblems in lib/full/requirements.ts sends back the ones code can measure.
+ */
+export const SAMPLE_WRITER_RULE =
+  'Together the fixtures must exercise every requirement and every word in the note that says what the input is like, so the test can prove each one. A "long" policy is 3,000 to 6,000 characters across many sections, not one paragraph. A "noisy" feed has at least 15 entries, one per line, with repeats, junk lines and out-of-order times among the real ones. A totals check needs a sample whose printed total doesn\'t match its rows. "Several speakers" means at least three named voices. A chart to explain prints its values and names its series. Never pick a sample that can show a feature only as zero, empty or "nothing to check".';
+
 /** Hex values are what BUILD_RANGE's direction needs from a reference, so this is the one sentence it swaps. */
 const REFERENCE_COLORS = "Describe colors as roles (a dark header, a warm accent), not hex values.";
 
@@ -127,7 +135,8 @@ ${range ? RANGE_CAPABILITIES_LINE : "- capabilities: one entry per job a model d
 ${opts.fullBuilds ? FULL_LIMITS_LINE : `- limits are honest and specific to this product, and they are for its users. Example: "Counts from one photo are estimates. Birds hidden behind leaves are missed." Include every workaround above the product relies on, and anything the muse asked for that the product won't do. Apart from a rebuild's fit line, never write a limit about the inspo, the sketch or screenshot it came from, the video, samples or what the product doesn't copy. The Muse Muse footer is not a limit, so leave it out.`}
 ${opts.fullBuilds || range ? FULL_COMPLEXITY_LINE : `- complexity is "complex" only when the product chains several model calls with state, takes audio input, or does long multi-step work. "simple" is one model call on one input.`}
 - estimatedCostPerRunUsd is one run of the primary flow, from the prices above, and costNotes shows the arithmetic and ends with the same total.
-- fixtures are one to three sample inputs the automated test feeds the primary flow. fromUserSample is true when one of the person's references is itself a good input of that kind (their own photo for a photo-reading tool, their PDF for a tool that reads that kind of document). When the product takes a file of the same kind the person gave, include that reference as a fixture. referenceIndex is that reference's index when fromUserSample is true, otherwise null. For an image fixture that isn't from the person, description is a picture Muse Image can draw: subject, setting, angle, light, with no logos, brands or real people. For a text fixture, description is the sample text itself, ready to paste, under 1,000 characters.
+- fixtures are one to three sample inputs the automated test feeds the primary flow. fromUserSample is true when one of the person's references is itself a good input of that kind (their own photo for a photo-reading tool, their PDF for a tool that reads that kind of document). When the product takes a file of the same kind the person gave, include that reference as a fixture. referenceIndex is that reference's index when fromUserSample is true, otherwise null. For an image fixture that isn't from the person, description is a picture Muse Image can draw: subject, setting, angle, light, with no logos, brands or real people. For a text fixture, description is the sample text itself, ready to paste, under 1,000 characters, or 3,000 to 6,000 when the note asks for a long one.
+- ${SAMPLE_WRITER_RULE}
 ${opts.fullBuilds || range ? FULL_ACTIONS_LINE : `- actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words.`}
 - Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.${engineRules()}${opts.builderRule ? `\n- ${opts.builderRule}` : ""}${opts.fullBuilds ? FULL_WRITER_SECTION : ""}${whereItRuns(env.enabledTargets)}${capsRules(caps)}${recipesWriterRules(caps)}${range ? rangeWriterSection(range.start, range.recent) : ""}`;
   return range ? text.replace(REFERENCE_COLORS, RANGE_REFERENCE_COLORS) : text;

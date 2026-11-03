@@ -27,6 +27,10 @@ Build this first and make it work end to end with the files in `fixtures/`. Extr
 
 The smoke test's judge screenshots must prove the tagline ("Count the birds in a photo"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).
 
+When the product offers a sample (a Try the sample button, sample photos), the smoke test also walks that path exactly as a person would: load the sample, then press each next button the page offers, in order, with no extra clicks such as Save in between, and expect a non-empty result. If that path lands on an empty state, fix the product, not the test: loading the sample leaves it ready for the next button.
+
+Overlays: convert the model's coordinates (0 to 1000, or fractions of the photo) to the drawn image's size in one helper, and use it for every dot, box and mask. The smoke test asserts that each box sits inside the photo, within a few pixels, and lines up with its own dot or label (the dot inside the box, the label touching it), from their `boundingBox()`.
+
 ## Meta models
 
 Use only these. The gateway rejects any other model. Call them through the helpers in `lib/meta/`.
@@ -85,6 +89,10 @@ Leave out:
 These are in `fixtures/`. The smoke test must use them.
 
 - `fixtures/feeder.jpg` (the person's own sample): The person's feeder photo
+
+Every sample the product ships, in `fixtures/` and behind any sample button, must exercise every requirement and every word in this brief that says what the input is like. A "long" policy is several thousand characters across many sections. A "noisy" feed has one entry per line, with repeats, junk lines and out-of-order times among the real ones. A totals check needs a printed total that doesn't match its rows. "Several speakers" means at least three named voices. Repeats, junk and a wrong total that the brief asks for are the sample doing its job, not the bad sample data AGENTS.md warns about. If a sample here is shorter or cleaner than that, make a fuller one in `fixtures/` yourself and ship it as the product's sample too. When exact numbers matter, as on a chart, draw the sample in code, such as an SVG rendered to PNG with Playwright, rather than asking for a picture.
+
+A counter or meter the brief names (cached tokens, tokens used, a totals check) must show a value the sample really produces, and a test asserts it: the cached tokens on a second call with the same long text, a totals check that finds the mismatch. Put the long, stable text first in the prompt and the question last, so a repeat call can hit the cache. If a value still stays at 0, say so on screen next to it and in BUILD_NOTES.md. A counter stuck at 0, or a check with nothing to check, proves nothing.
 
 ## Budget
 
