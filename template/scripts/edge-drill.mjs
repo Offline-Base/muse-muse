@@ -60,7 +60,7 @@
  * And one more photo drill in the default set for a product that names a SAM route:
  *
  *  19. SAM, sample photo served  the photo edge-drill.json names under "sam"."sample" (a file in public/samples/, the one
- *                                the page's "Try the sample" button loads) is served as a JPEG or PNG
+ *                                the page's "Try the sample" button loads) is served as a JPEG, PNG or WebP
  *
  * With --all and --start, the product gets EDGE_TIMEOUT_MS and EDGE_CLOUD_TIMEOUT_MS from the two limits below, so
  * drill 7 knows how long the product may take.
@@ -236,9 +236,9 @@ async function ask(baseUrl, target, timeoutMs) {
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (target.binary) {
-      // A photo: only its first bytes matter, to tell a JPEG or PNG from a page that says "not found".
+      // A photo: only its first bytes matter, to tell a JPEG, PNG or WebP from a page that says "not found".
       const bytes = Buffer.from(await res.arrayBuffer());
-      return { status: res.status, text: "", head: bytes.subarray(0, 8), bytes: bytes.length, ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
+      return { status: res.status, text: "", head: bytes.subarray(0, 12), bytes: bytes.length, ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
     }
     return { status: res.status, text: await res.text(), ms: Date.now() - started, type: res.headers.get("content-type") ?? "" };
   } catch (err) {
@@ -711,8 +711,13 @@ function boardReply(r) {
   }
 }
 
+// A browser loads any of these, and resizeImage turns each into a JPEG, so a person's own WebP photo is a fine sample.
 const isPhoto = (head) =>
-  !!head && head.length >= 4 && ((head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) || (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47));
+  !!head &&
+  head.length >= 4 &&
+  ((head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) ||
+    (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) ||
+    (head.length >= 12 && head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP"));
 
 /**
  * The board status drills (17, 18), for every edge product, and the sample photo drill (19) for one that looks at photos.
@@ -770,7 +775,7 @@ function boardDrills() {
             : !ok2xx(r)
               ? `the sample ${ctx.sample}: ${bad(r)}`
               : !isPhoto(r.head)
-                ? `the sample ${ctx.sample} isn't a JPEG or PNG`
+                ? `the sample ${ctx.sample} isn't a JPEG, PNG or WebP`
                 : null,
     },
   ];

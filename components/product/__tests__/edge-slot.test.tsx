@@ -49,6 +49,7 @@ describe("the Edge slot", () => {
     const on = boardLine({ looks: true, fleetSam: true, fleetAllProducts: false });
     assert.equal(on.headline, "No board for the main answer");
     assert.match(on.notes[1]!, /office Jetson through Muse Muse when the cloud can't answer, for products a Muse Muse admin made\. The product's own board line says whether that board answers right now\./);
+    assert.match(on.notes[0]!, /that answer comes from the cloud/, "never says every answer is the cloud's while the look may reach the board");
     assert.ok(!/admin/.test(boardLine({ looks: true, fleetSam: true, fleetAllProducts: true }).notes[1]!));
     assert.equal(boardLine({ looks: false, fleetSam: true, fleetAllProducts: true }).notes.length, 1, "a product that doesn't look never reaches the office board");
   });

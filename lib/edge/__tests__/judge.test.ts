@@ -5,17 +5,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { latestDrills } from "@/lib/edge/drills";
-import { boardBackupDrilled, EDGE_BOARD_JUDGE_NOTE, isBoardRequirement } from "@/lib/edge/judge";
+import { boardBackupDrilled, EDGE_BOARD_JUDGE_NOTE, EDGE_BOARD_REQUIREMENT_JUDGE_NOTE, EDGE_BOARD_STATUS_JUDGE_NOTE, isBoardRequirement } from "@/lib/edge/judge";
 
 const rows = (ok: Record<number, boolean>) =>
   latestDrills([{ steps: Object.entries(ok).map(([id, pass]) => ({ name: `Simulated outage drill ${id}: x`, ok: pass })) }])!.drills;
 
 describe("the edge board judge note", () => {
   it("passes the honest not-connected line, fails cloud answers on board screens, and never takes a cloud label as board proof", () => {
-    assert.match(EDGE_BOARD_JUDGE_NOTE, /"Not connected to a board" is the truth and the product working/);
+    assert.match(EDGE_BOARD_JUDGE_NOTE, /"Not connected to a board" (.*) is the truth and the product working/);
     assert.match(EDGE_BOARD_JUDGE_NOTE, /Fail it when a screen, tab or mode that says it shows the board .* shows an answer labeled "Answered in the cloud" or "Seen in the cloud"/);
     assert.match(EDGE_BOARD_JUDGE_NOTE, /never proven by an answer labeled in the cloud/);
     assert.ok(!EDGE_BOARD_JUDGE_NOTE.includes("—"));
+  });
+
+  it("splits into a status part that is safe alone and a requirement part that needs the drill-backed test", () => {
+    assert.equal(EDGE_BOARD_JUDGE_NOTE, `${EDGE_BOARD_STATUS_JUDGE_NOTE} ${EDGE_BOARD_REQUIREMENT_JUDGE_NOTE}`);
+    assert.match(EDGE_BOARD_STATUS_JUDGE_NOTE, /Checking for a board/);
+    assert.ok(!/requirement|test:/i.test(EDGE_BOARD_STATUS_JUDGE_NOTE), "the status part never points the judge at a requirement test");
+    assert.match(EDGE_BOARD_REQUIREMENT_JUDGE_NOTE, /go by it\.$/);
   });
 });
 

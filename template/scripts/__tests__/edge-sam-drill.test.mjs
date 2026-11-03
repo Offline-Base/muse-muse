@@ -125,6 +125,16 @@ describe("the photo drills and drill 11, against a product", () => {
         res.end(Buffer.from(SIMULATED_PHOTO.split(",")[1], "base64"));
         return;
       }
+      if (req.url === "/samples/door.webp") {
+        // A person's own WebP photo: RIFF, a size, WEBP, then a VP8 chunk.
+        res.writeHead(200, { "content-type": "image/webp" });
+        res.end(Buffer.concat([Buffer.from("RIFF"), Buffer.from([20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(12)]));
+        return;
+      }
+      if (req.url === "/samples/door.html") {
+        res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><p>Not a photo</p>");
+        return;
+      }
       if (req.url?.startsWith("/samples/") || req.url?.startsWith("/fixtures/")) {
         res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
         return;
@@ -197,6 +207,8 @@ describe("the photo drills and drill 11, against a product", () => {
     assert.match(await why(null), /names no sample photo: add "sample": "\/samples\/<file>\.jpg" under "sam"/);
     assert.match(await why("/fixtures/door-open.png"), /isn't in public\/samples\//);
     assert.match(await why("/samples/missing.png"), /\/samples\/missing\.png: status 404/);
+    assert.match(await why("/samples/door.html"), /isn't a JPEG, PNG or WebP/);
+    assert.equal(await why("/samples/door.webp"), null, "a WebP photo is a fine sample: resizeImage makes it a JPEG");
   });
 
   test("a product that only looks runs the photo drills alone", async () => {

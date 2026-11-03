@@ -33,14 +33,15 @@ export interface EdgeSlotContext {
 
 /** The plain line about a hosted copy's board. Pure, for the tests. */
 export function boardLine(ctx: Pick<EdgeSlotContext, "looks" | "fleetSam" | "fleetAllProducts">): { headline: string; notes: string[] } {
-  const notes = ["This hosted copy has no board for its main answer, so here every answer comes from the cloud, labeled that way."];
   if (ctx.looks && ctx.fleetSam) {
+    // Its look may reach the office board, so only the main answer is cloud-only here.
+    const notes = ["This hosted copy has no board for its main answer, so here that answer comes from the cloud, labeled that way."];
     notes.push(
       `Its look at a photo can go to Meta SAM 3.1 on an office Jetson through Muse Muse when the cloud can't answer${ctx.fleetAllProducts ? "" : ", for products a Muse Muse admin made"}. The product's own board line says whether that board answers right now.`,
     );
     return { headline: "No board for the main answer", notes };
   }
-  return { headline: "Not connected to a board", notes };
+  return { headline: "Not connected to a board", notes: ["This hosted copy has no board, so here every answer comes from the cloud, labeled that way."] };
 }
 
 /** The drills in one line: how many passed, and that they were simulated. */
