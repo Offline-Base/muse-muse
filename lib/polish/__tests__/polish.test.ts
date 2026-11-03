@@ -187,9 +187,9 @@ describe("the no-worse gate (owner's rule, Nov 3)", async () => {
   const judge = (states: Record<string, string>, extra: Partial<{ pass: boolean; blocking: boolean; ownPass: boolean }> = {}) => ({ pass: false, blocking: false, ownPass: true, requirements: reqs(states), ...extra });
 
   it("reads the live build's unmet requirements in id order, and no list as unknown", () => {
-    assert.deepEqual(polishBaseline(reqs({ R10: "unmet", R2: "met", R7: "unmet", R3: "unmet", R4: "cant" })), { known: true, failing: ["R3", "R7", "R10"] });
-    assert.deepEqual(polishBaseline(reqs({ R1: "met" })), { known: true, failing: [] });
-    for (const none of [null, undefined, []]) assert.deepEqual(polishBaseline(none), { known: false, failing: [] });
+    assert.deepEqual(polishBaseline(reqs({ R10: "unmet", R2: "met", R7: "unmet", R3: "unmet", R4: "cant" })), { known: true, failing: ["R3", "R7", "R10"], met: ["R2"] });
+    assert.deepEqual(polishBaseline(reqs({ R1: "met" })), { known: true, failing: [], met: ["R1"] });
+    for (const none of [null, undefined, []]) assert.deepEqual(polishBaseline(none), { known: false, failing: [], met: [] });
   });
 
   it("ships when only what failed before still fails, and the judge's own call passed", () => {
@@ -201,6 +201,10 @@ describe("the no-worse gate (owner's rule, Nov 3)", async () => {
   it("blocks on anything that passed before and fails now, or a requirement with no record", () => {
     const gate = polishNoWorse({ verifyPassed: true, judge: judge({ R1: "unmet", R3: "unmet", R9: "unmet" }), failing: ["R3"] });
     assert.deepEqual(gate, { ship: false, stillFailing: ["R3"], newlyFailing: ["R1", "R9"] });
+    // Met on the live build and now only unchecked, cant or missing is worse too, though "unchecked" doesn't fail the verdict.
+    const lost = polishNoWorse({ verifyPassed: true, judge: judge({ R1: "met", R2: "unchecked", R3: "unmet", R4: "cant" }), failing: ["R3"], met: ["R1", "R2", "R4", "R5"] });
+    assert.deepEqual(lost, { ship: false, stillFailing: ["R3"], newlyFailing: ["R2", "R4", "R5"] });
+    assert.equal(polishNoWorse({ verifyPassed: true, judge: judge({ R1: "met", R2: "met", R3: "unmet" }), failing: ["R3"], met: ["R1", "R2"] }).ship, true);
   });
 
   it("blocks on a failed verify, no judge, the judge's own fail, a blocking call, or an empty baseline", () => {
@@ -219,13 +223,13 @@ describe("the no-worse gate (owner's rule, Nov 3)", async () => {
   });
 
   it("says plainly what it is held to, what it broke and what it shipped with, with no em dash", () => {
-    assert.equal(polishBaselineLine({ known: true, failing: [] }), null);
-    assert.equal(polishBaselineLine({ known: true, failing: ["R3", "R7"] }), "The live version already fails R3 and R7. This pass can still ship if everything that passed there still passes, and those stay listed as known issues.");
-    assert.match(polishBaselineLine({ known: false, failing: [] })!, /ships only if every requirement passes\.$/);
-    assert.equal(polishBrokeLine(["R1", "R2", "R9"]), "This pass broke R1, R2 and R9, which passed on the live version, so it can't ship as it is.");
-    assert.equal(polishKeptLine("https://x.vercel.app", ["R8"]), "Shipped as partial at https://x.vercel.app. Everything that passed on the live version still passes. R8 still fails as before, so it stays listed as known issues.");
+    assert.equal(polishBaselineLine({ known: true, failing: [], met: [] }), null);
+    assert.equal(polishBaselineLine({ known: true, failing: ["R3", "R7"], met: [] }), "The live version already fails R3 and R7. This pass can still ship if every requirement that passed there still passes, and those stay listed as known issues.");
+    assert.match(polishBaselineLine({ known: false, failing: [], met: [] })!, /ships only if every requirement passes\.$/);
+    assert.equal(polishBrokeLine(["R1", "R2", "R9"]), "This pass broke R1, R2 and R9, which weren't failing on the live version, so it can't ship as it is.");
+    assert.equal(polishKeptLine("https://x.vercel.app", ["R8"]), "Shipped as partial at https://x.vercel.app. Every requirement that passed on the live version still passes. R8 still fails as before, so it stays listed as known issues.");
     assert.match(polishKeptLine(null, ["R3", "R7"]), /^Finished as partial without publishing to its own link\. .* R3 and R7 still fail as before, so they stay/);
-    const all = [polishBaselineLine({ known: true, failing: ["R3"] })!, polishBaselineLine({ known: false, failing: [] })!, polishBrokeLine(["R1"]), polishKeptLine("u", ["R3"]), polishJudgeNote(["R3"]), ...polishFixLines(["R3", "R7"])];
+    const all = [polishBaselineLine({ known: true, failing: ["R3"], met: [] })!, polishBaselineLine({ known: false, failing: [], met: [] })!, polishBrokeLine(["R1"]), polishKeptLine("u", ["R3"]), polishJudgeNote(["R3"]), ...polishFixLines(["R3", "R7"])];
     for (const line of all) assert.ok(!line.includes(EM_DASH), line);
   });
 

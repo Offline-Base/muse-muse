@@ -156,19 +156,21 @@ export interface PolishBaseline {
   known: boolean;
   /** The requirements unmet on the live build, in id order. Only these may stay unmet. */
   failing: string[];
+  /** The requirements met on the live build, in id order. Each must still be met: unmet, cant or unchecked now blocks. */
+  met: string[];
 }
 
 const idOrder = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b);
 
-/** The ids with state "unmet", once each, in id order. */
-function unmetIds(requirements: ReadonlyArray<{ id: string; state: string }>): string[] {
-  return [...new Set(requirements.filter((r) => r.state === "unmet").map((r) => r.id))].sort(idOrder);
+/** The ids with this state, once each, in id order. */
+function idsIn(requirements: ReadonlyArray<{ id: string; state: string }>, state: string): string[] {
+  return [...new Set(requirements.filter((r) => r.state === state).map((r) => r.id))].sort(idOrder);
 }
 
 /** The baseline from the live build's last judge verdict. No requirement list (or no verdict) is unknown, never "all passed". */
 export function polishBaseline(requirements: ReadonlyArray<{ id: string; state: string }> | null | undefined): PolishBaseline {
-  if (!Array.isArray(requirements) || !requirements.length) return { known: false, failing: [] };
-  return { known: true, failing: unmetIds(requirements) };
+  if (!Array.isArray(requirements) || !requirements.length) return { known: false, failing: [], met: [] };
+  return { known: true, failing: idsIn(requirements, "unmet"), met: idsIn(requirements, "met") };
 }
 
 /** What the gate reads of the judge's call on the polish (JudgeCall in lib/pipeline/logic.ts). */
@@ -184,24 +186,27 @@ export interface PolishGate {
   ship: boolean;
   /** Unmet now and on the live build: the known issues it ships with. */
   stillFailing: string[];
-  /** Unmet now but not unmet on the live build: these block it. */
+  /** Unmet now but not unmet on the live build, or met there and not met now (cant, unchecked or missing): these block it. */
   newlyFailing: string[];
 }
 
 /**
- * The no-worse gate on one checked round of a polish. `failing` is the baseline's (polishBaseline). A judge that passed
- * is today's gate. With an empty baseline, a judge that failed for anything but those requirements, a blocking call or
- * a failed verify, it doesn't ship.
+ * The no-worse gate on one checked round of a polish. `failing` and `met` are the baseline's (polishBaseline). A judge
+ * that passed is today's gate. With an empty baseline, a judge that failed for anything but those requirements, a
+ * requirement met on the live build that isn't met now, a blocking call or a failed verify, it doesn't ship.
  */
-export function polishNoWorse(input: { verifyPassed: boolean; judge: PolishJudge | null; failing: readonly string[] }): PolishGate {
+export function polishNoWorse(input: { verifyPassed: boolean; judge: PolishJudge | null; failing: readonly string[]; met?: readonly string[] }): PolishGate {
   const no: PolishGate = { ship: false, stillFailing: [], newlyFailing: [] };
   if (!input.verifyPassed || !input.judge) return no;
   if (input.judge.pass) return { ship: true, stillFailing: [], newlyFailing: [] };
   if (!input.failing.length || !input.judge.requirements?.length) return no;
   const before = new Set(input.failing);
-  const unmet = unmetIds(input.judge.requirements);
+  const unmet = idsIn(input.judge.requirements, "unmet");
+  const metNow = new Set(idsIn(input.judge.requirements, "met"));
   const stillFailing = unmet.filter((id) => before.has(id));
-  const newlyFailing = unmet.filter((id) => !before.has(id));
+  // Met on the live build and not met now is worse, whatever state it is in now ("unchecked" doesn't fail the verdict).
+  const lost = (input.met ?? []).filter((id) => !metNow.has(id));
+  const newlyFailing = [...new Set([...unmet.filter((id) => !before.has(id)), ...lost])].sort(idOrder);
   const ship = input.judge.ownPass === true && !input.judge.blocking && stillFailing.length > 0 && newlyFailing.length === 0;
   return { ship, stillFailing, newlyFailing };
 }
@@ -216,19 +221,19 @@ export function polishBaselineLine(baseline: PolishBaseline): string | null {
   if (!baseline.known) return "The live version has no per-requirement results on record, so this pass ships only if every requirement passes.";
   if (!baseline.failing.length) return null;
   const n = baseline.failing.length;
-  return `The live version already fails ${idList(baseline.failing)}. This pass can still ship if everything that passed there still passes, and ${n === 1 ? "that one stays" : "those stay"} listed as known issues.`;
+  return `The live version already fails ${idList(baseline.failing)}. This pass can still ship if every requirement that passed there still passes, and ${n === 1 ? "that one stays" : "those stay"} listed as known issues.`;
 }
 
-/** The room's line when a polish broke a requirement the live version passed. */
+/** The room's line when a polish broke a requirement the live version didn't fail (polishNoWorse's newlyFailing). */
 export function polishBrokeLine(newlyFailing: readonly string[]): string {
-  return `This pass broke ${idList(newlyFailing)}, which passed on the live version, so it can't ship as it is.`;
+  return `This pass broke ${idList(newlyFailing)}, which ${newlyFailing.length === 1 ? "wasn't" : "weren't"} failing on the live version, so it can't ship as it is.`;
 }
 
 /** The final word on a polish that shipped with the live version's failing requirements still failing. */
 export function polishKeptLine(liveUrl: string | null, stillFailing: readonly string[]): string {
   const n = stillFailing.length;
   const where = liveUrl ? `Shipped as partial at ${liveUrl}.` : "Finished as partial without publishing to its own link.";
-  return `${where} Everything that passed on the live version still passes. ${idList(stillFailing)} still ${n === 1 ? "fails" : "fail"} as before, so ${n === 1 ? "it stays" : "they stay"} listed as known issues.`;
+  return `${where} Every requirement that passed on the live version still passes. ${idList(stillFailing)} still ${n === 1 ? "fails" : "fail"} as before, so ${n === 1 ? "it stays" : "they stay"} listed as known issues.`;
 }
 
 /** What the judge is told on a polish of a product whose live version already fails some requirements. */

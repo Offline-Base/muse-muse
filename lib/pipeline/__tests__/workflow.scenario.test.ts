@@ -73,7 +73,7 @@ interface Scenario {
   /** POLISH_ENABLED: loadRefineStep says this change is a polish round with these bounds. */
   polish?: { maxUsd: number; productUsd: number; roundSteps: number; fixSteps: number; fixRounds: number };
   /** POLISH_ENABLED with FULL_BUILDS: what loadRefineStep read of the live build's requirements. */
-  polishBaseline?: { known: boolean; failing: string[] };
+  polishBaseline?: { known: boolean; failing: string[]; met: string[] };
   /** The no-worse gate's fields of judgeStep's answer, per judge call (last repeats): the model's own call and each requirement's state. */
   judgeGate?: Array<{ ownPass: boolean; requirements: Array<{ id: string; state: string }> }>;
 }
@@ -1655,7 +1655,7 @@ describe("the polish round (POLISH_ENABLED)", () => {
   });
 
   describe("the no-worse gate", () => {
-    const known = { known: true, failing: ["R3"] };
+    const known = { known: true, failing: ["R3"], met: ["R1", "R2"] };
     const reqs = (states: Record<string, string>) => Object.entries(states).map(([id, state]) => ({ id, state }));
     const verifyEnvs = () => named("startTaskStep").filter((c) => c.args[1] === "verify").map((c) => c.args[2] as Record<string, string> | undefined);
     const judgeArgs = () => named("judgeStep").map((c) => c.args[0] as { knownFailing?: string[] });
@@ -1669,19 +1669,26 @@ describe("the polish round (POLISH_ENABLED)", () => {
       // Its verify runs the requirement tests in warn mode, so the judge decides them. Model credits stay strict.
       assert.equal(verifyEnvs()[0]?.MUSEMUSE_SCREEN_CHECK, "warn");
       assert.ok(!(named("collectVerifyStep")[0]!.args[0] as { lastRound?: boolean }).lastRound);
-      assert.ok(logs().some((l) => /^The live version already fails R3\. This pass can still ship if everything that passed there still passes/.test(l)));
+      assert.ok(logs().some((l) => /^The live version already fails R3\. This pass can still ship if every requirement that passed there still passes/.test(l)));
       const final = named("setStatusStep").at(-1)!.args[2] as { message: string };
-      assert.match(final.message, /^UI pass by Muse Wonder\. Shipped as partial at https:\/\/\S+\. Everything that passed on the live version still passes\. R3 still fails as before, so it stays listed as known issues\. Not met: R3 is not met/);
+      assert.match(final.message, /^UI pass by Muse Wonder\. Shipped as partial at https:\/\/\S+\. Every requirement that passed on the live version still passes\. R3 still fails as before, so it stays listed as known issues\. Not met: R3 is not met/);
       assert.ok(!final.message.includes("\u2014"));
     });
 
     it("blocks a polish that broke a requirement the live version passed, and its fix round leaves the old failure alone", async () => {
       reset({ head, polish: POLISH, polishBaseline: known, judgePass: false, judgeBlocking: false, chainReads: [{ costUsd: 1 }], judgeGate: [{ ownPass: true, requirements: reqs({ R1: "met", R2: "unmet", R3: "unmet" }) }] });
       assert.deepEqual(await wf.refineProduct({ buildId: "nw2" }), { status: "failed" });
-      assert.ok(logs().some((l) => l === "This pass broke R2, which passed on the live version, so it can't ship as it is."));
+      assert.ok(logs().some((l) => l === "This pass broke R2, which wasn't failing on the live version, so it can't ship as it is."));
       assert.deepEqual((named("writeFixPromptStep")[0]!.args[0] as { knownFailing?: string[] }).knownFailing, ["R3"]);
       assert.equal(named("startDeployStep").length, 0);
       assert.equal((named("failStep")[0]!.args[0] as { productId: string | null }).productId, null);
+    });
+
+    it("blocks a polish when a requirement met on the live version is now only unchecked", async () => {
+      reset({ head, polish: POLISH, polishBaseline: known, judgePass: false, judgeBlocking: false, chainReads: [{ costUsd: 4.2 }], judgeGate: [{ ownPass: true, requirements: reqs({ R1: "met", R2: "unchecked", R3: "unmet" }) }] });
+      assert.deepEqual(await wf.refineProduct({ buildId: "nw2b" }), { status: "failed" });
+      assert.ok(logs().some((l) => l === "This pass broke R2, which wasn't failing on the live version, so it can't ship as it is."));
+      assert.equal(named("startDeployStep").length, 0);
     });
 
     it("doesn't ship on the old failure alone when the judge's own call failed the UI", async () => {
@@ -1700,12 +1707,12 @@ describe("the polish round (POLISH_ENABLED)", () => {
     });
 
     it("keeps today's gate when the live version's results are unknown or all passed, and says so when unknown", async () => {
-      reset({ head, polish: POLISH, polishBaseline: { known: false, failing: [] }, judgePass: false, judgeBlocking: false, chainReads: [{ costUsd: 4.2 }] });
+      reset({ head, polish: POLISH, polishBaseline: { known: false, failing: [], met: [] }, judgePass: false, judgeBlocking: false, chainReads: [{ costUsd: 4.2 }] });
       assert.deepEqual(await wf.refineProduct({ buildId: "nw6" }), { status: "failed" });
       assert.ok(logs().some((l) => /^The live version has no per-requirement results on record, so this pass ships only if every requirement passes\.$/.test(l)));
       assert.equal(judgeArgs()[0]!.knownFailing, undefined);
       assert.equal(verifyEnvs()[0], undefined, "strict verify, as today");
-      reset({ head, polish: POLISH, polishBaseline: { known: true, failing: [] } });
+      reset({ head, polish: POLISH, polishBaseline: { known: true, failing: [], met: ["R1", "R2", "R3"] } });
       assert.deepEqual(await wf.refineProduct({ buildId: "nw7" }), { status: "live" });
       assert.equal(judgeArgs()[0]!.knownFailing, undefined);
       assert.ok(!logs().some((l) => /live version (already|has no)/.test(l)));

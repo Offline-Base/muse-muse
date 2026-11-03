@@ -196,6 +196,8 @@ interface Ctx {
    * judge decides them, and the polish ships when nothing that passed there fails now.
    */
   knownFailing?: string[];
+  /** With knownFailing: the requirements the live version met. Each must still be met for the polish to ship. */
+  metBefore?: string[];
 }
 
 /** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
@@ -488,7 +490,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     if (ctx.fast && !scoped) recheck = verify.recheck ?? [];
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     // The no-worse gate (polish only): nothing that passed on the live version fails now. Every other build: today's.
-    const gate = ctx.knownFailing?.length ? polishNoWorse({ verifyPassed: verify.passed, judge: judged, failing: ctx.knownFailing }) : null;
+    const gate = ctx.knownFailing?.length ? polishNoWorse({ verifyPassed: verify.passed, judge: judged, failing: ctx.knownFailing, met: ctx.metBefore ?? [] }) : null;
     const passed = verify.passed && (judged?.pass === true || gate?.ship === true);
     const kept = passed && gate?.stillFailing.length ? { stillFailing: gate.stillFailing } : {};
     if (gate?.newlyFailing.length) await emitStep(ctx.buildId, { type: "log", text: polishBrokeLine(gate.newlyFailing) });
@@ -1098,7 +1100,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       ...(refine.plan ? { plan: refine.plan } : {}),
       ...(refine.edge ? { edge: true } : {}),
       ...(refine.polish ? { polish: refine.polish } : {}),
-      ...(refine.polish && refine.polishBaseline?.failing.length ? { knownFailing: refine.polishBaseline.failing } : {}),
+      ...(refine.polish && refine.polishBaseline?.failing.length ? { knownFailing: refine.polishBaseline.failing, metBefore: refine.polishBaseline.met ?? [] } : {}),
     };
     polish = refine.polish ?? null;
     // The polish round says what it runs on and what it may spend before anything spends.

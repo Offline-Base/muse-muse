@@ -1127,12 +1127,12 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       process.env.FULL_BUILDS = "1";
       try {
         selects = rows([{ payload: verdict(["met", "unmet", "unmet"]) }]);
-        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: true, failing: ["R2", "R3"] });
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: true, failing: ["R2", "R3"], met: ["R1"] });
         // A judge event with no requirement list (the judge couldn't run), or no judge event: unknown, so every requirement must pass.
         selects = rows([{ payload: { type: "judge", round: 0, verdict: { pass: false, reasons: ["x"], mismatches: [] } } }]);
-        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [] });
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [], met: [] });
         selects = rows([]);
-        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [] });
+        assert.deepEqual((await steps.loadRefineStep("r1")).polishBaseline, { known: false, failing: [], met: [] });
         // An ordinary change never reads it.
         selects = rows([{ payload: verdict(["met", "unmet", "unmet"]) }], "Dark mode");
         assert.equal((await steps.loadRefineStep("r1")).polishBaseline, undefined);
