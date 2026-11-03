@@ -41,6 +41,7 @@ import {
   fixturesStep,
   judgeStep,
   killStep,
+  liveActionStep,
   liveCheckStep,
   loadBuildStep,
   loadRefineStep,
@@ -94,7 +95,7 @@ import { packageProductStep } from "@/lib/pipeline/package-step";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { chainChecksNeedSession, chainEndLine, chainNext, type ChainPosition } from "@/lib/chain/plan";
-import { capWithinWall, EDGE_DRILL_CAP_MS, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { afterFixReserveMs, capWithinWall, EDGE_DRILL_CAP_MS, fullChecksReserveMs, fullRoundCap, JUDGE_RESERVE_MS, MIN_FIX_ROUND_MS, MIN_RECORD_MS, stepTimeoutMs, wallLeftMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -191,8 +192,13 @@ function capFor(ctx: Ctx, kind: "build" | "fix" | "verify"): number {
 }
 
 /** A round's cap inside the plan's wall, or null when too little is left. Today's cap when there is no plan. */
-function capInWall(ctx: Ctx, capMs: number, reserveMs: number): number | null {
-  return capWithinWall({ capMs, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan?.wallMs ?? null, reserveMs });
+function capInWall(ctx: Ctx, capMs: number, reserveMs: number, minMs?: number): number | null {
+  return capWithinWall({ capMs, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan?.wallMs ?? null, reserveMs, ...(minMs ? { minMs } : {}) });
+}
+
+/** A fix round's cap inside the wall, keeping its own checks and shipping behind it, or null when it gets less than MIN_FIX_ROUND_MS. */
+function fixCapInWall(ctx: Ctx, extraReserveMs = 0): number | null {
+  return capInWall(ctx, capFor(ctx, "fix"), extraReserveMs + afterFixReserveMs({ verifyMs: capFor(ctx, "verify") }), MIN_FIX_ROUND_MS);
 }
 
 async function assertSpendOk(): Promise<void> {
@@ -412,13 +418,14 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     const verifyMs = capFor(ctx, "verify");
     // Room for this verify and its judge, a fix round, and the verify and judge after it.
     // A full build's verify cap grows with its requirements and is rarely reached, so it keeps room for one verify and judge after the fix.
-    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), (ctx.plan.full ? 1 : 2) * (verifyMs + JUDGE_RESERVE_MS)) !== null;
+    // A fix round that couldn't get MIN_FIX_ROUND_MS, with its own checks and shipping still fitting after it, isn't planned.
+    const roomForFix = !ctx.plan || fixCapInWall(ctx, ctx.plan.full ? 0 : verifyMs + JUDGE_RESERVE_MS) !== null;
     const last = fix >= rounds || !roomForFix;
     let verify: VerifyResult | null = null;
     if (recheck.length && !last) {
       const changed = await runTask(ctx.sandboxName, "recheck", verifyMs, { MUSEMUSE_RECHECK: recheck.join("|") });
       // A failure skips the full check only when another fix round still fits. A pass, or anything else, goes on to it.
-      if (!changed.timedOut && changed.exitCode !== 0 && capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) !== null) {
+      if (!changed.timedOut && changed.exitCode !== 0 && fixCapInWall(ctx) !== null) {
         verify = await recheckFailedStep({ buildId: ctx.buildId, round, output: changed.outputTail });
       } else {
         await emitStep(ctx.buildId, { type: "log", text: "Running the full check before this can go live." });
@@ -433,7 +440,7 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
     // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
     // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
-    const fixCap = roomForFix ? capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) : null;
+    const fixCap = roomForFix ? fixCapInWall(ctx) : null;
     if (fixCap === null) {
       await emitStep(ctx.buildId, { type: "log", text: "The build is near its time limit, so no more fix rounds run." });
       return { passed, steps: verify.steps, fixes: fix, judge: judged };
@@ -529,7 +536,7 @@ async function runMilestones(ctx: Ctx, track: Track, list: Array<{ title: string
     await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
     const cap = ctx.plan?.full
       ? fullRoundCap({ plan: ctx.plan, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), milestonesLeft: of - n + 1 })
-      : capInWall(ctx, capFor(ctx, "build"), 2 * verifyMs);
+      : capInWall(ctx, capFor(ctx, "build"), fullChecksReserveMs({ verifyMs, fixMs: capFor(ctx, "fix") }));
     if (cap === null) {
       for (let k = n; k <= of; k++) await milestoneStep(ctx.buildId, { index: k, of, title: list[k - 1]!.title, state: "skipped" });
       await emitStep(ctx.buildId, {
@@ -627,8 +634,12 @@ async function ship(
 ): Promise<Shipped> {
   let demoVideoUrl: string | null = null;
   let demoPosterUrl: string | null = null;
+  // A walled build near its wall doesn't start the demo recording: the product ships without a new video, on time.
+  const left = ctx.plan ? wallLeftMs({ startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan.wallMs }) : null;
+  const noTimeToRecord = !product.restoredFrom && left !== null && left < MIN_RECORD_MS;
+  if (noTimeToRecord) await emitStep(ctx.buildId, { type: "log", text: "The build is at its time limit, so the demo recording was skipped." });
   // A restore ships code that already shipped, and keeps the demo it has.
-  if (!product.restoredFrom) {
+  if (!product.restoredFrom && !noTimeToRecord) {
   track.stage = "record";
   await setStatusStep(ctx.buildId, "recording", { step: "record" });
   try {
@@ -719,6 +730,16 @@ async function ship(
     const check = await liveCheckStep({ buildId: ctx.buildId, sandboxName: ctx.sandboxName, url: liveUrl });
     if (!check.ok) {
       liveFailure = check.reason ?? "it did not answer";
+      outcome = "partial";
+    }
+  }
+  // The live action check (LIVE_ACTION_CHECK, on by default): the primary action called once on the live link with its
+  // example. A failure, or a reply that says it used a stand-in for its model, ships as partial with that known issue.
+  if (env.liveActionCheck && !liveFailure) {
+    track.stage = "live_check";
+    const acted = await liveActionStep({ buildId: ctx.buildId, productId: ctx.productId, sandboxName: ctx.sandboxName, url: liveUrl });
+    if (!acted.ok) {
+      liveFailure = acted.reason ?? "its main action did not work";
       outcome = "partial";
     }
   }

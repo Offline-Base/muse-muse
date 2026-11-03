@@ -939,6 +939,12 @@ export async function readSandboxText(sandboxName: string, file: string): Promis
   return buf ? buf.toString("utf8") : null;
 }
 
+/** Reads a file's bytes from a sandbox, or null when it isn't there. For the live action check's samples. */
+export async function readSandboxFile(sandboxName: string, file: string): Promise<Buffer | null> {
+  const sandbox = await openSandbox(sandboxName);
+  return sandbox.readFileToBuffer({ path: file }).catch(() => null);
+}
+
 /** Starts one of the stage's long commands detached, under pollTask. A retry finds the one already running. */
 export async function startProveCommand(sandboxName: string, input: { tag: "prove-checks" | "prove-record"; cwd: string; argv: string[] }): Promise<{ cmdId: string }> {
   const sandbox = await openSandbox(sandboxName);

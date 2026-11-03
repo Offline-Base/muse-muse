@@ -65,6 +65,9 @@ let drillStarts: string[] = [];
 /** The model-credits check: verify's own summary, and the UI files the credit scan sends back. */
 let verifySummary: { passed: boolean; steps: Array<{ name: string; ok: boolean }>; failureOutput: string } | null = null;
 let creditFiles: Array<{ file: string; text: string }> | null = null;
+/** The live action check: the product's fixtures by path, and the transcript's raw highlights. */
+let sandboxFiles: Record<string, Buffer> = {};
+let transcriptHighlights: string[] = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -215,7 +218,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           manifestReads += 1;
           return manifestImpl;
         },
-        exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
+        exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: transcriptHighlights }),
+        readSandboxFile: async (_name: string, file: string) => sandboxFiles[file] ?? null,
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
         finishDemo: async () => demoVideo,
         collectVerifyResult: async () => ({ summary: verifySummary ?? { passed: true, steps: [{ name: "build", ok: true }], failureOutput: "" }, screenshots: [] }),
@@ -275,6 +279,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     manifestImpl = null;
     verifySummary = null;
     creditFiles = null;
+    sandboxFiles = {};
+    transcriptHighlights = [];
   });
 
   describe("collectVerifyStep's model-credits check", () => {
@@ -674,6 +680,105 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
   });
 
+  describe("liveActionStep (LIVE_ACTION_CHECK)", () => {
+    let server: import("node:http").Server;
+    let base = "";
+    let reply: { status: number; body: unknown; wait?: number } = { status: 200, body: { ok: true } };
+    let posts: Array<{ path: string; body: Record<string, unknown> }> = [];
+    const manifest = (over: Record<string, unknown> = {}) => ({
+      name: "Sim Desk",
+      slug: "sim-desk",
+      tagline: "A toy desk agent",
+      inspiration: "x",
+      models: [{ id: "muse-wonder-1.0", usedFor: "deciding" }],
+      actions: [
+        { name: "delete_note", description: "Deletes", input: { type: "object" }, output: { type: "object" }, example: { id: 1 }, annotations: { readOnly: false } },
+        { name: "decide_next_step", description: "Decides", input: { type: "object" }, output: { type: "object" }, example: { runId: "r1", screenshotDataUrl: "data:image/png;base64,AAA" } },
+      ],
+      fixtures: [{ path: "fixtures/desk.png", description: "A desk" }, { path: "fixtures/notes.txt", description: "Notes" }],
+      limits: [],
+      estimatedCostPerRunUsd: 0.05,
+      ...over,
+    });
+
+    before(async () => {
+      const http = await import("node:http");
+      server = http.createServer((req, res) => {
+        let text = "";
+        req.on("data", (c) => (text += c));
+        req.on("end", () => {
+          posts.push({ path: req.url ?? "", body: JSON.parse(text || "{}") });
+          setTimeout(() => {
+            res.writeHead(reply.status, { "content-type": "application/json" });
+            res.end(JSON.stringify(reply.body));
+          }, reply.wait ?? 0);
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+      base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    });
+    after(() => new Promise<void>((r) => server.close(() => r())));
+    beforeEach(() => {
+      posts = [];
+      reply = { status: 200, body: { ok: true } };
+    });
+
+    const run = () => steps.liveActionStep({ buildId: "b1", productId: "prod-1", sandboxName: "sb", url: `${base}/` });
+
+    it("calls the first safe action once with its example, swapping a shortened picture for the product's own sample", async () => {
+      manifestImpl = manifest();
+      sandboxFiles = { "/vercel/app/fixtures/desk.png": Buffer.from("png-bytes") };
+      selects = { build_events: [[]], usage: [[{ total: 0.004 }]] };
+      const out = await run();
+      assert.deepEqual(out, { ok: true });
+      assert.equal(posts.length, 1, "one call");
+      assert.equal(posts[0]!.path, "/api/actions/decide_next_step", "never the action marked as changing things");
+      assert.equal(posts[0]!.body.screenshotDataUrl, `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`);
+      assert.equal(posts[0]!.body.runId, "r1");
+      assert.deepEqual(costs, ["Live check: one call to the live product"]);
+      assert.deepEqual(emitted.map((e) => e.body), [{ type: "live_check", ok: true, url: base, action: "decide_next_step" }]);
+      assert.equal((writes[0]!.values.liveCheck as { ok: boolean }).ok, true);
+    });
+
+    it("fails, as a known issue, on a reply that covers a model failure with a stand-in", async () => {
+      manifestImpl = manifest();
+      selects = { build_events: [[]], usage: [[{ total: 0 }]] };
+      reply = { status: 200, body: { action: "click", model: false, error: "An AI model is unavailable right now. Using the local plan instead." } };
+      const out = await run();
+      assert.equal(out.ok, false);
+      assert.equal(out.reason, "decide_next_step answered without its AI model (model: false): An AI model is unavailable right now. Using the local plan instead.");
+      assert.deepEqual(emitted.at(-1)!.body, { type: "live_check", ok: false, url: base, action: "decide_next_step", reason: out.reason });
+      assert.deepEqual(costs, [], "nothing spent, nothing charged");
+    });
+
+    it("fails on a server error, and neither passes nor fails on a refused sample", async () => {
+      manifestImpl = manifest();
+      selects = { build_events: [[]], usage: [[{ total: 0 }]] };
+      reply = { status: 502, body: { error: "That call failed." } };
+      assert.deepEqual(await run(), { ok: false, reason: "decide_next_step answered HTTP 502: That call failed." });
+      emitted = [];
+      selects = { build_events: [[]], usage: [[{ total: 0 }]] };
+      reply = { status: 422, body: { error: "bad screenshot" } };
+      assert.deepEqual(await run(), { ok: true });
+      assert.deepEqual(emitted.map((e) => e.body.type), ["log"], "a line that says so, never a pass");
+      assert.match(String(emitted[0]!.body.text), /neither passed nor failed: decide_next_step refused the sample input \(HTTP 422\)/);
+    });
+
+    it("makes no call for a costly run, a product with nothing safe to call, or a call Prove it already made on this deploy", async () => {
+      manifestImpl = manifest({ estimatedCostPerRunUsd: 5 });
+      assert.deepEqual(await run(), { ok: true });
+      manifestImpl = manifest({ actions: [manifest().actions[0]] });
+      assert.deepEqual(await run(), { ok: true });
+      assert.equal(posts.length, 0);
+      assert.ok(emitted.every((e) => e.body.type === "log" && String(e.body.text).startsWith("The live check called no action:")));
+      emitted = [];
+      manifestImpl = manifest();
+      selects = { build_events: [[{ payload: { type: "deploy", url: base } }, { payload: { type: "prove", item: "mcp", checks: [{ ok: false, label: "Call decide_next_step" }] } }]] };
+      assert.deepEqual(await run(), { ok: false, reason: "decide_next_step failed when Prove it called it" });
+      assert.equal(posts.length, 0);
+    });
+  });
+
   describe("registerStep", () => {
     const input = {
       buildId: "b1",
@@ -700,6 +805,20 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         ["prod-1", "build"],
         ["live except", "prod-1", "tok-live"],
       ]);
+    });
+
+    it("logs how it was built without the build machine's paths, session ids or raw tool output", async () => {
+      returns = { products: [[{ status: "live" }]] };
+      transcriptHighlights = [
+        "266 tool calls, 80 edits touching 80 files",
+        "Read text file `/vercel/.local/share/muse/sessions/2026/11/03/01a19fda-2f91-7801-af60-9c4a872edba7/tool-outputs/x/subagent-1-subagent_result.txt`.",
+        "{",
+        "Read text file `app/page.tsx`.",
+        '<read-skill-result name="meta-reasoning" status="ok">',
+        "Ran npm test in /vercel/app/tests",
+      ];
+      await steps.registerStep(input);
+      assert.deepEqual(emitted.map((e) => e.body.text), ["How it was built:\n266 tool calls, 80 edits touching 80 files\nRead text file `app/page.tsx`.\nRan npm test in tests"]);
     });
 
     it("sets the outcome when the product is on", async () => {

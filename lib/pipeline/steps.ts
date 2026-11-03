@@ -63,6 +63,15 @@ export const MAX_BUILD_WALL_MS = 90 * MIN;
 export const MIN_ROUND_MS = 5 * MIN;
 /** Time kept for the judge after a verify, when a round is fitted inside the wall. */
 export const JUDGE_RESERVE_MS = 3 * MIN;
+/**
+ * Time kept at a walled build's end for shipping: the demo recording (about 2 to 7 minutes), the deploy and the live
+ * checks. Without it a build that used its wall on fix rounds ran past it while shipping.
+ */
+export const SHIP_RESERVE_MS = 10 * MIN;
+/** A fix round shorter than this isn't started: one squeezed to a few minutes rarely fixes anything, and its checks still cost their full time. */
+export const MIN_FIX_ROUND_MS = 8 * MIN;
+/** The demo recording isn't started with less than this left before the wall. The product ships without a new video. */
+export const MIN_RECORD_MS = 3 * MIN;
 /** EDGE_ENABLED: the longest an edge build's simulated outage drill may run after verify (lib/pipeline/edge-build.ts). */
 export const EDGE_DRILL_CAP_MS = 5 * MIN;
 
@@ -142,11 +151,18 @@ export function fullRoundPlan(size: { requirements: number }, milestones: Array<
 }
 
 /**
- * What a full build keeps for the end: a verify and judge, and a fix round. Verify's cap is a limit, rarely reached, so
- * holding two of them back cut a six-milestone build's rounds to 5 to 8 minutes. A late fix round is skipped if time ran out.
+ * What a walled build keeps for the end, after its last build round: a verify and judge, one whole fix round with the
+ * verify and judge after it, and shipping (SHIP_RESERVE_MS). The fix round's own checks used to be left out, so on Nov 3
+ * a 3-milestone legal build reached its fix round with 31 minutes of its 150 left, got 8 of its 15, still failed the
+ * judge, and shipped 3 minutes before the wall. Holding this back makes each milestone's round shorter instead.
  */
 export function fullChecksReserveMs(plan: Pick<RoundPlan, "verifyMs" | "fixMs">): number {
-  return plan.verifyMs + JUDGE_RESERVE_MS + plan.fixMs;
+  return 2 * (plan.verifyMs + JUDGE_RESERVE_MS) + plan.fixMs + SHIP_RESERVE_MS;
+}
+
+/** What a fix round keeps behind it inside the wall: the verify and judge after it, and shipping. */
+export function afterFixReserveMs(plan: Pick<RoundPlan, "verifyMs">): number {
+  return plan.verifyMs + JUDGE_RESERVE_MS + SHIP_RESERVE_MS;
 }
 
 /**
@@ -177,11 +193,17 @@ export function roundPlanFor(
 
 /**
  * A round's cap inside the wall: the cap, or what's left before the wall when that is less, or null when less than
- * MIN_ROUND_MS is left. `reserveMs` keeps time for what must run after it (a verify). No wall gives the cap as it is.
+ * MIN_ROUND_MS (or `minMs`, when larger) is left. `reserveMs` keeps time for what must run after it (a verify). No wall
+ * gives the cap as it is.
  */
-export function capWithinWall(input: { capMs: number; startedAt: number; now: number; wallMs: number | null; reserveMs?: number }): number | null {
+export function capWithinWall(input: { capMs: number; startedAt: number; now: number; wallMs: number | null; reserveMs?: number; minMs?: number }): number | null {
   if (input.wallMs === null) return input.capMs;
   const left = input.startedAt + input.wallMs - input.now - (input.reserveMs ?? 0);
-  if (left < MIN_ROUND_MS) return null;
+  if (left < Math.max(MIN_ROUND_MS, input.minMs ?? 0)) return null;
   return Math.min(input.capMs, left);
+}
+
+/** Time left before the wall, or null when the build has none. */
+export function wallLeftMs(input: { startedAt: number; now: number; wallMs: number | null }): number | null {
+  return input.wallMs === null ? null : input.startedAt + input.wallMs - input.now;
 }

@@ -1254,6 +1254,15 @@ export const env = {
   get engineLiveSmoke(): boolean {
     return flag("ENGINE_LIVE_SMOKE");
   },
+  /**
+   * LIVE_ACTION_CHECK: after deploy, the product's primary action is called once on its live link (lib/pipeline/live-action.ts),
+   * and a failure or a stand-in reply ships it as partial with a known issue. On when unset or empty; "0", "false", "no"
+   * or "off" turn it off.
+   */
+  get liveActionCheck(): boolean {
+    const v = (process.env.LIVE_ACTION_CHECK ?? "").trim().toLowerCase();
+    return !["0", "false", "no", "off"].includes(v);
+  },
   /** ENGINE_EXACT_LOGIC: the brief writer says when a product's main claim needs real code (a parser, a solver), not a model. */
   get engineExactLogic(): boolean {
     return flag("ENGINE_EXACT_LOGIC");

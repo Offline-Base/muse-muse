@@ -10,6 +10,8 @@ import "@/components/product/get-it.css";
 import { CheckedPanel } from "@/components/product/CheckedPanel";
 import { checksFailed, RequirementsChecklist, type CheckOutcome } from "@/components/build/RequirementsChecklist";
 import { DrillGroup } from "@/components/build/DrillGroup";
+import { KnownIssues } from "@/components/build/turns";
+import { knownIssues } from "@/lib/pipeline/known-issues";
 import { DeviceStage } from "@/components/product/DeviceStage";
 import { stageDevices } from "@/lib/devices/runs";
 import { DRILL_GROUP_TITLE, DRILLS_EARLIER_NOTE, latestDrills } from "@/lib/edge/drills";
@@ -82,6 +84,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const canEdit = await canEditProduct(user, product);
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
+  const issues = knownIssues(events, product.status);
   // An edge build's simulated outage drills, from the newest round that ran them. Null for every other build.
   const drills = latestDrills(events.flatMap((e) => (e.type === "verify" ? [e.summary] : [])));
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length
@@ -165,6 +168,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </div>
           {product.tagline ? <p className="subtitle">{product.tagline}</p> : null}
         </header>
+
+        {/* A build that shipped after a failed judge or live check says what is wrong, never a silent clean Live. */}
+        {issues.length ? <KnownIssues issues={issues} /> : null}
 
         {shipped && product.liveUrl ? (
           <section className="frame-card" aria-label={`${product.name}, live`}>

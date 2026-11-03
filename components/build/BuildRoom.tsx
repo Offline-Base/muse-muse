@@ -28,6 +28,7 @@ import { StepsFeed } from "@/components/build/StepsFeed";
 import { buildChecklist } from "@/lib/steps-feed/checklist";
 import { buildFeed } from "@/lib/steps-feed/facts";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
+import { knownIssues } from "@/lib/pipeline/known-issues";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
 import { proveRunning } from "@/lib/outputs/labels";
 import { condenseNativeEvents, type BuildEvent } from "@/lib/types";
@@ -352,6 +353,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const elapsed = elapsedMs(build.startedAt, finished, now);
   const openUrl = room.terminal ? (liveUrl ?? room.previewUrl) : (room.previewUrl ?? liveUrl);
   const shipped = room.status === "live" || room.status === "partial";
+  const issues = useMemo(() => knownIssues(events, room.status), [events, room.status]);
   const refine = refineSpot({
     buildId: build.id,
     terminal: room.terminal,
@@ -412,7 +414,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const answerRow = shipped ? (
     <li className="room-answer">
       {answer ? <MarkdownText className="say" text={answer} /> : null}
-      <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} unpublished={feed?.unpublished} />
+      <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} unpublished={feed?.unpublished} issues={issues} />
       <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
     </li>
   ) : null;

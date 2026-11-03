@@ -251,7 +251,7 @@ export function buildFeed(events: readonly BuildEvent[]): Feed {
         else if (e.state === "failed") add(`e${e.id}`, { plain: `Part ${e.index} of ${e.of} did not pass`, noun: `part ${e.index}`, tone: "bad" });
         break;
       case "live_check":
-        if (!e.ok) add(`e${e.id}`, { plain: "The online link did not answer", noun: "the online link", tone: "bad" });
+        if (!e.ok) add(`e${e.id}`, e.action ? { plain: "The online version did not work right when tried once", noun: "the online version", tone: "bad" } : { plain: "The online link did not answer", noun: "the online link", tone: "bad" });
         break;
       case "control":
         if (e.ok && e.action !== "subagent" && e.action !== "workflow") add(`e${e.id}`, e.action === "stop" ? { plain: "Got your stop", noun: "your stop" } : { plain: "Got your note", noun: "your note" });
