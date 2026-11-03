@@ -31,7 +31,7 @@ Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, t
 - Test builds and examples use `TEST_MODEL` (muse-spark-1.3-contributor) with made-up data, never muse-spark-1.3 standard. Real products run on Muse Wonder.
 - No em dashes in anything a user or judge reads.
 - Never print, copy or reuse keys or tokens. Don't read `.env.local`, and never `vercel env pull` over it.
-- Work in a worktree under ~/mm-wt, not the main checkout at ~/muse-muse. Don't push to main: open a PR, and the owner or Hussam merges.
+- Work in a worktree under ~/mm-wt, not the main checkout at ~/muse-muse. No PRs for your own work (owner, Nov 2 night): fetch the latest main first, run the tests for what you touched, then commit and push straight to main. A push to main deploys production. Hussam's PRs stay his to merge.
 - Hussam owns the gadgets, `muse-device` and the boards. Don't change them without him.
 - Reach the Jetsons only through the fleet control plane, never SSH from the laptop. Keep jetson-05 out of experiments.
 - Never run Muse Glimmer on this laptop. Keep to about 3 heavy jobs at once and 6 GB of free disk.

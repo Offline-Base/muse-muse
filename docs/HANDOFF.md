@@ -37,7 +37,7 @@ From the owner's answers to the plan-to-win form (rounds 1 and 2). These overrid
 
 ## Open PRs, Nov 2 evening
 
-Nobody but the owner or Hussam merges. Hussam's PRs all say "Don't merge until told". Merged since the morning: #59, #60, #61, #62, #64, #65 (it fixed the unit tests main already failed) and #66 (set up for judging with no spend, 2:09 PM ET).
+Since Nov 2 night (owner): no PRs for our own work. Fetch the latest main, test what you touched, and push straight to main (a push deploys production). Hussam's PRs stay his; they say "Don't merge until told". Merged since the morning: #59, #60, #61, #62, #64, #65 (it fixed the unit tests main already failed) and #66 (set up for judging with no spend, 2:09 PM ET).
 
 | PR | Who | What | State |
 |---|---|---|---|
