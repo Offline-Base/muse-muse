@@ -78,7 +78,8 @@ export function missingFileOf(url: string, status: number, pageUrl: string): str
     if (u.origin !== new URL(pageUrl).origin) return null;
     const p = u.pathname;
     if (/^\/(?:fixtures|samples)\//.test(p)) return p;
-    if (/^\/(?:_next|api)\//.test(p) || /\/(?:favicon|apple-touch-icon)[^/]*$/i.test(p)) return null;
+    // The browser's own guesses at icons (favicon, apple-touch-icon, a manifest's icon-192.png) are left out.
+    if (/^\/(?:_next|api|icons)\//.test(p) || /\/(?:favicon|apple-touch-icon|android-chrome|mstile|icon)[^/]*$/i.test(p)) return null;
     return /\.(?:jpe?g|png|webp|gif|svg|avif|heic|wav|mp3|m4a|ogg|oga|webm|mp4|mov|pdf|csv)$/i.test(p) ? p : null;
   } catch {
     return null;
@@ -538,8 +539,17 @@ export function collectNavItems(): NavSample[] {
   for (const el of document.body.querySelectorAll(ITEMS)) {
     if (seen.has(el) || el.closest('[inert], [aria-hidden="true"]') || !visible(el)) continue;
     seen.add(el);
-    const r = el.getBoundingClientRect();
+    const own = el.getBoundingClientRect();
     const style = getComputedStyle(el);
+    // A pill or a tab with a border or a fill shows its whole box. A bare link shows only its words (and icon): one with
+    // -mx-3 for its hover color, clipped by a card, still reads whole.
+    const painted =
+      ["Left", "Right"].some((side) => parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0 && !/^(none|hidden)$/.test(style.getPropertyValue(`border-${side.toLowerCase()}-style`))) ||
+      !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(style.backgroundColor);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const words = range.getBoundingClientRect();
+    const r = painted || words.width <= 2 || words.height <= 2 ? own : words;
     let left = Math.max(r.left, 0);
     let right = Math.min(r.right, vw);
     let scroller: Element | null = null;

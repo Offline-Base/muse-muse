@@ -401,6 +401,9 @@ describe("navigation cut off at the edge of a phone (the Nov 3 targets audit, is
     const faded = await check(`${STRIP}<style>.app-tabs { mask-image: linear-gradient(90deg, #000 85%, transparent); }</style><nav class="app-tabs" data-allow-clip>${tabs}</nav>`);
     assert.ok(faded.nav.length > 0, "the cut tab was measured");
     assert.deepEqual(faded.navClip, []);
+    // A link whose hover color runs past the card that clips it, with its words whole, reads fine.
+    const padded = await check(`<section style="overflow: hidden; border-radius: 12px; padding: 0 8px"><nav aria-label="Pages"><a href="/a" style="display: block; margin: 0 -20px; padding: 12px 20px">History</a></nav></section>`);
+    assert.deepEqual(padded.navClip, []);
     // A closed drawer waits wholly off screen, outside any row that scrolls.
     const drawer = await check(`<nav style="position: fixed; top: 0; right: 0; width: 280px; transform: translateX(100%)"><a href="/a">History</a><a href="/b">Settings</a></nav>`);
     assert.deepEqual(drawer.navClip, []);

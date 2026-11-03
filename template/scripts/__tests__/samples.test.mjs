@@ -46,6 +46,9 @@ describe("a page never loads fixtures/", () => {
       { path: "app/api/actions/scan/route.ts", text: 'const file = await readFile(path.join(process.cwd(), "fixtures", "a.jpg"));\nconst b = readFileSync("fixtures/b.jpg");' },
       { path: "app/page.tsx", text: client('// Old: fetch("/fixtures/a.jpg")\n/* src="/fixtures/b.jpg" */\nconst res = await fetch("/samples/a.jpg");\nconst site = "https://example.com//fixtures/";') },
       { path: "lib/samples.ts", text: 'export const NOTE = "fixtures/notes.txt";' },
+      // A path on disk, in a route or a server file that reads the disk, even when it starts with a slash.
+      { path: "app/api/sample/route.ts", text: 'export async function GET() { return new Response(await readFile(process.cwd() + "/fixtures/shelf.jpg")); }' },
+      { path: "app/report/page.tsx", text: 'import { readFileSync } from "node:fs";\nconst rows = readFileSync(process.cwd() + "/fixtures/rows.csv", "utf8");' },
     ]);
     assert.deepEqual(problems, []);
   });
@@ -111,6 +114,17 @@ test("adds a shelf photo", async ({ page }) => {
     // Words in a comment, or an id like useSample, aren't a button.
     const quiet = { path: "components/Tip.tsx", text: client("// Try the sample later\nconst useSample = () => null;") };
     assert.deepEqual(V.sampleClickProblems([quiet], uploadOnly), []);
+    // A sentence that mentions a sample isn't a control.
+    const prose = { path: "app/page.tsx", text: client("return <p>You can use a sample to see how it works.</p>;") };
+    assert.deepEqual(V.sampleClickProblems([prose], uploadOnly), []);
+  });
+
+  test("a label in JSX on its own line, or in a string, still counts as the control", () => {
+    const multi = { path: "app/page.tsx", text: client("return (\n  <button onClick={go}>\n    Use a sample photo\n  </button>\n);") };
+    const [problem] = V.sampleClickProblems([multi], uploadOnly);
+    assert.match(problem, /offers "Use a sample", but/);
+    const label = { path: "components/Start.tsx", text: client('const LABEL = "Load the sample receipt";') };
+    assert.equal(V.sampleClickProblems([label], uploadOnly).length, 1);
   });
 
   test("verify runs all three checks in its manifest step", () => {

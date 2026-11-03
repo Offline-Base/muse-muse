@@ -609,6 +609,8 @@ export function fixtureUrlProblems(sources) {
   for (const { path: file, text } of sources) {
     const client = USE_CLIENT.test(text);
     if (!isScreenCode(file) && !client) continue;
+    // A route handler, or a server file that reads the disk, asks for no file in the browser: process.cwd() + "/fixtures/a.jpg" is a path on disk.
+    if (!client && (/(?:^|\/)route\.[jt]sx?$/.test(file) || /from\s+["'](?:node:)?fs(?:\/promises)?["']|require\(\s*["'](?:node:)?fs/.test(text))) continue;
     const code = withoutComments(text);
     const hits = new Set();
     for (const m of code.matchAll(/["'`](\.?\/?fixtures\/[^"'`\s]*)/g)) {
@@ -642,8 +644,11 @@ export function sampleFileProblems(sources, exists) {
   return out;
 }
 
-/** A button or link that offers the built-in sample: "Try the sample", "Use a sample photo", "Load the sample". */
-const SAMPLE_CONTROL = /\b(?:try|use|load)\s+(?:the\s+|a\s+|our\s+|this\s+)?(?:built-in\s+)?sample\b/i;
+/**
+ * A button or link that offers the built-in sample: "Try the sample", "Use a sample photo", "Load the sample". The words
+ * start a label (JSX text after ">", or a string), so a sentence like "you can use a sample to see how it works" isn't one.
+ */
+const SAMPLE_CONTROL = /(?:>|["'`])\s*((?:try|use|load)\s+(?:the\s+|a\s+|our\s+|this\s+)?(?:built-in\s+)?sample)\b/i;
 
 /**
  * When the product's screens offer a "Try the sample" control, tests/smoke.spec.ts must press it (a click on a locator
@@ -656,7 +661,7 @@ export function sampleClickProblems(sources, smokeText, targets = []) {
   const offer = sources.find((s) => isScreenCode(s.path) && /\.[jt]sx$/.test(s.path) && SAMPLE_CONTROL.test(withoutComments(s.text)));
   if (!offer) return [];
   if (smokeClicksSample(smokeText)) return [];
-  const label = SAMPLE_CONTROL.exec(withoutComments(offer.text))?.[0] ?? "Try the sample";
+  const label = SAMPLE_CONTROL.exec(withoutComments(offer.text))?.[1] ?? "Try the sample";
   return [
     `${offer.path} offers "${label}", but tests/smoke.spec.ts never presses it. Press it in the smoke test the way a visitor ` +
       `does, like await page.getByRole("button", { name: /${label.replace(/\s+/g, " ").toLowerCase()}/i }).click(), and wait for the ` +

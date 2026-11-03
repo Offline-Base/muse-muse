@@ -1706,6 +1706,9 @@ describe("a sturdier finish (the Nov 3 targets audit, issue 6)", () => {
     assert.equal(withoutToolNames("GMAIL_SEND_EMAIL"), "");
     assert.equal(withoutToolNames("Checked look_up_stock first.", ["look_up_stock", "stock"]), "Checked look up stock first.");
     assert.equal(withoutToolNames("Plain words stay. USA and NASA too."), "Plain words stay. USA and NASA too.");
+    // A constant an answer names on purpose isn't a tool id: only the gateway's toolkits are.
+    assert.equal(withoutToolNames("Set NEXT_PUBLIC_URL and MAX_RETRIES, then SLACK_SEND_MESSAGE runs."), "Set NEXT_PUBLIC_URL and MAX_RETRIES, then Slack send message runs.");
+    assert.equal(withoutToolNames("MAX_RETRIES"), "MAX_RETRIES");
     assert.equal(withoutToolNames("Run this:\n```\nMY_VAR=1 submit_answer\n```"), "Run this:\n```\nMY_VAR=1 submit_answer\n```");
     assert.equal(withoutToolNames(""), "");
   });

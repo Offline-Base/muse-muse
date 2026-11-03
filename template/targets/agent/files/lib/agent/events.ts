@@ -207,8 +207,12 @@ const KIT_TOOL_LABELS: Record<string, string> = {
   read_page: "reading a page",
 };
 
-/** A connected app's tool id, like GMAIL_SEND_EMAIL. */
-const SHOUTED_TOOL = "[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+";
+/**
+ * A connected app's tool id, like GMAIL_SEND_EMAIL: one of the tool gateway's toolkits (lib/tools/catalog.source.ts in
+ * the platform), then words in capitals. Only those toolkits, so an answer that names NEXT_PUBLIC_URL or MAX_RETRIES
+ * keeps it.
+ */
+const SHOUTED_TOOL = "(?:GMAIL|GOOGLECALENDAR|SLACK|SERPAPI|COMPOSIO|EXA|FIRECRAWL)(?:_[A-Z0-9]+)+";
 
 /**
  * Plain words for a tool's name: "the answer" for submit_answer, "Gmail send email" for GMAIL_SEND_EMAIL, "look up
