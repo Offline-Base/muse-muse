@@ -1834,15 +1834,15 @@ export async function collectVerifyResult(input: {
   return { summary, screenshots };
 }
 
-/** Larger sample images aren't sent to the judge. */
+/** A sample's JPEG copy over this isn't sent to the judge. */
 const SAMPLE_MAX_BYTES = 6 * 1024 * 1024;
-const MIME_BY_EXT: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 
 /**
  * The product's own samples for the judge (audit, Nov 3: a "puppy" clip with no animal in it passed): at most two of
  * the files it ships under public/ (paths that say sample, example or demo) and in fixtures/, uploaded to
- * screens/<buildId>/r<round>/. A video gets one frame, picked by ffmpeg's thumbnail filter. A sample that can't be read
- * or framed is left out, and this never throws for one.
+ * screens/<buildId>/r<round>/. Each becomes one JPEG at most 1024 px wide: a video's frame is picked by ffmpeg's
+ * thumbnail filter, and an image is re-encoded too, so an animated GIF, a huge photo or a format Meta refuses can't
+ * make the whole judge call fail. A sample that can't be read or framed is left out, and this never throws for one.
  */
 export async function collectJudgeSamples(input: {
   sandboxName: string;
@@ -1860,26 +1860,20 @@ export async function collectJudgeSamples(input: {
   const out: Array<{ url: string; fileName: string; kind: "image" | "video" }> = [];
   for (const [i, sample] of pickSampleFiles(found.stdout.split("\n")).entries()) {
     const src = `${PRODUCT_DIR}/${sample.path}`;
-    let file = src;
-    let type = MIME_BY_EXT[sample.path.split(".").pop()!.toLowerCase()] ?? "image/jpeg";
-    if (sample.kind === "video") {
-      file = `${RUN_DIR}/judge-sample-${i + 1}.jpg`;
-      type = "image/jpeg";
-      const framed = await sh(
-        sandbox,
-        `rm -f ${q(file)}; timeout 30 ffmpeg -y -v error -i ${q(src)} -vf "thumbnail,scale='min(1024,iw)':-2" -frames:v 1 ${q(file)} && [ -s ${q(file)} ]`,
-        { allowFail: true },
-      );
-      if (framed.exitCode !== 0) continue;
-    }
-    const ext = type === "image/jpeg" ? "jpg" : type.split("/")[1];
+    const file = `${RUN_DIR}/judge-sample-${i + 1}.jpg`;
+    const framed = await sh(
+      sandbox,
+      `rm -f ${q(file)}; timeout 30 ffmpeg -nostdin -y -v error -i ${q(src)} -vf "thumbnail,scale='trunc(min(1024,iw)/2)*2':-2" -frames:v 1 ${q(file)} && [ -s ${q(file)} ]`,
+      { allowFail: true },
+    );
+    if (framed.exitCode !== 0) continue;
     if (input.skipUpload) {
       out.push({ url: sandboxUrl(input.sandboxName, file), fileName: sample.path, kind: sample.kind });
       continue;
     }
     const buf = await sandbox.readFileToBuffer({ path: file }).catch(() => null);
     if (!buf?.length || buf.length > SAMPLE_MAX_BYTES) continue;
-    out.push({ url: await putFile("screens", `${input.buildId}/r${input.round}/sample-${i + 1}.${ext}`, buf, type), fileName: sample.path, kind: sample.kind });
+    out.push({ url: await putFile("screens", `${input.buildId}/r${input.round}/sample-${i + 1}.jpg`, buf, "image/jpeg"), fileName: sample.path, kind: sample.kind });
   }
   return out;
 }

@@ -80,20 +80,21 @@ describe("collectVerifyResult", { skip: canMock ? false : "needs --experimental-
 describe("collectJudgeSamples", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   const collect = () => builder.collectJudgeSamples({ sandboxName: "sb", buildId: "b", round: 1, skipUpload: true });
 
-  it("sends a sample image as it is, and one frame of a sample video", async () => {
+  it("sends one JPEG for each sample: a video's frame, and an image re-encoded", async () => {
     productFiles = ["public/samples/puppy.mp4", "fixtures/room.jpg", "public/favicon.png"];
     framed = [];
     const samples = await collect();
     assert.deepEqual(samples, [
       { url: "sandbox://sb/vercel/musemuse/run/judge-sample-1.jpg", fileName: "public/samples/puppy.mp4", kind: "video" },
-      { url: "sandbox://sb/vercel/app/fixtures/room.jpg", fileName: "fixtures/room.jpg", kind: "image" },
+      { url: "sandbox://sb/vercel/musemuse/run/judge-sample-2.jpg", fileName: "fixtures/room.jpg", kind: "image" },
     ]);
-    assert.equal(framed.length, 1);
-    assert.match(framed[0]!, /ffmpeg .*'\/vercel\/app\/public\/samples\/puppy\.mp4'.*thumbnail/);
+    assert.equal(framed.length, 2);
+    assert.match(framed[0]!, /ffmpeg -nostdin .*'\/vercel\/app\/public\/samples\/puppy\.mp4'.*thumbnail/);
+    assert.match(framed[1]!, /ffmpeg -nostdin .*'\/vercel\/app\/fixtures\/room\.jpg'.*-frames:v 1/);
   });
 
-  it("leaves out a video ffmpeg can't frame", async () => {
-    productFiles = ["fixtures/broken.mp4"];
+  it("leaves out a sample ffmpeg can't read", async () => {
+    productFiles = ["fixtures/broken.mp4", "fixtures/broken.png"];
     frameExit = 1;
     assert.deepEqual(await collect(), []);
     frameExit = 0;

@@ -48,8 +48,8 @@ describe("the screenshot judge's new rules", () => {
     assert.match(blocking, /false when it fails only on smaller things, such as an error, an empty section or fallback copy beside the finished result/);
   });
 
-  it("keeps a limit line about estimates out of the fallback rule", () => {
-    assert.match(JUDGE_INSTRUCTIONS, /A limit line saying results are estimates is not this\./);
+  it("keeps a limit line about estimates, and a labeled answer from another real model, out of the fallback rule", () => {
+    assert.match(JUDGE_INSTRUCTIONS, /A limit line saying results are estimates is not this, and neither is an answer from another real model labeled with the model that gave it\./);
   });
 
   it("uses no em dashes", () => {
