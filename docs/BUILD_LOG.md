@@ -2960,4 +2960,21 @@ The owner asked for a simpler sidebar using "muse" and "musing" for the creative
     - no page errors.
   - The phone row first stacked at 390 px (a grid sizes auto-fit columns at their maximum), and was fixed with a wrapping flex row.
   - Tests: lib/devices 5 of 5. Product page, card and clip tests 460 pass, with the one models-page failure main already has. Typecheck clean. Spend $0.
+- **Nov 2, night: the device demos tap through the app (owner: "do the little demos show it actually clicking around and working?").**
+  - No, they didn't. The Nov 1 clips were still screens: 0% of pixels changed from start to end on the Mac, Windows and Galaxy clips, and about 2 to 4% on the iPhone simulator's, which was just the page loading. Those checks only proved the app opens.
+  - Re-recorded on the same kinds of devices, each opening https://musemuse-dinner-split-helper.vercel.app/ and running the same steps:
+    - tap "Try $120 · 18% · 4 people";
+    - press "Split the bill";
+    - wait for Muse Spark 1.3's answer, $35.40 each;
+    - do the same with "Try $86.50 · 20% · 3 people", $34.60 each.
+    - The product calls Meta's model through the gateway for each split. That corrects my earlier note to the owner that it did the math in the page.
+  - **Mac:** the lab Mac (mac2.metal, macOS 26.7), Playwright 1.56.1 driving Chromium 141 headless with a visible pointer. Run over SSM as ec2-user. The files are in s3 `lab/checks/demo-1102/desktop_mac/`.
+  - **Windows:** the lab Windows box (Windows Server 2022, build 20348), started for the run and stopped right after. Same script. Files in `.../desktop_windows/`.
+  - **Galaxy S25:** a real phone (SM-S931U1, Android 16) on AWS Device Farm, run 3abcc4b7, PASSED, 0.94 metered minutes (about $0.16).
+    - The custom spec from Nov 1, with a new `mm/check.sh`: the Muse Muse lab app opens the product's link, Android's touch dots are on, and `adb shell input tap` hits the positions measured from the Nov 1 screenshot. It scrolls to each answer while the phone records its own screen.
+    - Screenshots of both answers came back from the phone.
+  - **iPhone size:** the lab Mac's simulator can't be tapped from a script without tooling it doesn't have, so this is Playwright's WebKit 26 at 393 x 852 with touch, on the lab Mac. The page labels it "iPhone 15 Pro size", "Safari's engine on the lab Mac" and Simulated.
+  - Each recording was checked by its frames before use. Posters are taken at the first answer. All four are in `public/devices/dinner-split-helper/`, 1.6 MB together.
+  - Spend: Device Farm about $0.16. Windows a few minutes, about $0.01. The Mac was already allocated. Model calls about 10 splits, a fraction of a cent.
+  - lib/devices 5 of 5. Typecheck clean. Rechecked in light, dark and at 390 px: all four play, no sideways scroll, no page errors.
 

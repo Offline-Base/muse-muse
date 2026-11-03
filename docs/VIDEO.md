@@ -98,10 +98,10 @@ Narration is about 400 words, about 140 a minute. Read it aloud once with a time
 
 **5b. Where it ran (about 6 s, taken from shot 5's time)** [film once the device stage PR is live]
 
-- On screen: `/p/dinner-split-helper` on the live site, scrolled to "Where it ran". A Mac and a Windows PC, a Samsung Galaxy S25 and an iPhone, each playing the recording made on that device.
-- Say: "And it doesn't just run in a browser. The same app opened on a Mac and a Windows PC in our device lab, and on a real Galaxy S25 through AWS Device Farm."
-- Source: docs/BUILD_LOG.md, "Nov 1, 20:47Z to 21:20Z All five kinds on the real boxes, and Device Farm" (lab run direct-1101-2047, Device Farm run c00593cf).
-- Don't say the app was installed from its own APK: the Galaxy run opened the lab app shell by its deep link. Don't call the iPhone real: it's the simulator, and the page says so.
+- On screen: `/p/dinner-split-helper` on the live site, scrolled to "Where it ran". A Mac, a Windows PC, a Samsung Galaxy S25 and an iPhone-size screen, each playing its own recorded run: tap an example, Split the bill, and Muse Spark 1.3's answer, $35.40 each, then $34.60 each.
+- Say: "And it runs where people are. The same app, used on a Mac and a Windows PC in our device lab and on a real Galaxy S25 through AWS Device Farm, with Meta's model answering on each."
+- Source: docs/BUILD_LOG.md, "Nov 2, night: the device demos tap through the app" (lab demo-1102, Device Farm run 3abcc4b7).
+- Don't say the app was installed from its own APK: the Galaxy run used the Muse Muse lab app with the product's link. Don't call the iPhone real: it's Safari's engine at iPhone size on the lab Mac, and the page says Simulated. The computers ran Chromium, not Chrome.
 
 **6. The marks on `/offline` (1:22 to 1:32)** [film now]
 
