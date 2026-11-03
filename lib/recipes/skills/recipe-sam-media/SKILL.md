@@ -10,6 +10,7 @@ Read `meta-sam` first for prompts, parsing and limits. The links are for people 
 ## Shared rules
 
 - **Masks on video:** pass `metadata: { mask_encoding: "one_bit" }`, with `stream: true`. Decode each with `decodeMaskToRaster` from `@meta-sam/parser`. It returns a row-major 0/1 array, at the mask's own width and height, which may differ from the displayed size.
+- **Drawing over media:** place every SVG box, point and mask with `@/lib/client/overlay`: boxes with `toRect(box, { units: "px", from: { width: w, height: h }, to })`, where `w` and `h` are the size you sent, and a mask path inside `<g transform={maskTransform(maskSize, to)}>`. Test with `overlayProblems` that each box's center is inside the frame and near its mask or point.
 - **Clips:** the 4.5 MB body cap means clips go up with `uploadMedia` and are sent with `videoPart({ url })`. On `media_url_origin_error`, upload with `meta.files.create` and `purpose: "user_data"`, and use `videoPart({ fileId })`.
 - **Route time:** a long clip can outlast the route, so keep demo clips between 5 and 20 seconds, and state that limit. Billing is per frame, with a 50-frame minimum.
 - **Formats:** MP4 or MOV only, so don't record clips with MediaRecorder.

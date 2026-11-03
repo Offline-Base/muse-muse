@@ -52,7 +52,7 @@ The inspo shows what to make. It is not material to copy.
 
 - Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Then build every other screen the brief lists.
 - Follow `.agents/skills/muse-app-ui` for the look: a white page, hairline cards, regular-weight Inter, one blue for actions and one purple gradient that only marks AI. Its tokens are in `app/muse-app.css`, which loads after `app/globals.css`. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name. The action blue is the only signature color. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
-- Build every screen from the template's parts, listed in the muse-app-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown). Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
+- Build every screen from the template's parts, listed in the muse-app-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown, ConfirmButton, UsageStrip). Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."
 - Show each limit in the brief that a user would run into, once, next to the thing it limits.
 - Every input needs a label. Every async action needs loading, error and empty states. Phones are the first screen size to test.

@@ -33,7 +33,7 @@ Caching needs no setting. It matches from the first token forward, so:
 - Keep tool definitions and their order the same on every call.
 - Optionally pass a fixed `prompt_cache_key` naming the shared prefix.
 
-Read hits from `usage.input_tokens_details.cached_tokens` on a Responses reply. The first call with a new prefix reads 0. Show the saving only from that real number. Limit: the gateway reserves budget as if nothing were cached, so a daily budget can stop calls earlier than the real spend suggests.
+Read hits from `usage.input_tokens_details.cached_tokens` on a Responses reply. The first call with a new prefix reads 0. Show the saving only from that real number, in the result's one `UsageStrip` (product-ui, Cost and usage). Limit: the gateway reserves budget as if nothing were cached, so a daily budget can stop calls earlier than the real spend suggests.
 Link: https://github.com/meta-models/meta-model-cookbook/tree/main/01_api_fundamentals/05_prompt_caching.ipynb
 
 ## 01/06 Reasoning tokens

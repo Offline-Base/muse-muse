@@ -69,6 +69,8 @@ Use tokens in every style and inline SVG, never raw hex. Light and dark switch o
 | `.media`, `.overlay`, `.gallery` | image results with overlays; several images |
 | `.note`, `.error`, `.limits`, `.empty` | tips, failures, limits, nothing yet |
 | `.toast`, `dialog`, `details` | confirmations, one short question, long extras |
+| `<ConfirmButton>` | clear, delete and reset: a small text button that asks first in a dialog |
+| `<UsageStrip>` | a result's cost, tokens and cached tokens, in one line, once per page |
 | `<Icon name />` | the only icons, listed below |
 | `<Markdown text />` | model prose |
 

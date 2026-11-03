@@ -72,7 +72,7 @@ const agent = useAgent<Answer>("/api/research");
 </AgentRun>
 ```
 
-AgentRun draws every state: the steps as they run, what it's waiting for, the answer in a card with `data-result`, the sources, the cost after the result, and Stop and Keep going. Don't build these again.
+AgentRun draws every state: the steps as they run, what it's waiting for, the answer in a card with `data-result`, the sources, the cost after the result, and Stop and Keep going. Don't build these again. Its cost line is a `UsageStrip` (product-ui, Cost and usage): pass `usage={{ input, output, cached }}` to add tokens to it, or `usage={false}` to leave it out. If the page places its own `UsageStrip`, AgentRun's line gives way to it, so cost shows once. Never print the run's cost anywhere else.
 
 ## General web search is Meta's own
 
@@ -222,4 +222,4 @@ The gateway answers builds differently, so tests are the same every run:
 
 ## Copy
 
-Say what's sent where, once, next to the input: "Your question goes to Muse Wonder and a web search." When a tool on `platform` is used, add: "Some lookups go through Composio, which may keep them for up to a year." Show the cost only after the result, as AgentRun does, and always as "About". Never name a tool's internal id or the provider behind it anywhere else on screen.
+Say what's sent where, once, next to the input: "Your question goes to Muse Wonder and a web search." When a tool on `platform` is used, add: "Some lookups go through Composio, which may keep them for up to a year." Show the cost once, only after the result, in AgentRun's line or the page's one `UsageStrip`, and always as "About". Never name a tool's internal id or the provider behind it anywhere else on screen.
