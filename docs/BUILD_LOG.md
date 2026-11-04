@@ -4808,3 +4808,21 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Nov 4, ~1:30 AM ET (owner): pad clicks are no longer mentioned; a "Heard you" step appears only when a voice command came in the last 25 s. Each new prompt starts with a quick warm-up (forward, left, right, back, 400 ms each at 170), shown as one step. Deployed (sha256 c7b5d4d1...) after stopping a run with 0 finds, then reset.
 - Nov 4, ~1:45 AM ET (owner): pad clicks now show as Muse Code's own steps ("Turning left to check that side of the room.", rotating phrasings; "Heard you." first if a voice command came in the last 25 s). The camera may be changed once per run: `rover_camera` refuses a second change, resetting with each prompt. Deployed (sha256 b0ff03f7...) between runs, reset.
 - Nov 4, ~2 AM ET (owner): demo set to 3 Muses at 0.96 or more (`GOAL=0.96 TARGET=3` on the rover service). The tool texts now quote GOAL instead of a fixed 0.95; prompt updated. Deployed (sha256 23d2fff7...), reset.
+
+## Nov 4, 2026, about 11:30 AM ET: demo-day board check, three services fixed after a network move
+
+- **Found:** every board rebooted at about 11:20 AM onto a new network (192.168.1.x; yesterday 192.168.12.x). Three services did not come back:
+  - jetson-05: muse-privacy crash-looped (59 restarts) because `APPROVAL_HOST=192.168.12.207` could not bind (the board is now 192.168.1.227). The relay client was connected, but every connector call got 502, which is the 502 Claude showed.
+  - jetson-04: sam3.service looped (5 restarts). Not memory this time: it loaded the models, then failed to bind `--host 192.168.12.144` (Errno 99). The board is now 192.168.1.208.
+  - jetson-02: jetson-llama.service (one-bit Glimmer, `muse-glimmer-2026-iq1s-io-lowest`) was disabled, so it didn't start after the reboot.
+- **Changed (owner approved):**
+  - jetson-05: `APPROVAL_HOST=192.168.1.227` in /etc/muse-privacy/env (backup `env.bak-20261104`), then restarted muse-privacy. Nothing else on jetson-05 was touched (jetson-d1 and router-forward included).
+  - jetson-04: `--host 0.0.0.0` in place of `--host 192.168.12.144` in sam3.service and its tuned.conf drop-in (backups in /root, `*.bak-20261104`), then a daemon-reload and one restart. It no longer depends on the board's address, and /health now answers on 127.0.0.1.
+  - jetson-02: started and enabled jetson-llama.service.
+- **Checked after:**
+  - jetson-05: muse-privacy, muse-privacy-checker and muse-privacy-relay all active, 0 restarts, listening on 192.168.1.227:8787. Checker /health 200. The relay's /health is `{"ok":true}` and /mcp without a token is 401.
+  - jetson-04: /health ok, `facebook/sam3.1`, tuned ["muse"], 3,525 MB GPU, listening on 0.0.0.0:8790, 0 restarts. Memory 4.9 of 7.5 GB, swap 430 MB of 1.5 GB. samstats (port 8791, a temporary unit) is gone after the reboot.
+  - jetson-02: /health ok. A test chat answered at 5.2 tokens a second. Disk is 115 MB free of 28 GB.
+  - jetson-03: idle, GPU 0%, 432 MB disk free.
+  - E-ink display: /fleet/display returns 200 with 5 board cards and the memory squares. /fleet/display/rover returns an image that says "No camera is attached to this board".
+- **Not checked:** ArduinoQ-01 is offline (last seen about 11 hours ago). When it's back, its hunt script still points at SAM on 192.168.12.144 and needs 192.168.1.208. coral-01 and coral-02 are offline (they need the Mac's USB sharing).
