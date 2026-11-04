@@ -18,7 +18,7 @@ import urllib.request
 
 ROVER = os.environ.get("ROVER", "http://192.168.12.158:8799")
 HERE = os.path.dirname(os.path.abspath(__file__))
-EFFORT = os.environ.get("EFFORT", "medium")
+EFFORT = os.environ.get("EFFORT", "minimal")
 
 
 def post(event, text=""):

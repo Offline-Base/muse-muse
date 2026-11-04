@@ -10,13 +10,15 @@ Muse Code (or any MCP client on the office network) runs the search through the 
 rover_look, rover_drive, rover_stop, rover_photo, rover_camera, rover_found, rover_hints, rover_done and rover_say.
 The webcam is fixed to the rover's front (the pan servo doesn't carry it), so looking around means turning the rover.
 musecode_bridge.py (laptop) runs Muse Code and streams its chat in; muse_listen.py (laptop) sends spoken hints through
-Muse transcribe.
+Muse transcribe (a spoken "stop" stops the wheels at once). jetson-04's memory comes from samstats.py, a read-only
+reader on port 8791, shown by the page's Jetson memory button.
 
 Runs on the rover as user arduino. Page: http://<rover>:8799 (office network only).
 """
 
 import base64
 import collections
+import re
 import glob
 import json
 import os
@@ -50,6 +52,9 @@ CAM_CTRLS = {
 MAX_MANUAL_SPEED = 200
 CAM_DEFAULTS = {"exposure_time_absolute": 39, "gain": 32, "brightness": 0, "contrast": 33, "gamma": 100, "saturation": 58,
                 "sharpness": 2, "backlight_compensation": 0}
+STATS_URL = os.environ.get("STATS_URL", "http://192.168.12.144:8791/stats")  # jetson-04's read-only memory stats
+TUNED_URL = os.environ.get("TUNED_URL", "")  # where the tuned weights are published, once they are
+META_URL = "https://huggingface.co/facebook/sam3.1"
 TARGET = int(os.environ.get("TARGET", "2"))  # how many muses Muse Code is asked to find
 FOV = 60.0  # the webcam's rough horizontal view, degrees (for left/right hints only)
 RECENT = 5  # the best-match card looks back this many looks
@@ -59,7 +64,7 @@ state = {"mode": "watching", "seeing": False, "prompt": PROMPT, "pan": 0, "tilt"
          "looks": 0, "snapshots": [], "note": "Starting", "frame_t": 0.0, "bestmatch": None, "finds": [], "target": TARGET,
          "agent": [], "agent_seq": 0, "agent_at": 0.0, "moves": 0,
          "chat": {"prompt": "", "reply": "", "status": "idle", "ts": 0.0}, "ask": None,
-         "hints": [], "hint_seq": 0, "hint_sent": 0, "done": None}
+         "hints": [], "hint_seq": 0, "hint_sent": 0, "done": None, "mic": False}
 overlay = {"jpeg": b"", "base": b"", "frame": b"", "bestframe": b""}
 recent = collections.deque(maxlen=RECENT)
 lock = threading.Lock()
@@ -277,18 +282,30 @@ MCP_INSTRUCTIONS = (
     "Every camera frame goes to two SAM 3.1 models on a Jetson: one tuned to find the Muse mascot, and Meta's own weights "
     "for comparison. A tuned score of 0.95 or more is a match. The goal: find the Muse mascots in the room. There are "
     f"always at least {TARGET}, maybe more; record every different one you find. People are watching a page that shows "
-    "your steps, so call rover_say with one short plain sentence before each move. Start with rover_status. To scan, turn "
-    "in place in short steps (for example left -150, right 150 for 400 ms; opposite signs turn), and call rover_look after "
-    "each turn. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
+    "your steps, so narrate everything clearly with rover_say: before every action, say what you are about to do and why "
+    "(\"Turning right a little to check the corner by the couch\"); after every look, say what both models saw and what "
+    "you will do next (\"The tuned model sees a muse at 97% on the left; checking it with a photo\"). Be proactive and keep moving: don't stop to think "
+    "between steps. Start with rover_status, then scan by turning in place in steps of about 30 to 45 degrees (for "
+    "example left -170, right 170 for 500 ms; opposite signs turn) with a rover_look after each turn. After a full "
+    "circle, drive forward 1 to 1.5 seconds to a new part of the room and scan again; go toward anything that looks like "
+    "a plush toy and get closer to check it. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
     "with rover_photo before calling rover_found. A muse already found can come into view again after a turn: compare "
-    "with your earlier photos and don't record it twice. If the picture looks too dark, washed out or low in contrast, or "
-    "scores hover just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
-    "again, and put it back if it got worse. The person watching may speak hints (where to go, what to try); new hints "
-    "arrive at the end of any tool result, transcribed from a microphone, so ignore lines that are clearly room chatter "
-    "and follow the ones about the search. Drive at most 1500 ms at a time; the rover stops by itself 150 mm before an "
+    "with your earlier photos and don't record it twice. Only if the picture is clearly too dark or washed out, or a likely "
+    "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
+    "again, and put it back if it got worse. The person watching talks to you by voice: a microphone is "
+    "transcribed the whole time, and anything that sounds like a command arrives at the top of your next tool result as "
+    "VOICE COMMAND. Treat those as the owner's orders: rover_say \"Heard you: ...\", work out what they mean (\"move back "
+    "for two seconds\" is rover_drive -150/-150 for 1500 ms then 500 ms; \"turn left a bit\" is a short left turn; "
+    "\"lower the exposure\" is rover_camera), do it right away, then carry on with the search. Transcripts can be rough, so "
+    "take the most likely meaning. Other room talk is labelled as such; ignore it unless it is about the search. Drive at most 1500 ms at a time; the rover stops by itself 150 mm before an "
     f"obstacle. Once you have found at least {TARGET} and checked the rest of the room for more, call rover_stop, then "
     "rover_done with a one-line summary."
 )
+
+
+COMMAND_WORDS = re.compile(r"\b(muse|rover|go|move|drive|turn|left|right|forward|forwards|back|backward|backwards|stop|wait|"
+                           r"closer|around|spin|look|over there|behind|under|camera|exposure|brighter|darker|contrast|"
+                           r"faster|slower|seconds?|degrees?|again|that one|check|found|done|keep going)\b", re.I)
 
 
 def _schema(props=None, required=()):
@@ -497,8 +514,14 @@ def mcp_handle(msg):
             with lock:
                 new = [h["text"] for h in state["hints"] if h["seq"] > state["hint_sent"]]
                 state["hint_sent"] = state["hint_seq"]
-            if new:
-                content.append({"type": "text", "text": "New spoken hints from the person watching: " + json.dumps(new)})
+            cmds = [h for h in new if COMMAND_WORDS.search(h)]
+            talk = [h for h in new if h not in cmds]
+            if cmds:
+                content.insert(0, {"type": "text", "text": "VOICE COMMAND from the person watching (spoken, transcribed; do this "
+                                   "next, before your own plan, and rover_say that you heard it): " + json.dumps(cmds)})
+            if talk:
+                content.append({"type": "text", "text": "Room talk heard by the mic (probably not for you; use it only if it is "
+                                "about the search): " + json.dumps(talk)})
             result = {"content": content}
         except ToolError as exc:
             result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
@@ -535,7 +558,7 @@ header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;
 .spacer{flex:1}.word{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-2)}
 .word input{font:500 15px var(--font);color:var(--fg);width:150px;padding:8px 14px;border-radius:var(--pill);border:1px solid #8a8d91;background:var(--surface)}.ctl{display:flex;align-items:center;gap:8px;color:var(--fg-2);font-size:13px}
 input[type=range]{accent-color:var(--accent)}.ctl input{width:130px}output{font-variant-numeric:tabular-nums;color:var(--fg)}
-main{max-width:1440px;margin:0 auto;padding:18px 24px 40px;display:grid;gap:16px}
+main{margin:0 auto;padding:12px 16px 40px;display:grid;gap:16px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-card)}
 .card>h2{font:600 13px var(--font);color:var(--fg-2);margin:0;padding:12px 16px}
 .status{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px 18px;padding:16px 20px}
@@ -549,14 +572,15 @@ main{max-width:1440px;margin:0 auto;padding:18px 24px 40px;display:grid;gap:16px
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}@media (prefers-reduced-motion:reduce){.working i{animation:none}.fill{transition:none}}
 [hidden]{display:none!important}
 .is-found .fill{background:var(--positive)}.is-found .score{color:var(--positive)}
-.stage{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"agent tuned" "cam base";gap:16px}
+.stage{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"agent tuned" "cam base";gap:12px;height:calc(100vh - 92px);min-height:560px}
+.stage>.card{display:flex;flex-direction:column;min-height:0;overflow:hidden}.stage>.card>h2{padding:9px 14px}
 .agent{display:flex;flex-direction:column}.agenthead{display:flex;align-items:center;gap:10px}
 .mc{font:700 17px var(--font);color:var(--fg)}.count{font:700 15px var(--font);color:var(--fg);font-variant-numeric:tabular-nums}.count.done{color:var(--positive)}
 button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s infinite}
 .finds{display:flex;gap:12px}.finds figure{margin:0;width:120px}
 .finds canvas{width:120px;height:120px;border-radius:var(--radius);background:var(--surface-2);box-shadow:0 0 0 2px var(--positive)}
 .finds figcaption{font-size:12px;color:var(--fg-2);margin-top:4px}
-.mcbody{position:relative;flex:1;min-height:340px;border-top:1px solid var(--line)}
+.mcbody{position:relative;flex:1;min-height:0;border-top:1px solid var(--line)}
 .mcgrid{position:absolute;inset:0;display:grid;grid-template-columns:1.1fr 1fr}.hide-steps .mcgrid{grid-template-columns:1fr}.hide-steps .stepspane{display:none}
 .chat{display:flex;flex-direction:column;min-height:0}.msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
 .ubub{align-self:flex-end;background:var(--surface-2);border-radius:22px;padding:10px 16px;max-width:85%;white-space:pre-wrap}
@@ -579,13 +603,29 @@ button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s inf
 .timeline b{display:block;font-weight:600;color:#3d3f42}.timeline li.got b{color:var(--positive)}
 .timeline span{display:block;color:var(--fg-2);font-size:13px;line-height:1.5;margin-top:3px}
 .finds{flex-wrap:wrap}
-.shot{position:relative;margin:0 12px 12px;border-radius:var(--radius);overflow:hidden;background:var(--surface-2);aspect-ratio:4/3}
-.shot img{display:block;width:100%;height:100%;object-fit:cover;filter:contrast(var(--contrast,100%))}
+.shot{flex:1;min-height:0;margin:0 10px 10px;container-type:size;display:flex;align-items:center;justify-content:center}
+.frame{position:relative;width:min(100cqw,133.33cqh);height:min(100cqh,75cqw);border-radius:var(--radius);overflow:hidden;background:var(--surface-2)}
+.frame img{display:block;width:100%;height:100%;object-fit:cover;filter:contrast(var(--contrast,100%))}
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--fg-2);text-align:center;padding:20px}
 .labels{position:absolute;inset:0;pointer-events:none}
 .tag{position:absolute;transform:translateY(-100%);background:var(--scrim);color:#fff;font:600 13px/1 var(--font);padding:5px 8px;border-radius:var(--radius-sm);white-space:nowrap}
 .tag.top{box-shadow:0 0 0 2px var(--ai-end)}.tag.goal{background:var(--positive)}
-.best{display:flex;gap:12px;align-items:center;padding:0 16px 14px}.best canvas{width:96px;height:96px;border-radius:var(--radius-sm);background:var(--surface-2)}
+.best{display:flex;gap:14px;align-items:center;margin:0 10px 10px;padding:8px 12px;border-radius:var(--radius);border:1.5px solid var(--line);transition:background .3s}
+.best canvas{width:84px;height:84px;border-radius:var(--radius-sm);background:var(--surface-2);flex:none}
+.bt{font:600 15px var(--font);color:var(--fg-2)}.bs{font:700 26px/1.1 var(--font);font-variant-numeric:tabular-nums}.bw{font-size:13px;color:var(--fg-2)}
+.best.hit{border-color:var(--positive);background:var(--positive-soft);animation:glow 1.1s ease-in-out infinite alternate}.best.hit .bt,.best.hit .bs{color:var(--positive)}
+.best.flash{animation:glow .35s ease-in-out 8 alternate}
+@keyframes glow{from{box-shadow:0 0 0 0 rgba(0,130,0,0),0 0 6px rgba(0,130,0,.25)}to{box-shadow:0 0 0 3px rgba(0,130,0,.35),0 0 26px rgba(0,130,0,.6)}}
+button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;animation:pulse 1.4s infinite}
+.hf{font:500 13px var(--font);color:var(--accent);text-decoration:none;padding:7px 12px;border-radius:var(--pill);background:var(--secondary-bg);white-space:nowrap}.hf:hover{background:var(--press)}
+.camsplit{flex:1;min-height:0;display:flex}.camsplit .shot{flex:1}.mem{width:46%;flex:none;overflow:auto;padding:4px 14px 12px;border-left:1px solid var(--line);font-size:13px}
+.memh{font:600 15px var(--font);margin-bottom:8px}.memh .sub{display:block;font-weight:400}
+.mrow{display:flex;justify-content:space-between;gap:8px;margin-top:8px}.mrow b{font-variant-numeric:tabular-nums}
+.mbar{height:8px;border-radius:var(--pill);background:var(--secondary-bg);overflow:hidden;margin-top:4px}.mbar i{display:block;height:100%;width:0;background:#65676b;transition:width .4s}.mbar i.ai{background:var(--ai-gradient)}
+.stack{display:flex;height:12px;border-radius:var(--pill);overflow:hidden;margin-top:6px;background:var(--secondary-bg)}.stack i{display:block;height:100%;transition:width .4s}
+.w1{background:#0064d4}.w2{background:#9b45f0}.w3{background:#9fc3ee}.legend{list-style:none;padding:0;margin:6px 0 0}.legend li{display:flex;align-items:center;gap:6px;margin-top:3px}
+.legend li i{width:10px;height:10px;border-radius:3px;flex:none}.legend b{margin-left:auto;font-variant-numeric:tabular-nums}
+.base-row{display:flex;align-items:baseline;gap:10px;margin:0 10px 10px;padding:6px 12px}
 .controls{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px}
 .pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,48px);gap:8px;padding:0 16px}
 .pad button{padding:0;font-size:18px;user-select:none;touch-action:none;border-radius:var(--radius)}
@@ -603,6 +643,7 @@ button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s inf
 <span class="chip"><i></i>Meta SAM 3.1, tuned for "muse"</span>
 <form class="word" id="wordform" autocomplete="off"><label for="word">Look for</label><input id="word" name="word" maxlength="60" value="muse" spellcheck="false"><button class="tinted" type="submit">Look</button></form>
 <div class="spacer"></div>
+<a class="hf" href="__TUNED_URL__" target="_blank" rel="noopener">&#129303; __TUNED_LABEL__</a><button class="tinted" id="membtn" onclick="toggleMem()">Jetson memory</button><button id="micbtn" onclick="toggleMic()">&#127908; Mic off</button>
 <label class="ctl" for="contrast">Display contrast <input type="range" id="contrast" min="50" max="200" step="5" value="100"><output id="cval">100%</output></label>
 <button onclick="setContrast(100)">Reset</button></header>
 <main id="root">
@@ -615,13 +656,21 @@ button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s inf
 <aside class="stepspane"><div class="seg" role="tablist"><button type="button" class="on" data-tab="steps">Steps</button><button type="button" data-tab="finds">Finds</button></div>
 <div class="tabbody" id="tab-steps"><ol class="timeline" id="timeline"></ol></div><div class="tabbody" id="tab-finds" hidden><div class="finds" id="finds"></div></div></aside>
 </div></div></section>
-<section class="card" style="grid-area:cam"><h2>Rover camera, live</h2><div class="shot"><img id="cam" alt="Live view from the rover's camera"></div></section>
-<section class="card" style="grid-area:tuned"><h2 id="tunedtitle">SAM 3.1 tuned for "muse"</h2><div class="shot"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
-<div class="empty" id="samempty"><strong>Starting</strong><span>Each frame goes to both models, about 3 seconds a round on the Jetson.</span></div></div>
-<div class="best"><canvas id="bestcrop" width="192" height="192" aria-label="Best match in the last few looks"></canvas><div><div style="font-weight:600">Best match, last 5 looks</div><div class="sub" id="besttext">None yet</div></div></div></section>
-<section class="card" style="grid-area:base"><h2>SAM 3.1, Meta's weights</h2><div class="shot"><img id="base" alt="Meta's SAM 3.1 on the same frame" hidden><div class="labels" id="labelsbase"></div>
-<div class="empty" id="baseempty"><strong>Starting</strong><span>Meta's SAM 3.1 gets the same frame and the same word.</span></div></div>
-<div class="best"><div><div style="font-weight:600">Untuned</div><div class="sub" id="basetext">None yet</div></div></div></section>
+<section class="card" id="camcard" style="grid-area:cam"><h2>Rover camera, live</h2><div class="camsplit"><div class="shot"><div class="frame"><img id="cam" alt="Live view from the rover's camera"></div></div>
+<aside class="mem" id="mem" hidden><div class="memh">jetson-04 memory <span class="sub">Orin Nano, CPU and GPU share it</span></div>
+<div class="mrow"><span>Board</span><b id="m_board">-</b></div><div class="mbar"><i id="mb_board"></i></div>
+<div class="mrow"><span>SAM 3.1 service (both models)</span><b id="m_sam">-</b></div><div class="mbar"><i id="mb_sam" class="ai"></i></div>
+<div class="mrow"><span>On the GPU</span><b id="m_gpu">-</b></div>
+<div class="stack" id="m_stack"><i class="w1" title="Meta SAM 3.1 weights"></i><i class="w2" title="Tuned muse detector"></i><i class="w3" title="Working memory"></i></div>
+<ul class="legend"><li><i class="w1"></i>Meta SAM 3.1 weights <b id="m_w1">-</b></li><li><i class="w2"></i>Tuned "muse" detector, loaded beside them <b id="m_w2">-</b></li><li><i class="w3"></i>Working memory for each look <b id="m_w3">-</b></li></ul>
+<div class="mrow"><span>GPU busy</span><b id="m_load">-</b></div><div class="mrow"><span>Swap</span><b id="m_swap">-</b></div>
+<div class="sub" id="m_note">Both SAM 3.1 versions run in one service; the tuned one adds only its detector.</div></aside></div></section>
+<section class="card" style="grid-area:tuned"><h2 id="tunedtitle">SAM 3.1 tuned for "muse"</h2><div class="shot"><div class="frame"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
+<div class="empty" id="samempty"><strong>Starting</strong><span>Each frame goes to both models, about 3 seconds a round on the Jetson.</span></div></div></div>
+<div class="best" id="bestcard"><canvas id="bestcrop" width="168" height="168" aria-label="Best match in the last few looks"></canvas><div><div class="bt" id="besttitle">Best match, last 5 looks</div><div class="bs" id="bestscore">-</div><div class="bw" id="besttext">None yet</div></div></div></section>
+<section class="card" style="grid-area:base"><h2>SAM 3.1, Meta's weights</h2><div class="shot"><div class="frame"><img id="base" alt="Meta's SAM 3.1 on the same frame" hidden><div class="labels" id="labelsbase"></div>
+<div class="empty" id="baseempty"><strong>Starting</strong><span>Meta's SAM 3.1 gets the same frame and the same word.</span></div></div></div>
+<div class="base-row"><div style="font-weight:600">Untuned</div><div class="sub" id="basetext">None yet</div></div></section>
 </div>
 <section class="card status" aria-live="polite"><div class="score" id="score">0.000</div>
 <div class="meter" aria-hidden="true"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div><div class="goal" id="goal"></div>
@@ -673,13 +722,13 @@ const SPARK='<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient i
 let chatKey='';
 function steps(s){const out=[];let cur=null;for(const a of s.agent){if(a.kind==='hint'){out.push({t:'Heard you',d:['"'+a.text+'"'],hint:true});cur=null}else if(a.kind==='say'){cur={t:a.text,d:[]};out.push(cur)}else if(a.kind==='found'){out.push({t:a.text,d:[],got:true});cur=null}
 else{if(!cur){cur={t:'Checking the rover',d:[]};out.push(cur)}cur.d.push(a.text.replace(/^rover_(\\w+):?\\s*/,(m,n)=>({look:'Looked: ',status:'Status: ',photo:'Photo: ',drive:'Drove ',stop:'Stopped',found:'',say:''}[n]||n+' ')))}}return out}
-function renderAgent(s){const live=s.chat.status==='running'||(s.agent_at&&s.now-s.agent_at<30);document.getElementById('agentchip').classList.toggle('live',!!live);
+function renderAgent(s){if(s.mic!==micOn)showMic(!!s.mic);const live=s.chat.status==='running'||(s.agent_at&&s.now-s.agent_at<30);document.getElementById('agentchip').classList.toggle('live',!!live);
 document.getElementById('agentstate').textContent=s.chat.status==='running'?'Muse Code is working':live?'Muse Code is connected':(s.chat.status==='done'?'Done':'Waiting for Muse Code');
 const n=s.finds.length,c=document.getElementById('count');c.textContent=s.done?'Done · '+n+' found':n+' found'+(n<s.target?' · at least '+s.target:'');c.classList.toggle('done',!!s.done||n>=s.target);
 if(s.done&&doneShown===false)chime();doneShown=!!s.done;
 const st=steps(s),key=s.agent_seq+'|'+!!s.done+'|'+s.hints.length+'|'+s.chat.status+'|'+s.chat.reply.length+'|'+s.chat.prompt.length;
 if(key!==chatKey){chatKey=key;const tl=document.getElementById('timeline');
-tl.innerHTML=st.map((x,i)=>'<li class="'+(x.got?'got':x.hint?'hint':'')+(s.chat.status==='running'&&i===st.length-1?' now':'')+'"><b>'+esc(x.t)+'</b>'+x.d.slice(-4).map(d=>'<span>'+esc(d)+'</span>').join('')+'</li>').join('')+
+tl.innerHTML=st.map((x,i)=>'<li class="'+(x.got?'got':x.hint?'hint':'')+(s.chat.status==='running'&&i===st.length-1?' now':'')+'"><b>'+esc(x.t)+'</b>'+x.d.map(d=>'<span>'+esc(d)+'</span>').join('')+'</li>').join('')+
 (s.done||s.chat.status==='done'?'<li class="done"><b>Done</b>'+(s.done&&s.done.summary?'<span>'+esc(s.done.summary)+'</span>':'')+'</li>':'')||'<li class="done"><b>No steps yet</b><span>Ask Muse Code below, or run the bridge on the laptop.</span></li>';
 document.getElementById('tab-steps').scrollTop=1e9;
 const m=document.getElementById('msgs');let h='';
@@ -690,9 +739,19 @@ h+='<div><button type="button" class="think" onclick="toggleSteps()">'+SPARK+'<s
 h+=s.chat.reply?'<div class="reply">'+esc(s.chat.reply)+'</div>':'<div class="reply pending"><span class="working"><i></i><i></i><i></i></span> '+esc(last)+'</div>'}
 else h='<div class="reply pending">Muse Code drives the rover through its MCP tools to find the Muse mascots. Ask it below.</div>';
 m.innerHTML=h;m.scrollTop=1e9}
-if(findsShown!==null&&n>findsShown)ping();
+if(findsShown!==null&&n>findsShown){ping();const bc2=document.getElementById('bestcard');bc2.classList.remove('flash');void bc2.offsetWidth;bc2.classList.add('flash');setTimeout(()=>bc2.classList.remove('flash'),3000)}
 if(n!==findsShown){findsShown=n;const g=document.getElementById('finds');g.innerHTML=s.finds.length?s.finds.map(x=>'<figure><canvas width="240" height="240"></canvas><figcaption>Muse '+x.n+' · '+Math.round(x.score*100)+'%'+(x.note?' · '+esc(x.note):'')+'</figcaption></figure>').join(''):'<span class="hint" style="padding:0">Nothing found yet.</span>';
 g.querySelectorAll('canvas').forEach((cv,i)=>{const x=s.finds[i];crop(cv,'/snap/'+x.snapshot+'-camera.jpg',x.box,x.size)})}}
+let memTimer=null;const gb=mb=>(mb/1024).toFixed(2)+' GB';
+async function memTick(){try{const j=await (await fetch('/jetson.json')).json();if(j.error){document.getElementById('m_note').textContent=j.error;return}
+const set=(id,t)=>document.getElementById(id).textContent=t;set('m_board',gb(j.used_mb)+' of '+gb(j.total_mb));document.getElementById('mb_board').style.width=(j.used_mb/j.total_mb*100)+'%';
+set('m_sam',gb(j.sam_rss_mb));document.getElementById('mb_sam').style.width=(j.sam_rss_mb/j.total_mb*100)+'%';
+const g=j.sam_gpu_mb||0,w1=j.base_weights_mb||0,w2=j.tuned_delta_mb||0,w3=Math.max(0,g-w1-w2);set('m_gpu',gb(g));
+const st=document.getElementById('m_stack').children;[w1,w2,w3].forEach((v,i)=>st[i].style.width=(g?v/g*100:0)+'%');
+set('m_w1',w1+' MB');set('m_w2',w2+' MB');set('m_w3',w3+' MB');set('m_load',j.gpu_load==null?'-':j.gpu_load+'%');set('m_swap',j.swap_used_mb+' of '+j.swap_total_mb+' MB')}catch(e){}}
+function toggleMem(){const m=document.getElementById('mem');m.hidden=!m.hidden;document.getElementById('membtn').classList.toggle('primary',!m.hidden);clearInterval(memTimer);if(!m.hidden){memTick();memTimer=setInterval(memTick,2000)}}
+let micOn=false;function showMic(on){micOn=on;const b=document.getElementById('micbtn');b.innerHTML=on?'&#127908; Listening':'&#127908; Mic off';b.classList.toggle('miclive',on)}
+async function toggleMic(){unlock();const r=await jpost('/mic',{on:!micOn});if(r.ok)showMic((await r.json()).mic)}
 function toggleSteps(){document.getElementById('agentcard').classList.toggle('hide-steps')}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.toggle('on',x===b));
 document.getElementById('tab-steps').hidden=b.dataset.tab!=='steps';document.getElementById('tab-finds').hidden=b.dataset.tab!=='finds'}));
@@ -709,7 +768,10 @@ root.classList.toggle('is-found',!!s.found);
 if(s.looks!==lastLooks&&s.looks>0){lastLooks=s.looks;const img=document.getElementById('sam'),look=s.last;img.onload=()=>{img.hidden=false;document.getElementById('samempty').hidden=true;drawLabels(look)};
 img.src='/overlay.jpg?'+s.looks;const bimg=document.getElementById('base'),blook=s.last_base;if(blook){bimg.onload=()=>{bimg.hidden=false;document.getElementById('baseempty').hidden=true;drawLabels(blook,'labelsbase')};bimg.src='/overlay_base.jpg?'+s.looks;const bt=topObject(blook);document.getElementById('basetext').textContent=bt?(word+' '+Math.round(bt.score*100)+'% (stop uses the tuned one)'):'Nothing called "'+word+'"'}}
 const bm=s.bestmatch,bc=document.getElementById('bestcrop');if(!bm){shownBest=null;bc.getContext('2d').clearRect(0,0,bc.width,bc.height)}else if(bm.look!==shownBest){shownBest=bm.look;crop(bc,'/bestframe.jpg?'+bm.look,bm.box,bm.size)}
-document.getElementById('besttext').textContent=bm?(word+' '+Math.round(bm.score*100)+'% · '+(bm.ago===0?'this look':bm.ago===1?'1 look ago':bm.ago+' looks ago')+(bm.score<GOAL?' (under '+Math.round(GOAL*100)+'%)':'')):'Nothing called "'+word+'" in the last 5 looks';
+{const hit=!!(bm&&bm.score>=GOAL),card=document.getElementById('bestcard');card.classList.toggle('hit',hit);
+document.getElementById('besttitle').textContent=hit?'Muse found':'Best match, last 5 looks';
+document.getElementById('bestscore').textContent=bm?(hit?'':'')+Math.round(bm.score*100)+'% '+word:'Nothing yet';
+document.getElementById('besttext').textContent=bm?((bm.ago===0?'In this look':bm.ago===1?'1 look ago':bm.ago+' looks ago')+(hit?' · at or over '+Math.round(GOAL*100)+'%':' · under '+Math.round(GOAL*100)+'%, not a match')):'Nothing called "'+word+'" in the last 5 looks'}
 document.getElementById('tunedtitle').textContent='SAM 3.1 tuned for "'+word+'"';
 renderAgent(s)
 if(s.found){if(lastSeq===null)lastSeq=s.found.seq;else if(s.found.seq!==lastSeq){lastSeq=s.found.seq;ping()}}else if(lastSeq===null)lastSeq=0;
@@ -765,15 +827,26 @@ class Page(BaseHTTPRequestHandler):
             return self._send(403, b"office network only", "text/plain")
         p = self.path.split("?")[0]
         if p == "/":
-            return self._send(200, PAGE.replace("__GOAL__", str(GOAL)).encode(), "text/html; charset=utf-8")
+            page = PAGE.replace("__GOAL__", str(GOAL)).replace("__META_URL__", META_URL).replace("__TUNED_URL__", TUNED_URL or META_URL)
+            page = page.replace("__TUNED_LABEL__", "Tuned weights" if TUNED_URL else "Meta SAM 3.1 on Hugging Face")
+            return self._send(200, page.encode(), "text/html; charset=utf-8")
         if p == "/state.json":
             with lock:
                 return self._send(200, json.dumps(dict(state, now=time.time())).encode(), "application/json")
+        if p == "/jetson.json":
+            try:
+                body = requests.get(STATS_URL, timeout=3).content
+            except Exception:
+                body = b'{"error": "jetson-04 stats not reached"}'
+            return self._send(200, body, "application/json")
         if p == "/bestframe.jpg":
             with lock:
                 return self._send(200, overlay["bestframe"], "image/jpeg")
         if p == "/mcp":
             return self._send(405, b"", "text/plain")
+        if p == "/mic":
+            with lock:
+                return self._send(200, json.dumps({"mic": state["mic"]}).encode(), "application/json")
         if p == "/ask/next":  # the laptop bridge picks up a prompt typed on the page
             with lock:
                 ask, state["ask"] = state["ask"], None
@@ -830,6 +903,11 @@ class Page(BaseHTTPRequestHandler):
             if not prompt or busy:
                 return self._send(409 if busy else 400, b"", "text/plain")
             return self._send(204, b"", "text/plain")
+        if self.path == "/mic":  # the page's mic switch; the laptop listener records only while it is on
+            on = bool(self._body().get("on"))
+            with lock:
+                state["mic"] = on
+            return self._send(200, json.dumps({"mic": on}).encode(), "application/json")
         if self.path == "/hint":  # spoken hints, transcribed on the laptop by Muse transcribe
             text = " ".join(str(self._body().get("text", "")).split())[:300]
             if text:

@@ -4757,3 +4757,29 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Owner: there are always more than one; ping and say done. Finds now count up with no top limit ("N found · at least 2"). New `rover_done` refuses below 2 finds; at 2 or more it stops the wheels, the page plays a four-note chime, and the count turns into "Done · N found". Each find still pings.
 - Owner asked for Muse transcribe listening the whole time for hints. New laptop script `scripts/edge/sam3/muse_listen.py`: ffmpeg records the MacBook mic into back-to-back 5 s clips, each goes to `muse voice transcribe` (about 1.4 s), and anything with two or more words posts to the page's `/hint`. Hints show as mic bubbles in the chat and as "Heard you" steps. Muse Code gets new hints appended to its next tool result (and `rover_hints` lists all of them). It is told to ignore room chatter. Checked: a test hint came back on the next `rover_say` result, and in a 17 s run the listener picked up the room's conversation and posted it. It forwards everything it hears, so expect chatter in the feed.
 - On the rover: backups `hunt.py.bak-before-chat` and `hunt.py.bak-before-hints`, installed with sha256 checked (5b8c5428...), restarted, test lines cleared. No wheels moved.
+
+## Nov 4, 2026, ~12:30 AM ET: one-screen demo view, glowing best match, memory panel, voice commands, first live run
+
+- Owner's screenshot: everything should fit on one screen. The four tiles now fill the window height; each picture keeps 4:3 inside its tile (a CSS size container), so labels stay on their boxes. The score bar, drive pad, camera settings and snapshots sit below.
+- Best match card: bigger and clearer ("Muse found", the score in large type, how many looks ago). It glows green whenever the best match in the last 5 looks is at or over 95%, and flashes when Muse Code records a find.
+- Hugging Face link and memory view (owner asked for both). The tuned SAM 3.1 is **not on Hugging Face**: it exists only as `/opt/sam3/model/muse31_delta_fp16.pt` (58 MB) on jetson-04 (trained on jetson-03). The header link goes to Meta's `facebook/sam3.1` until `TUNED_URL` is set. A Jetson memory button opens a panel beside the live camera, refreshed every 2 s:
+  - board memory: 6.77 of 7.31 GB used, shared by CPU and GPU
+  - the SAM 3.1 service: about 6.2 GB, both models in one process
+  - GPU memory split three ways: Meta's weights 1675 MB, the tuned "muse" detector 58 MB loaded beside them, the rest working memory (about 3.6 GB in all)
+  - GPU busy and swap
+  It reads `scripts/edge/sam3/samstats.py`, a new read-only reader on jetson-04 port 8791 (transient `samstats` unit, 80 MB cap), through the rover's `/jetson.json`. The SAM service was not touched.
+- Voice: Muse transcribe now records only while the page's mic switch is on. ffmpeg starts when the switch turns on and is stopped when it turns off; clips caught at the switch-off are dropped. A spoken "stop" stops the wheels at once. Transcripts that sound like commands (move, turn, back, stop, exposure and so on) reach Muse Code at the top of its next tool result as VOICE COMMAND, to do before its own plan; other speech is labelled room talk. 4 s clips.
+- Muse Code narrates each step (what and why before each action; what both models saw after each look). It is told to be proactive: turns of 30 to 45 degrees, a drive to a new spot after each circle, getting closer to anything plush. The bridge runs at reasoning effort `minimal`: `none` is refused with the Meta provider ("not supported with --provider meta").
+- **First live run** (owner asked for a test; the owner was present and spoke commands). Muse Code:
+  - made 10 moves, with a `rover_say` line before each
+  - tuned the camera once on its own, then said it didn't help
+  - backed up after the owner said "move backwards", a few steps late. That delay is why voice commands now jump to the top of its next step.
+  - recorded 2 finds: 0.98, a picture of the mascot on the laptop screen, and 0.992, a large blue plush on the floor
+  - noticed the laptop mascot again later and did not record it twice
+  - swept the room and called `rover_done` ("Done: 2 found")
+
+  Honest notes:
+  - one find was a picture on a screen, not a plush
+  - the "large blue plush" was scored as a muse by the tuned model, which has also matched other plush toys before
+  - before the mic switch, the always-on listener sent private room conversation to the page and to Muse Code as hints
+- On the rover: backups `hunt.py.bak-before-fit` and `hunt.py.bak-before-voice`, installed with sha256 checked (09bc6611...), restarted. Earlier tonight, `samstats.py` was briefly emptied in the repo by a bad command and restored byte for byte (sha256 86fde1e4... matches jetson-04).
