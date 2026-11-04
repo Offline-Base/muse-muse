@@ -4887,3 +4887,8 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - sam3.1-muse: a hero (Meta "plush toy" 8 boxes vs tuned "muse" 3, Jolly 0.98), a results chart from the card's table, two more real side-by-sides from the Nov 3 toy test, and a "where it goes wrong" image (38 boxes on 30 photos with no Jolly; Jolly-only in 8 of 30). All boxes are the board's own, from docs/log/bench/2026-11-03/distract/. Not shown: the 160 training images and 50 held-out frames, which live only on jetson-03.
 - Left alone on purpose: the moss and lab repos (DATA_RIGHTS.md Q2 open; the doc suggests making them private if the answer is no) and the Nemotron repos (not Muse Muse).
 - Every edit only added lines; no em dashes; every image URL returns 200.
+
+## Nov 4, 2026, about 3 PM ET: README GIF clicks Add a folder
+
+- Owner ask: the README GIF should click the Add a folder button. Re-recorded with Playwright: the opening, a click into the Make box, the ethan-docs sentence typed, then a click on "Add a folder of data for a model", which opens the "Or train from a folder" panel (components/make/MakeChat.tsx, FolderDrop). No folder was picked, since picking one posts its files to /api/train/folder, and nothing was sent, so no build and no spend. A drawn pointer and click ripple were injected into the page, because a scripted recording has no system cursor; the caption says so. Cut 0.8 s to 15.8 s, 800 px, 10 fps, 5.40 MB.
+
