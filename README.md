@@ -1,6 +1,6 @@
 # Muse Muse
 
-<p align="center"><a href="https://www.musemuse.dev"><img src="docs/readme/opening.gif" width="720" alt="The opening of www.musemuse.dev: Jolly, the white plush mascot in an Offline Base shirt, waves, puts on sunglasses, and a curtain opens onto the Make page."></a><br><i>The site's opening, recorded on www.musemuse.dev as a first-time visitor, Nov 4, 2026.</i></p>
+<p align="center"><a href="https://www.musemuse.dev"><img src="docs/readme/opening.gif" width="800" alt="A 15-second screen recording of www.musemuse.dev: Jolly, the white plush mascot in an Offline Base shirt, waves, puts on sunglasses and opens a curtain onto the Make page, then a sentence is typed into the box: A team quiz show for my 7th-grade science class, with a scoreboard and a timer."></a><br><i>15 seconds on www.musemuse.dev as a first-time visitor: the opening, then one sentence typed into Make (not sent). Recorded Nov 4, 2026.</i></p>
 
 **One sentence in, a tested app live at its own link, built and run on Meta's models.**
 
