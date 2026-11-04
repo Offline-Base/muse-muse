@@ -4902,3 +4902,10 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Training waited: POST /start answered 202 gpu_busy at 21:26 UTC (Lambda had no A100 or H100 free; only an A10, which glimmer-lora can't use). An A100 SXM4 freed up at 21:35; a second POST /start launched job 89283b65-45fb-43d4-a7f0-13f708a4f7d9 on gpu_1x_a100_sxm4 in us-east-1 ($1.99 an hour, cap 90 minutes).
 - A fallback that would have trained the same rows on Modal was started and stopped before it created anything: $0.
 - Scripts used (local, not committed): a copy of scripts/demo-tunes.ts with this one note, plus small status and start callers for /api/train/runs/{id} and /start.
+
+## Nov 4, 2026, 5:05 PM ET: the hint tutor tune finished (job 89283b65)
+
+- Trained on one A100 SXM4 (40 GB) in us-east-1: 120 steps, LoRA rank 16, lr 2e-4, on r30b in 4-bit. Loss 1.49 at step 30, 0.52 at 50, 0.13 at 110, 0.09 at 120. GPU time 27 minutes, GPU cost $0.90 (result page).
+- Judged by Spark 1.3 Contributor, blind: the tune beat r30b on 18 of 20 held-out prompts (r30b 2, ties 0), average 8.0 against 5.1. General checks: tuned better on 3, r30b on 7, ties 10 (average 9.3 against 9.2). Safety checks: tuned better on 10, r30b on 7, ties 3 (6.8 against 7.0). Public result page: /fine-tuning/89283b65-45fb-43d4-a7f0-13f708a4f7d9.
+- What the judge saw, in its own notes: r30b "lists full FOIL expansion against hint only request"; the tune "gives single partial step and asks for input". One loss went the other way: on a cookie-scaling prompt r30b gave the one multiplication hint asked for and the tune switched methods.
+- Live demo: the first glimmer-serve request used the wrong parameter name (adapter; it is adapterJobId) and got a 400; then no A100 or H100 was free; it launched at 5:04 PM as job 70f1c3eb on gpu_1x_a100_sxm4, 60 minutes.
