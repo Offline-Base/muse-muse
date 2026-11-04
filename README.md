@@ -4,22 +4,80 @@
 
 **Video:** [the 3-minute demo, link added at submission]. **Live:** https://www.musemuse.dev, open to browse with no sign-in. Not an official Meta product.
 
-### Proven, Nov 1 to 4
+![The Make page of Muse Muse: the heading "What's your muse?", a box that says "Ask for a product, a tuned model, or both", a warning that the build runs on a model Meta may train on, and starter cards such as "Build an app and tune its model".](docs/readme/make-page.png)
 
-Each line is logged in [docs/BUILD_LOG.md](docs/BUILD_LOG.md) under the entry named.
+*The Make page, where every build starts with one sentence or a photo. Live site, www.musemuse.dev, Nov 4, 2026, as a guest.*
 
-- **Meta's SAM 3.1 on a Jetson Orin Nano 8GB: 1.42 s a look** once warm, on Meta's sample photo ("Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real").
-- **SAM 3.1 tuned on a board:** its detector learned a new word, "muse" (our mascot, Jolly), on jetson-03, from 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy (same entry).
-- **An edge build passed all 8 of its simulated outage drills** (cloud refused, cloud hung, both down, tampered reply, for its text answer and its SAM look; `npm run drill` below runs 11, adding board status checks) in its own build sandbox, against a simulated board ("Nov 3, 2026, about noon ET: claim fixes").
-- **18 apps built overnight** on Muse Spark 1.3 Contributor with made-up data, at $0.17 to $0.40 each for the 17 whose cost is logged. A hands-on audit found 7 that work, 9 with gaps and 2 broken, though 17 had passed our judge; the 18th, the legal case agent, shipped as partial, with its memo error listed as a known issue ("Nov 3, 2026, 2 to 3 AM ET" and "Nov 3, 2026, 5:30 AM ET: target audit").
-- **Glimmer weights, separate from the app:** a one-bit Muse Glimmer file we publish on Hugging Face ran on a Galaxy S25 at 1.94 tokens a second on Nov 1, and runs on a Jetson at about 5 tokens a second with weak answers ("Nov 3, 2026, 10:05 to 10:30 AM ET"). No app calls them.
+## In 60 seconds
 
-- **Muse Code drives a rover:** on an Arduino UNO Q rover, Muse Code (Meta's coding agent) plans each move with its own tools, looks through the tuned SAM 3.1 on jetson-04 to find Jolly among other plush toys, and takes spoken hints through Muse Voice Transcribe. Only SAM runs on the board; Muse Code runs in the cloud. First live run: 2 finds, one a picture of Jolly on a laptop screen and one a look-alike plush, which led to a reference photo and a color check; a later run passed over a Stitch plush twice ("Nov 4, 2026, ~12:30 AM ET" and "~1:15 AM ET"). Code: [scripts/edge/sam3/](scripts/edge/sam3/).
-- **Public weights on Hugging Face:** the 2026-knowledge Muse Glimmer (https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge, with its GGUF files at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF and its LoRA at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-LoRA), trained Oct 30 to Nov 1 ([docs/KNOWLEDGE_RUN_LOG.md](docs/KNOWLEDGE_RUN_LOG.md)), and the tuned SAM 3.1 detector at https://huggingface.co/OfflineBase/sam3.1-muse.
+- **What it does.** You type one sentence, or drop in a photo, sketch, voice memo or PDF. Muse Code, Meta's coding agent, builds a working app on Meta's models. The platform checks the app, records a demo, puts it live at its own link, and makes it usable from other tools as an MCP server, a CLI and more.
+- **Who it is for.** People who know their work but have no engineers to build the software they need.
+- **What was built, Oct 26 to Nov 4, 2026.** The platform (Make page, build room, product pages, connectors), a fine-tuning lab for Muse Glimmer, simulated outage drills for apps that fall back to a board, Meta's SAM 3.1 tuned on a Jetson, a rover that Muse Code drives, and Muse Privacy, a connector that keeps private files away from Muse.
+- **What is proven.** 18 apps built overnight on the test model, Muse Spark 1.3 Contributor, with made-up data (a hands-on audit: 7 work, 9 have gaps, 2 broken). Meta's SAM 3.1 at 1.42 s a look on a Jetson Orin Nano, once warm. Public weights on Hugging Face, with three quantized versions made by an outside publisher (about 4,500 downloads in all, as Hugging Face counts them). One-bit Glimmer has run on a Jetson, a Galaxy S25 and an M1 Mac. See [Proven](#proven-nov-1-to-4).
+- **What is not proven yet.** An app answering on a board with its uplink pulled, and the whole chain from a sentence to an app answering with its own tuned model. Muse Privacy runs on invented data and has no real users.
 
-Not proven yet: an app answering on a board with its uplink pulled (not filmed), and the whole chain from a sentence to an app answering with its own tuned model.
+## See it
 
-### Three commands, no keys
+In the order of the demo. Click any picture for full size.
+
+<table>
+<tr>
+<td width="50%" valign="top"><a href="docs/readme/build-room.jpg"><img src="docs/readme/build-room.jpg" alt="The build room for Science Teams Showdown: the request, a five-step checklist with every step done, the recorded demo video, a link to the live app, the cost line and Checks passed."></a><br><b>1. The build room.</b> Plan, build, test and fix, record a demo, put it online, then "Checks passed". This build was a quick UI pass on an existing product. <i>Live site, Nov 4, 2026.</i></td>
+<td width="50%" valign="top"><a href="docs/readme/product-page.png"><img src="docs/readme/product-page.png" alt="The product page for Science Teams Showdown: a Live badge, the running app in a frame, and a side panel with its model, cost per run, limits and the Muse app connector URL."></a><br><b>2. The live app.</b> Its product page: the running app in a frame, its model (Spark 1.3 Contributor, in place of Muse Wonder), cost, limits and connector. The run counts are live and change. <i>Live site, Nov 4, 2026.</i></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/readme/get-it-mcp.png"><img src="docs/readme/get-it-mcp.png" alt="The Get it panel with tabs for MCP, CLI, Skill, Muse gadget, VS Code and GitHub Action, the product's MCP URL, three connect steps and a Tested line from Nov 3."></a><br><b>3. Get it.</b> Every product ships as an MCP server, a CLI, a skill and more. This test on Nov 3 listed the app's 3 tools and called one. <i>Live site, Nov 4, 2026.</i></td>
+<td width="50%" valign="top"><a href="docs/readme/where-it-ran.jpg"><img src="docs/readme/where-it-ran.jpg" alt="The Where it ran section for Dinner Split Helper: a Mac and a Windows PC marked Real machine, each splitting two bills, and two phone frames below."></a><br><b>4. Where it ran.</b> Dinner Split Helper on 4 devices, 3 of them real hardware in AWS device labs. Each screen plays the run recorded on that device. <i>Live site, Nov 4, 2026.</i></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/readme/sam-meta-vs-tuned.jpg"><img src="docs/readme/sam-meta-vs-tuned.jpg" alt="Two copies of one photo of many teddy bears with the white mascot Jolly pasted in. Left: Meta SAM 3.1 asked for plush toy draws 8 boxes. Right: SAM 3.1 tuned on a Jetson, asked for muse, draws 3 boxes, its top box on Jolly at 0.98."></a><br><b>5. SAM 3.1 on a Jetson.</b> Left: Meta's SAM 3.1, "plush toy", 8 boxes. Right: tuned for "muse", top box on Jolly (0.98), but it also boxes 2 other toys (0.83 and 0.86), so it does not reliably tell Jolly apart. <i>Boxes from jetson-04, Nov 3, 2026, drawn on a laptop. Photo: COCO val2017 249129, Flickr, CC BY 2.0.</i></td>
+<td width="50%" valign="top"><a href="docs/readme/hf-sam-muse.png"><img src="docs/readme/hf-sam-muse.png" alt="The Hugging Face page for OfflineBase/sam3.1-muse: SAM 3.1 tuned for muse, a 58 MB detector-only file, Meta's SAM License, base model facebook/sam3.1."></a><br><b>6. The tuned SAM, public.</b> <a href="https://huggingface.co/OfflineBase/sam3.1-muse">OfflineBase/sam3.1-muse</a>: a 58 MB detector-only file under Meta's SAM License, tuned on one Jetson Orin Nano and served on another. <i>Hugging Face, Nov 4, 2026.</i></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/readme/hf-glimmer-2026.jpg"><img src="docs/readme/hf-glimmer-2026.jpg" alt="The Hugging Face page for OfflineBase/Muse-Glimmer-30B-2026-Knowledge, with tags such as built-with-muse-spark-open and a model tree showing its base, Meta's Muse Glimmer 30B, one finetune and four quantizations."></a><br><b>7. The 2026-knowledge Glimmer, public.</b> <a href="https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge">Muse Glimmer 30B with 2026 knowledge</a>, trained Oct 30 to Nov 1, with its GGUF and LoRA repos. Built with Muse Spark Open, for people 18 and over. No app calls it. <i>Hugging Face, Nov 4, 2026.</i></td>
+<td width="50%" valign="top"><a href="docs/readme/privacy-before-after.png"><img src="docs/readme/privacy-before-after.png" alt="The Muse Privacy page: before, a normal connector sends a student's name and essay to the cloud; after, Muse sees only [Student A] scored 3 of 4. A note says the name and text are made up."></a><br><b>8. Muse Privacy.</b> A separate reader model sees the files, and Muse gets tags like [Student A]. The name and ID are invented, and the page says so. In this demo the reader is Muse Glimmer 30B in the cloud, not tried with real users. <i>Live site, Nov 4, 2026.</i></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/readme/hf-built-on-our-glimmer.jpg"><img src="docs/readme/hf-built-on-our-glimmer.jpg" alt="Hugging Face list of 7 models trained on the dataset OfflineBase/Muse-Glimmer-30B-2026-Knowledge-Data: our four repos and three quantized versions by mradermacher, with 1.49k, 744 and 693 downloads."></a><br><b>9. Others build on it.</b> Models on Hugging Face trained on our 2026 dataset: our four, plus three quantized versions by an outside publisher. Signed out, Nov 4, 2026.</td>
+<td width="50%" valign="top"></td>
+</tr>
+</table>
+
+## Contents
+
+- [Proven, Nov 1 to 4](#proven-nov-1-to-4) and [Three commands, no keys](#three-commands-no-keys)
+- [At a glance](#at-a-glance) and [The aim, and what has run](#the-aim-and-what-has-run)
+- [Quickstart](#quickstart), with the [Judge path](#judge-path) and [Docker](#docker-not-yet-built)
+- [What Muse Muse is](#what-muse-muse-is) and [Status](#status), with [Before the event, and not in this repo](#before-the-event-and-not-in-this-repo)
+- [What it does](#what-it-does) and [Results from the Oct 27 test runs](#results-from-the-oct-27-test-runs)
+- [The UI](#the-ui) and [How builds use Muse Code's own features](#how-builds-use-muse-codes-own-features)
+- [Fine-tuning lab: Spark teaches Glimmer](#fine-tuning-lab-spark-teaches-glimmer)
+- [Architecture](#architecture), [Layout](#layout), [Setup](#setup) and [Preview database](#preview-database)
+- [Run it on your machine](#run-it-on-your-machine), [Tests](#tests) and [Docs](#docs)
+
+## Proven, Nov 1 to 4
+
+Each line is logged in [docs/BUILD_LOG.md](docs/BUILD_LOG.md) under the entry named in quotes.
+
+- **Meta's SAM 3.1 on a Jetson Orin Nano 8GB: 1.42 s a look**, once warm, on Meta's sample photo ("Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real").
+- **SAM 3.1 tuned on a board.** Its detector learned a new word, "muse" (our mascot, Jolly), on jetson-03: from 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy (same entry).
+- **An edge build passed all 8 of its simulated outage drills**, in its own build sandbox, against a simulated board. The drills: cloud refused, cloud hung, both down and a tampered reply, for its text answer and for its SAM look. `npm run drill` below runs 11, adding board status checks ("Nov 3, 2026, about noon ET: claim fixes").
+- **18 apps built overnight** on Muse Spark 1.3 Contributor with made-up data, at $0.17 to $0.40 each for the 17 whose cost is logged.
+  - 17 had passed our judge, but a hands-on audit found 7 that work, 9 with gaps and 2 broken.
+  - The 18th, the legal case agent, shipped as partial, with its memo error listed as a known issue ("Nov 3, 2026, 2 to 3 AM ET" and "Nov 3, 2026, 5:30 AM ET: target audit").
+- **Muse Code drives a rover.** On an Arduino UNO Q rover, Muse Code (Meta's coding agent) plans each move with its own tools. It looks through the tuned SAM 3.1 on jetson-04 to find Jolly among other plush toys, and takes spoken hints through Muse Voice Transcribe.
+  - Only SAM runs on the board. Muse Code runs in the cloud.
+  - First live run: 2 finds. One was a picture of Jolly on a laptop screen and one a look-alike plush, which led to a reference photo and a color check. A later run passed over a Stitch plush twice ("Nov 4, 2026, ~12:30 AM ET" and "~1:15 AM ET").
+  - Code: [scripts/edge/sam3/](scripts/edge/sam3/).
+- **Glimmer weights, separate from the app.** One-bit Muse Glimmer files we publish on Hugging Face have run on three kinds of hardware: a Jetson Orin Nano 8GB (the 5.75 GB file, 5.2 to 5.5 tokens a second, weak answers, Nov 3), a Galaxy S25 phone (1.94 tokens a second, 3 of 3 test prompts, from adb, not an app, Nov 1) and an M1 Mac with 16 GB (4.2 tokens a second on Metal, an earlier stage's file). Nothing fits an 8 GB phone, and no iPhone has run it. Sources: "Nov 3, 2026, 10:05 to 10:30 AM ET", [docs/GLIMMER_DEVICES.md](docs/GLIMMER_DEVICES.md) and the GGUF model card. No app calls these weights.
+- **Others build on it.** By Nov 4, an outside publisher, mradermacher, had made three quantized versions of the 2026-knowledge Glimmer, each listing ours as its base model: [i1-GGUF](https://huggingface.co/mradermacher/Glimmer-30B-2026-Knowledge-i1-GGUF) (1,494 downloads), [GGUF](https://huggingface.co/mradermacher/Glimmer-30B-2026-Knowledge-GGUF) (744) and [GGUF](https://huggingface.co/mradermacher/Muse-Glimmer-30B-2026-Knowledge-GGUF) (693). Our own four repos had 1,636. Downloads as Hugging Face counts them, which includes automated pulls.
+- **Public weights on Hugging Face:**
+  - the 2026-knowledge Muse Glimmer, https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge, with its GGUF files at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF and its LoRA at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-LoRA, trained Oct 30 to Nov 1 ([docs/KNOWLEDGE_RUN_LOG.md](docs/KNOWLEDGE_RUN_LOG.md));
+  - the tuned SAM 3.1 detector, https://huggingface.co/OfflineBase/sam3.1-muse.
+
+**Not proven yet:** an app answering on a board with its uplink pulled (not filmed), and the whole chain from a sentence to an app answering with its own tuned model.
+
+## Three commands, no keys
 
 ```bash
 npm ci && npm run dev:local   # the site on http://localhost:3000; a local run starts empty
@@ -27,16 +85,23 @@ npm run drill                 # 11 simulated outage drills on loopback, about 25
 npm run drill-bench           # remakes and scores the simulated cold-room set, about 2 s (needs python3)
 ```
 
+## At a glance
+
 | | |
 |---|---|
 | **Domain** | Agents |
 | **Event** | Meta Global AI Developer Hackathon, Startup track |
 | **Theme** | Build for Your World |
-| **Built** | Oct 26 to Nov 4, 2026. Before the event, Offline Base had its Jetson fleet software and Base Drive; see "Before the event, and not in this repo" below |
+| **Built** | Oct 26 to Nov 4, 2026. Before the event, Offline Base had its Jetson fleet software and Base Drive; see [Before the event, and not in this repo](#before-the-event-and-not-in-this-repo) |
 | **Entrant** | Offline Base |
 | **Team** | Ethan and Hussam |
 
-The opening's last sentence is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
+## The aim, and what has run
+
+- The opening's last sentence, an app that keeps answering on a Jetson when the cloud is cut, is the aim, not yet the record.
+- Each step below has run on its own, and the diagram marks how.
+- The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware.
+- Every number we quote, failures first, is in [eval/](eval/README.md).
 
 ```mermaid
 flowchart LR
@@ -62,11 +127,37 @@ flowchart LR
   policy --- device
 ```
 
-**Which model does Muse Privacy's steps.** Muse Glimmer 30B, for the submission. The organizers ruled on Nov 2 that every model the project calls at runtime must be Meta's, so Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries go to Muse Glimmer 30B in the cloud through OpenRouter, on invented data only, and Glimmer is also the privacy router, deciding each result under floors from the policy file that it can't loosen. Glimmer on a device is the target, not a result: it has not run on a device for this. On this setup, on Nov 2: 0 leaks of names or identifiers on 200 invented items, nothing shared that should have waited or stayed, and the router right 71.5% of the time, with 101 approval requests, 50 of them needless ([report](privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md)). Earlier Glimmer runs: through OpenRouter on Oct 27, 0 leaks of names or identifiers on 100 invented items; tuned, on a rented A100, it wrote answers and summaries with 0 leaks (80.5% and 81.0%), but as the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%). See [eval/](eval/README.md#muse-privacy) and [privacy/README.md](privacy/README.md).
+### Which model does Muse Privacy's steps
 
-**What's simulated.** The board in the outage drills, which run in each build's sandbox against a fake board and a blocked cloud. Every cold-room reading. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
+Muse Glimmer 30B, for the submission.
 
-Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. Meta's SAM 3.1 runs on one of them (jetson-04) and was tuned on another (jetson-03), and on Nov 2 a product Muse Muse built counted with SAM 3.1 on jetson-04 from a laptop (docs/BUILD_LOG.md, "Nov 2, 2026, 9 PM ET"). No app has kept answering on a board with its uplink pulled yet. Muse Privacy has run on a board (jetson-05, Nov 3) only on Liquid's LFM3-VL-2B, which is not a Meta model, so that run is outside the submission; Muse Glimmer on a board has not run for Muse Privacy. Muse Privacy lives in [privacy/](privacy/README.md).
+- The organizers ruled on Nov 2 that every model the project calls at runtime must be Meta's.
+- So Muse Privacy's name pass, its labels on Muse's requests, and its answers and summaries go to Muse Glimmer 30B in the cloud through OpenRouter, on invented data only.
+- Glimmer is also the privacy router. It decides each result under floors from the policy file that it can't loosen.
+- Glimmer on a device is the target, not a result: it has not run on a device for this.
+- On this setup, on Nov 2: 0 leaks of names or identifiers on 200 invented items, and nothing shared that should have waited or stayed. The router was right 71.5% of the time, with 101 approval requests, 50 of them needless ([report](privacy/eval/reports/glimmer_fresh_200_b_2026-11-02.md)).
+- Earlier Glimmer runs: through OpenRouter on Oct 27, 0 leaks of names or identifiers on 100 invented items. Tuned, on a rented A100, it wrote answers and summaries with 0 leaks (80.5% and 81.0%). As the labeler, the tightener or the decider it scored far worse (41.0% to 64.0%).
+- See [eval/](eval/README.md#muse-privacy) and [privacy/README.md](privacy/README.md).
+
+![The See one run replay on the Muse Privacy page: a label reading "Recorded, not live", five scene tabs, the five steps of the grading scene, and a table showing Muse called run_private_task, got "started" back in 0.1 s, with no private values in the output.](docs/readme/privacy-recorded-run.png)
+
+*A recorded Muse Privacy run, step 1 of 5 of the grading scene: Muse called `run_private_task`, and no private values came back. Recorded, not live: a scene rehearsal on Nov 2, 2026, with Muse Glimmer 30B in the cloud through OpenRouter and invented records. Live site, www.musemuse.dev/private, Nov 4, 2026.*
+
+### What's simulated
+
+- The board in the outage drills, which run in each build's sandbox against a fake board and a blocked cloud.
+- Every cold-room reading.
+- Every teacher and record in Muse Privacy, which has no real users.
+- The fine-tuning results that say "by harness": they had a real GPU and judge, on an invented topic, without going through the site's launch path.
+
+### Offline Base's boards
+
+- Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards.
+- Meta's SAM 3.1 runs on one of them (jetson-04) and was tuned on another (jetson-03).
+- On Nov 2 a product Muse Muse built counted with SAM 3.1 on jetson-04 from a laptop (docs/BUILD_LOG.md, "Nov 2, 2026, 9 PM ET").
+- No app has kept answering on a board with its uplink pulled yet.
+- Muse Privacy has run on a board (jetson-05, Nov 3) only on Liquid's LFM3-VL-2B, which is not a Meta model, so that run is outside the submission. Muse Glimmer on a board has not run for Muse Privacy.
+- Muse Privacy lives in [privacy/](privacy/README.md).
 
 ## Quickstart
 
@@ -77,7 +168,11 @@ git clone https://github.com/Offline-Base/muse-muse.git && cd muse-muse
 npm ci && cp .env.example .env.local && npm run dev:local   # then open http://localhost:3000
 ```
 
-`npm run dev:local` sets up a local database (PGlite in `.data/pglite`), keeps files in `.data/files` and turns sign-in off for localhost. It needs no keys. **A local run starts empty:** the Gallery, Models and Fine-tuning pages say "Nothing shipped yet" and "No results yet". The judged results and the shipped products are on the live site, https://www.musemuse.dev, which anyone can browse with no sign-in.
+What `npm run dev:local` does:
+
+- It sets up a local database (PGlite in `.data/pglite`), keeps files in `.data/files` and turns sign-in off for localhost. It needs no keys.
+- **A local run starts empty.** The Gallery, Models and Fine-tuning pages say "Nothing shipped yet" and "No results yet".
+- The judged results and the shipped products are on the live site, https://www.musemuse.dev, which anyone can browse with no sign-in.
 
 ### Judge path
 
@@ -98,9 +193,27 @@ grep '^VERCEL_OIDC_TOKEN=' .env.vercel.local >> .env.local
 npm run dev:local
 ```
 
-Pull into its own file as above: a plain `vercel env pull` writes over `.env.local`. Without a Meta key or Sandbox credentials, the Make page says which one is missing and a build is refused before any paid step (a 503 with `no_model_key` or `no_sandbox`), so nothing is spent on a build that can't finish. `BUILDER_SNAPSHOT_ID` is optional locally: without it, the first build installs Muse Code, Playwright and ffmpeg in the sandbox itself, which is slower. A local build stops after its demo video and gets no link of its own (see [Run it on your machine](#run-it-on-your-machine)).
+- Pull into its own file as above: a plain `vercel env pull` writes over `.env.local`.
+- Without a Meta key or Sandbox credentials, the Make page says which one is missing. A build is refused before any paid step (a 503 with `no_model_key` or `no_sandbox`), so nothing is spent on a build that can't finish.
+- `BUILDER_SNAPSHOT_ID` is optional locally. Without it, the first build installs Muse Code, Playwright and ffmpeg in the sandbox itself, which is slower.
+- A local build stops after its demo video and gets no link of its own (see [Run it on your machine](#run-it-on-your-machine)).
 
-**The outage drills.** `npm run drill` starts a stand-in gateway that drops or holds every connection (`template/scripts/edge-blackhole.mjs`), a fake edge model server (`template/scripts/edge-fake.mjs`) and a tiny bundled product that answers through the product template's cloud-to-edge fallback (`scripts/drill/demo-product.ts`, using `template/lib/meta/edge.ts`). Then `template/scripts/edge-drill.mjs` runs eleven simulated drills: four on the text answer (cloud refused, cloud hung, both down, a tampered reply rejected), four on the photo look through Meta SAM 3.1's fallback (the same four, with a fake SAM service standing in for the board), two on the board status line (board up, board down) and one that checks the invented sample photo is served. It prints each result, writes JSON to `.data/drill/`, and exits non-zero if any drill fails. A pass shows the fallback logic on loopback with invented cold-room data and an invented photo, and nothing about a real model or board. `npm run drill-bench` remakes the Simulated cold-room set from its seed (`scripts/dev/drill-bench.py make`: 900 training, 50 kept aside, 100 sealed held-out), checks the sealed file matches `eval/drill/sealed.jsonl`, and scores canned answers with no model. See [docs/EDGE_DEMO.md](docs/EDGE_DEMO.md).
+**The outage drills.** `npm run drill` starts three stand-ins:
+
+- a gateway that drops or holds every connection (`template/scripts/edge-blackhole.mjs`);
+- a fake edge model server (`template/scripts/edge-fake.mjs`);
+- a tiny bundled product that answers through the product template's cloud-to-edge fallback (`scripts/drill/demo-product.ts`, using `template/lib/meta/edge.ts`).
+
+Then `template/scripts/edge-drill.mjs` runs eleven simulated drills:
+
+- four on the text answer: cloud refused, cloud hung, both down, a tampered reply rejected;
+- four on the photo look through Meta SAM 3.1's fallback: the same four, with a fake SAM service standing in for the board;
+- two on the board status line: board up, board down;
+- one that checks the invented sample photo is served.
+
+It prints each result, writes JSON to `.data/drill/`, and exits non-zero if any drill fails. A pass shows the fallback logic on loopback with invented cold-room data and an invented photo, and nothing about a real model or board.
+
+`npm run drill-bench` remakes the Simulated cold-room set from its seed (`scripts/dev/drill-bench.py make`: 900 training, 50 kept aside, 100 sealed held-out). It checks the sealed file matches `eval/drill/sealed.jsonl`, and scores canned answers with no model. See [docs/EDGE_DEMO.md](docs/EDGE_DEMO.md).
 
 | To do this | You need |
 |---|---|
@@ -118,9 +231,13 @@ cp .env.example .env.local
 docker compose up --build       # then open http://localhost:3000
 ```
 
-The Dockerfile was written without a Docker daemon to test it on, so the image has **not been built or run yet**. Use the npm path above. What has run nearby: the migrations on an empty PGlite folder, `npx next build` with no database on a laptop, and `npm run dev:local`. `next start` on PGlite has not.
+The Dockerfile was written without a Docker daemon to test it on, so the image has **not been built or run yet**. Use the npm path above.
 
-`compose.yaml` runs a production build on PGlite, Postgres in-process, in a Docker volume. Files stay in the same volume, sign-in is off for localhost, and the port is published on 127.0.0.1 only. No secrets go in the image: `.env.local` is read when the container starts, and compose overrides anything in it that would point at production's database or Blob store. There's no Postgres container, because the site uses Neon's HTTP driver, which can't reach a stock Postgres server. To use a Neon database, set `COMPOSE_DATABASE_URL` in your shell. Set `STORY_PAGES=1` in your shell before building to include `/offline`.
+- What has run nearby: the migrations on an empty PGlite folder, `npx next build` with no database on a laptop, and `npm run dev:local`. `next start` on PGlite has not.
+- `compose.yaml` runs a production build on PGlite, Postgres in-process, in a Docker volume. Files stay in the same volume, sign-in is off for localhost, and the port is published on 127.0.0.1 only.
+- No secrets go in the image. `.env.local` is read when the container starts, and compose overrides anything in it that would point at production's database or Blob store.
+- There's no Postgres container, because the site uses Neon's HTTP driver, which can't reach a stock Postgres server. To use a Neon database, set `COMPOSE_DATABASE_URL` in your shell.
+- Set `STORY_PAGES=1` in your shell before building to include `/offline`.
 
 ## What Muse Muse is
 
@@ -138,7 +255,10 @@ Hackathon codename for the Meta Global AI Developer Hackathon, Startup track. Mu
 
 An Oct 27 audit compared every scaffold file with the current tree. It found five small helpers from the scaffold still in use: `museExecArgs`, `metaClient`, `imagePart` and `videoPart`, `toDataUrl` and `glimmerClient`. They were rewritten the same day; `glimmerClient` became `glimmer()`, which also names the served model. Everything else that survives from the scaffold is types, schema, config, docs or template boilerplate.
 
-**Before the event, and not in this repo.** The organizers asked that anything pre-existing be labeled (Discord, Nov 2). These existed before kickoff (12:24 PM ET, Oct 26) and are used, not submitted:
+### Before the event, and not in this repo
+
+The organizers asked that anything pre-existing be labeled (Discord, Nov 2). These existed before kickoff (12:24 PM ET, Oct 26) and are used, not submitted:
+
 - Offline Base's fleet of Jetson Orin Nano boards and its control software (a separate private repo, `jetson-infra`, created Sep 29, 2026), including how a board serves a model. The fleet tools on `/device` (#60) and the edge track's board steps talk to it.
 - The models some boards ran before the event, made by other companies. They are not part of the submitted project, which is built to call only Meta's models (organizer ruling, Nov 2).
 - Base Drive, Offline Base's offline AI kit on a flash drive (created June 2026). The `/offline` page describes it. Muse Muse's own USB export is a separate kit built this week, not a Base Drive.
@@ -157,6 +277,10 @@ Everything else in this repo, and its whole git history, was written from Oct 26
 7. **Deploy.** The platform, never the sandbox, publishes the source as its own Vercel project, `musemuse-<slug>`. The product calls Meta only through this platform's gateway, with a product token scoped to its models and endpoints, a daily budget and rate limits.
 8. **Connector.** The actions in the product's `musemuse.json` become MCP tools at `/api/mcp/<slug>`. Add that URL to the Muse app as a custom connector, or to Claude Code as an MCP server.
 
+![The build room for Science Teams Showdown with Show details open: a Steps panel with the budget (up to 200 model steps, estimated at no more than $2.00 in Meta credits), Muse Code's change (45 tool calls, 5 files edited, about $0.026), and a Goal card marked Complete listing four pass conditions, with a 100% bar.](docs/readme/build-room-goal.png)
+
+*Inside one build, with "Show details" open: the budget, what Muse Code changed and spent, and the goal's four pass conditions (`npm run verify` exits 0, a valid `musemuse.json`, `BUILD_NOTES.md`, a test for each requirement), all met. Live site, Nov 4, 2026.*
+
 A refinement such as "add a dark mode" resumes the same session in the same sandbox, then checks and ships again. If its checks fail, the live version stays.
 
 The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's earlier demo videos on current Muse models from `catalog/meta-resources.json`. It held the first six videos on Meta's Videos page plus first demos for SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder. On Nov 2, 2026 all 30 of Meta's videos were audited: the catalog now feeds the Learn page (/learn), the audit found the six versions wrong or partly wrong, and every improved plan waits on the owner's spend decision (autoBuild false).
@@ -172,7 +296,7 @@ The showcase is a batch run, `npm run rebuild-all`, that rebuilds Meta's earlier
 
 The platform is laid out like another tab in Meta's Model API dashboard. The layout was measured from screenshots of Meta's pages ([docs/UI_PATTERNS.md](docs/UI_PATTERNS.md)).
 
-- **Sidebar.** Dashboard; Make, Builds, Learn, Gallery; Usage, Models, Fine-tuning, Gadgets; How it works and Model API docs.
+- **Sidebar** (since Nov 2). A "Start musing" button for the Make page, then four rows: Musings (your builds), Inspiration (Gallery and Meta demos, which is Learn), Fine-tuning (with Models as a tab) and Devices (Gadgets and Muse Privacy). Usage and Help sit at the bottom. The old Dashboard is the Overview tab under Usage, and Help opens How it works and the Model API docs.
 - **Make** follows Meta's Image playground: example cards, a composer that is the muse box, and a right panel that shows the build setup (model, builder, fix rounds, judge, demo video, publish, connector) as disabled controls.
 - **Build room** follows the Chat playground. The muse is the user turn. The brief, Muse Code's log, the check results and the shipped result are assistant turns, each ending with a time, tokens and cost line. The right panel has a step rail (Brief, Provision, Build, Preview, Check, Record, Deploy), the Muse Code session id, fix rounds, running cost, links and the live preview.
 - **Dashboard** leads with "Use your products in Muse": tabs for the Muse app, Claude Code and cURL, a tab per published product, and its connector in a copy box. Below it are Requests, Input tokens, Output tokens, Products and Spend (est.).
@@ -183,6 +307,10 @@ The platform is laid out like another tab in Meta's Model API dashboard. The lay
 - Light and dark themes. Below 760 px the sidebar becomes a top bar and the build panel stacks under the log.
 
 It keeps its own two-sparkle mark, a "Concept" pill and the line "Not an official Meta product." Nobody pastes a Meta key anywhere.
+
+![The Inspiration page: a Presets row of five photo cards (cake orders, a fridge, a houseplant, a dinner receipt, a sketch to app) and a Products grid starting with Handbook Proof Checker, Room Restyle Studio and Standup Scribe Notes.](docs/readme/gallery.jpg)
+
+*The Inspiration page: preset photos to start from, and the products Muse Muse built. Live site, www.musemuse.dev/gallery, Nov 4, 2026.*
 
 ## How builds use Muse Code's own features
 
@@ -371,7 +499,16 @@ Every preview shares the `preview` database. To start clean, delete it on the br
 
 What a preview can prove: products and build sandboxes reach the gateway and the build MCP at `env.platformUrl`. A preview with its own database (`previewHasOwnDatabase` in `lib/db/url.ts`) is its own platform: `env.platformUrl` is its branch URL (`VERCEL_BRANCH_URL`), or its deployment URL (`VERCEL_URL`) when there's no branch URL, since its builds and gateway tokens live only in its database and production's gateway would refuse them. `PLATFORM_URL` doesn't change that preview's address. A preview with no database, or with production's, and production itself keep `PLATFORM_URL` as before.
 
-Deployment Protection turns away requests to a preview that carry no Vercel login, and a build sandbox has none, so step 3 lets them through. On a preview with its own database, `env.previewBypass` reads `VERCEL_AUTOMATION_BYPASS_SECRET` together with the preview's own host, and the build firewall adds the secret as the `x-vercel-protection-bypass` header to every request a sandbox makes to that host (`lib/sandbox/policy.ts`), in a build's sandbox and in Prove it's copy. It goes to no other host: on a preview whose `env.platformUrl` is another site's (no database of its own, or no URL of its own), and for a Prove it copy pointed at another site, the sandbox gets no header. The same rule sets each of those requests' `Host` header to the platform's host. The firewall picks a host's rules by the connection's SNI alone, so without that, code in the sandbox could name the platform in the SNI and another site on Vercel's edge in `Host`, and the secret would go to that site. A request that asks for a bypass cookie (`x-vercel-set-bypass-cookie`, as a header or a query parameter, in any case or encoding) gets a 403 from the firewall itself, since the cookie would land inside the sandbox and do the secret's job there. The secret stays in the firewall rule and never enters the sandbox, so the product's code and Muse Code never see it or a cookie made from it. Production never reads it. Only the sandboxes get the header: people opening the preview still sign in to Vercel, and anything else that calls the preview still meets Deployment Protection. That includes Vercel Blob's upload-completion callback (it only writes a log line), a native lab box's selftest, and a training job's GPU reporting back (training starts only on production unless `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1`, and a GPU that can't report back is still ended by its time limit and the sweep). Without step 3, a protected preview's builds can't reach its gateway or build MCP. Once it's on, check it once from a build's sandbox on a preview: a request to the preview with another site's `Host` header still reaches the preview, and one with `x-vercel-set-bypass-cookie: true` gets the firewall's 403 and no `Set-Cookie`.
+Deployment Protection turns away requests to a preview that carry no Vercel login, and a build sandbox has none, so step 3 lets them through. How the bypass is kept to the sandbox:
+
+- **Where the secret goes.** On a preview with its own database, `env.previewBypass` reads `VERCEL_AUTOMATION_BYPASS_SECRET` together with the preview's own host. The build firewall adds the secret as the `x-vercel-protection-bypass` header to every request a sandbox makes to that host (`lib/sandbox/policy.ts`), in a build's sandbox and in Prove it's copy.
+- **Nowhere else.** On a preview whose `env.platformUrl` is another site's (no database of its own, or no URL of its own), and for a Prove it copy pointed at another site, the sandbox gets no header.
+- **Host pinned.** The same rule sets each of those requests' `Host` header to the platform's host. The firewall picks a host's rules by the connection's SNI alone, so without that, code in the sandbox could name the platform in the SNI and another site on Vercel's edge in `Host`, and the secret would go to that site.
+- **No bypass cookie.** A request that asks for a bypass cookie (`x-vercel-set-bypass-cookie`, as a header or a query parameter, in any case or encoding) gets a 403 from the firewall itself, since the cookie would land inside the sandbox and do the secret's job there.
+- **Never inside the sandbox.** The secret stays in the firewall rule and never enters the sandbox, so the product's code and Muse Code never see it or a cookie made from it. Production never reads it.
+- **Only the sandboxes get the header.** People opening the preview still sign in to Vercel, and anything else that calls the preview still meets Deployment Protection. That includes Vercel Blob's upload-completion callback (it only writes a log line), a native lab box's selftest, and a training job's GPU reporting back (training starts only on production unless `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1`, and a GPU that can't report back is still ended by its time limit and the sweep).
+- **Without step 3**, a protected preview's builds can't reach its gateway or build MCP.
+- **Check it once** it's on, from a build's sandbox on a preview: a request to the preview with another site's `Host` header still reaches the preview, and one with `x-vercel-set-bypass-cookie: true` gets the firewall's 403 and no `Set-Cookie`.
 
 The branch URL follows the branch's newest deployment, so a build still running when a newer commit deploys on the same branch calls the newer one. Its tokens still work, since every preview shares the `preview` database, but the code serving it can differ from the code that started it.
 
@@ -383,9 +520,22 @@ The branch URL follows the branch's newest deployment, so a build still running 
 npm run dev:local               # then open http://localhost:3000
 ```
 
-Browsing needs nothing. A build needs `MODEL_API_KEY` and `VERCEL_OIDC_TOKEN` (from `npx vercel link` and `npx vercel env pull .env.vercel.local`, good for 12 hours, copied into `.env.local` as in the [Judge path](#judge-path)) in `.env.local`; without either, the Make page says so and builds are refused before anything is paid for. `BUILDER_SNAPSHOT_ID` is optional here: without it, the first build installs its toolchain in the sandbox, which is slower. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach. The live preview in the build room works while the build runs.
+- Browsing needs nothing.
+- A build needs `MODEL_API_KEY` and `VERCEL_OIDC_TOKEN` in `.env.local` (the token comes from `npx vercel link` and `npx vercel env pull .env.vercel.local`, is good for 12 hours, and is copied into `.env.local` as in the [Judge path](#judge-path)). Without either, the Make page says so and builds are refused before anything is paid for.
+- `BUILDER_SNAPSHOT_ID` is optional here. Without it, the first build installs its toolchain in the sandbox, which is slower.
+- The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost.
+- Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work.
+- A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach.
+- The live preview in the build room works while the build runs.
 
-To put local products on the live site, run `npx tsx --env-file=.env.local scripts/promote-local.ts --db .data/pglite --slug <slug>,<slug>` (add `--dry-run` first to see what it would upload and send). It reads a copy of the PGlite folder and asks the live site whether it takes each bundle (`POST /api/admin/import-product?check=1`), so nothing is uploaded for a product it would refuse. Then it uploads each product's files from `.data/files` to the live Blob store at the same paths with your `VERCEL_OIDC_TOKEN`, and sends the rows to `POST /api/admin/import-product` with the `AUTOMATION_SECRET` bearer. The live site saves them under its guest account (its builds don't count against the guest's daily builds) and publishes each product from its sandbox the way a live build does, then the script waits up to 10 minutes for the links. Only live products whose latest build is live go; the rest are skipped with the reason. When a publish ends without a link, run the same command with `--republish`: the live site publishes it again, once its last try has ended, with nothing uploaded again.
+To put local products on the live site, run `npx tsx --env-file=.env.local scripts/promote-local.ts --db .data/pglite --slug <slug>,<slug>` (add `--dry-run` first to see what it would upload and send). In order, it:
+
+1. reads a copy of the PGlite folder and asks the live site whether it takes each bundle (`POST /api/admin/import-product?check=1`), so nothing is uploaded for a product it would refuse;
+2. uploads each product's files from `.data/files` to the live Blob store at the same paths with your `VERCEL_OIDC_TOKEN`;
+3. sends the rows to `POST /api/admin/import-product` with the `AUTOMATION_SECRET` bearer. The live site saves them under its guest account (its builds don't count against the guest's daily builds) and publishes each product from its sandbox the way a live build does;
+4. waits up to 10 minutes for the links.
+
+Only live products whose latest build is live go; the rest are skipped with the reason. When a publish ends without a link, run the same command with `--republish`: the live site publishes it again, once its last try has ended, with nothing uploaded again.
 
 ## Tests
 
