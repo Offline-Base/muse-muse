@@ -33,17 +33,6 @@ People know their jobs, but getting custom software built takes engineering they
 
 Every number here is logged with its date in [docs/BUILD_LOG.md](docs/BUILD_LOG.md), and [eval/README.md](eval/README.md) lists every measurement, failures first.
 
-## Limits, Nov 4
-
-Said once, here, so the rest can be read plainly:
-
-- **Test model, made-up data.** Builds on the live site run on Muse Spark 1.3 Contributor, the test model, while `BUILDS_ON_CONTRIBUTOR` is on. Product pages say "in place of Muse Wonder". Meta may train on contributor prompts, so the Make page and each app that runs on it warn about it, and our test builds use made-up data. The only long Muse Wonder build in the Prove run failed ([docs/PROVE_RESULTS.md](docs/PROVE_RESULTS.md)).
-- **The edge fallback is simulated.** The outage drills run against a simulated board. No app has answered on a real board with its uplink pulled.
-- **The whole chain has not run as one.** No app has answered with a tuned model made from its own sentence, and no Glimmer tuned in the lab has run on anyone's own hardware.
-- **Muse Privacy runs on invented data** with Muse Glimmer 30B in the cloud, and has no real users. Glimmer on a device has not run for it.
-- **The open weights are separate from the apps.** No app calls the 2026-knowledge Glimmer, and the SAM tune adds a name, not accuracy.
-- **CI on main is red at this writing.** The Nov 4 run passed 7,108 of 7,131 Node tests, failed 12 and skipped 11 ([Tests](#tests)).
-
 ## See it
 
 In the order of the demo. Click any picture for full size.
