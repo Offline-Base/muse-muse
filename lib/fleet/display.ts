@@ -292,7 +292,10 @@ const BOARD_GRAPHS: Record<Exclude<GraphKind, "tokens">, { key: keyof BoardSerie
   power: { key: "powerW", lo: 0, hi: 10, title: "Power on each board, last hour", show: (v) => watts(v) },
 };
 // The muse-app series hues (template/app/globals.css), the action blue first.
-const COLORS = ["#0064d4", "#fb3c44", "#7d74ff", "#3fbb46", "#14b898", "#111112", "#f9cf00", "#8a8d91", "#9b45f0"];
+// Darker shades of them, so lines stay apart on a black-and-white e-ink screen, where every color turns gray; each line
+// also gets its own dash, and the legend shows the same dash.
+const COLORS = ["#0064d4", "#111112", "#c01f37", "#6547f5", "#0b7f69", "#5f6368", "#b35c00", "#9b45f0", "#2e7d32"];
+const DASHES = ["", "14 7", "3 6", "18 6 3 6", "8 8", "22 5 5 5 5 5", "24 6", "6 4 1 4", "12 4 12 12"];
 
 /** The graphs this data can draw, in the order the page cycles through them. */
 export function availableGraphs(data: DisplayData): GraphKind[] {
@@ -320,15 +323,23 @@ function boardsGraph(kind: Exclude<GraphKind, "tokens">, boards: DisplayBoard[])
   const all = lines.flatMap((b) => b.series![g.key]).filter((v): v is number => v !== null);
   const lo = Math.min(g.lo, ...all);
   const hi = Math.max(g.hi, ...all);
-  const paths = lines.map((b, i) => `<g stroke="${COLORS[i % COLORS.length]}" fill="${COLORS[i % COLORS.length]}">${runsSvg(lineRuns(b.series![g.key], lo, hi, 100, 60))}</g>`).join("");
+  // Drawn in a 1000 x 520 box with no stretching, so dashes keep their shape.
+  const paths = lines
+    .map((b, i) => {
+      const dash = DASHES[i % DASHES.length] ? ` stroke-dasharray="${DASHES[i % DASHES.length]}"` : "";
+      return `<g stroke="${COLORS[i % COLORS.length]}" fill="${COLORS[i % COLORS.length]}"${dash}>${runsSvg(lineRuns(b.series![g.key], lo, hi, 1000, 520))}</g>`;
+    })
+    .join("");
   const legend = lines
     .map((b, i) => {
       const now = last(b.series![g.key]);
       const job = b.running[0] ? ` <span>${esc(b.running[0])}</span>` : "";
-      return `<li><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(b.name)}${job}<b>${now === null ? "?" : g.show(now)}</b></li>`;
+      const dash = DASHES[i % DASHES.length] ? ` stroke-dasharray="${DASHES[i % DASHES.length]}"` : "";
+      const swatch = `<svg class="sw" viewBox="0 0 48 8"><line x1="2" y1="4" x2="46" y2="4" stroke="${COLORS[i % COLORS.length]}"${dash}/></svg>`;
+      return `<li>${swatch}${esc(b.name)}${job}<b>${now === null ? "?" : g.show(now)}</b></li>`;
     })
     .join("");
-  return `<div class="graph"><svg viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="${esc(g.title)}" class="multi">${paths}</svg>
+  return `<div class="graph"><svg viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(g.title)}" class="multi">${paths}</svg>
 <div class="ends"><span>1 h ago, scale ${g.show(lo)} to ${g.show(hi)}</span><span>now</span></div>
 <p class="cap">${esc(g.title)}</p><ul class="legend">${legend}</ul></div>`;
 }
@@ -365,32 +376,32 @@ export function renderDisplay(
 :root{--fg:#111112;--fg-2:rgba(0,4,9,.59);--line:rgba(0,0,0,.1);--surface-2:#f3f4f5;--signature:#0064d4;--ai-start:#6547f5;--ai-end:#9b45f0;--positive:#008200;--negative:#c01f37}
 *{box-sizing:border-box;margin:0}html,body{background:#fff;color:var(--fg)}
 body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-optical-sizing:auto;font-weight:400;letter-spacing:-.01em;padding:3vmin 4vmin}
-.hero{display:grid;grid-template-columns:minmax(0,46fr) minmax(0,54fr);gap:4vmin;align-items:stretch;min-height:calc(100vh - 11vmin)}
+.hero{display:grid;grid-template-columns:minmax(0,48fr) minmax(0,52fr);gap:4vmin;align-items:stretch;min-height:calc(100vh - 11vmin)}
 .left{display:flex;flex-direction:column;align-items:center}
 .chip{display:inline-flex;align-items:center;gap:1vmin;font-size:2vmin;font-weight:500;padding:.7vmin 1.8vmin;border-radius:999px;border:2px solid transparent;background:linear-gradient(#fff,#fff) padding-box,linear-gradient(90deg,var(--ai-start),var(--ai-end)) border-box;color:var(--fg)}
 .chip i{width:1.2vmin;height:1.2vmin;border-radius:50%;background:linear-gradient(90deg,var(--ai-start),var(--ai-end))}
-.stats{display:flex;flex-wrap:wrap;gap:2vmin 4.5vmin;justify-content:center;color:var(--fg-2);font-size:2.4vmin;font-weight:500;white-space:nowrap;text-align:center;margin-top:2.2vmin}
-.stats b{display:block;font-size:6.4vmin;font-weight:400;line-height:1.05;color:var(--fg);letter-spacing:-.02em}
-.jolly{flex:1;display:flex;align-items:flex-end;justify-content:center;width:100%;min-height:0}
-.jolly video{width:100%;max-height:70vh;object-fit:contain;display:block}
+.stats{display:flex;flex-wrap:wrap;gap:1.5vmin 3vmin;justify-content:space-evenly;width:100%;color:var(--fg-2);font-size:min(2.4vmin,1.5vw);font-weight:500;white-space:nowrap;text-align:center;margin-top:2.2vmin}
+.stats b{display:block;font-size:min(6.4vmin,4.2vw);font-weight:400;line-height:1.05;color:var(--fg);letter-spacing:-.02em}
+.jolly{flex:1;display:flex;align-items:center;justify-content:center;width:100%;min-height:0;margin-top:2vmin}
+.jolly video{width:100%;height:100%;max-height:78vh;object-fit:contain;display:block}
 .graph{display:flex;flex-direction:column;justify-content:center;padding:4vmin 1vmin 2vmin}
-.graph svg{width:100%;height:56vh;overflow:visible}.graph path{fill:none;stroke:var(--signature);stroke-width:3;vector-effect:non-scaling-stroke;stroke-linecap:round}
-.graph svg.multi{height:42vh}.multi polyline{fill:none;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}.multi circle{stroke:none}
+.graph svg{width:100%;height:56vh;overflow:visible}.graph path{fill:none;stroke:var(--signature);stroke-width:5;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.graph svg.multi{height:auto;max-height:46vh}.multi polyline{fill:none;stroke-width:5;stroke-linejoin:round;stroke-linecap:butt}.multi circle{stroke:none}
 .ends{display:flex;justify-content:space-between;color:var(--fg-2);font-size:1.9vmin;margin-top:1vmin;padding-top:1vmin;border-top:1px solid var(--line)}
 .cap{color:var(--fg-2);font-size:3vmin;text-align:center;margin-top:2.6vmin}.cap b{color:var(--fg);font-weight:400;font-size:4.4vmin;letter-spacing:-.02em}
 .legend{list-style:none;padding:0;margin-top:2vmin;display:grid;grid-template-columns:1fr;gap:.2vmin;font-size:2.1vmin;color:var(--fg)}
 .legend li{display:flex;align-items:baseline;gap:1.2vmin;white-space:nowrap;min-width:0;padding:.5vmin 0;border-bottom:1px solid var(--line)}.legend li:last-child{border-bottom:0}
-.legend i{flex:none;width:1.6vmin;height:1.6vmin;border-radius:50%;align-self:center}.legend span{color:var(--fg-2);font-size:1.9vmin;overflow:hidden;text-overflow:ellipsis;min-width:0}.legend b{margin-left:auto;font-weight:500}
+.legend .sw{flex:none;width:6vmin;height:1.2vmin;align-self:center;overflow:visible}.legend .sw line{stroke-width:5;vector-effect:non-scaling-stroke}.legend span{color:var(--fg-2);font-size:1.9vmin;overflow:hidden;text-overflow:ellipsis;min-width:0}.legend b{margin-left:auto;font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42vmin,1fr));gap:2vmin;margin-top:3vmin}
 .board{border:1px solid var(--line);border-radius:16px;padding:2.2vmin 2.6vmin}
 .board header{display:flex;justify-content:space-between;align-items:baseline}h2{font-size:3.2vmin;font-weight:600}.power{font-size:4.2vmin;font-weight:400;letter-spacing:-.02em}
 .running{font-size:2.5vmin;color:var(--fg-2);line-height:1.35;margin:1vmin 0 1.4vmin;min-height:3.4vmin}
 .board .stats{justify-content:flex-start;gap:2.6vmin;font-size:2vmin;font-weight:400;color:var(--fg-2);border-top:1px solid var(--line);padding-top:1.2vmin;margin:0;text-align:left}.board .stats b{display:inline;font-size:2.5vmin;color:var(--fg);font-weight:500;letter-spacing:-.01em}
-.lab{display:flex;justify-content:space-between;align-items:baseline}.axis{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}.ln polyline{fill:none;stroke:var(--signature);stroke-width:2.2;stroke-linejoin:round;vector-effect:non-scaling-stroke}.ln circle{fill:var(--signature)}
+.lab{display:flex;justify-content:space-between;align-items:baseline}.axis{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}.ln polyline{fill:none;stroke:var(--signature);stroke-width:3.5;stroke-linejoin:round;vector-effect:non-scaling-stroke}.ln circle{fill:var(--signature)}
 .minis{display:grid;grid-template-columns:1fr 1fr;gap:1.4vmin 2.4vmin;margin-top:1.4vmin}.mini .lab{font-size:1.9vmin;color:var(--fg-2)}.mini .lab b{font-size:2.3vmin;font-weight:500;color:var(--fg)}.mini svg{display:block;width:100%;height:5vmin;margin-top:.4vmin}
 .span{font-size:1.7vmin;color:var(--fg-2);text-align:right;margin-top:.6vmin}.offline{margin-top:2vmin;font-size:2.3vmin;color:var(--fg-2);background:var(--surface-2);border-radius:12px;padding:1.4vmin 2.4vmin}
 .foot{margin-top:2vmin;font-size:1.8vmin;color:var(--fg-2);display:flex;justify-content:space-between;gap:2vmin}
-@media (orientation:portrait){.hero{grid-template-columns:1fr;gap:2vmin;min-height:0}.jolly video{max-height:36vh}.graph{padding-top:1vmin}.graph svg{height:30vh}.graph svg.multi{height:26vh}.legend{grid-template-columns:1fr 1fr;column-gap:4vmin}}
+@media (orientation:portrait){.hero{grid-template-columns:1fr;gap:2vmin;min-height:0}.jolly video{max-height:40vh}.graph{padding-top:1vmin}.graph svg{height:30vh}.graph svg.multi{height:26vh}.legend{grid-template-columns:1fr 1fr;column-gap:4vmin}}
 </style></head><body>
 <div class="hero"><div class="left">
 <span class="chip"><i></i>Meta models on Jetson Orin Nanos</span>
