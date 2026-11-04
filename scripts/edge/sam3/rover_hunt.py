@@ -43,7 +43,7 @@ MAX_MANUAL_SPEED = 200
 os.makedirs(SNAPS, exist_ok=True)
 
 state = {"mode": "idle", "pan": 0, "best": 0.0, "last": None, "found": None, "looks": 0, "snapshots": [], "note": "Press Start"}
-overlay = {"jpeg": b""}
+overlay = {"jpeg": b"", "base": b"", "frame": b""}
 lock = threading.Lock()
 run_event = threading.Event()
 
@@ -131,9 +131,11 @@ def latest_frame(after=0.0):
     return None
 
 
-def ask_sam(jpeg):
-    r = requests.post(f"{SAM}/segment", json={"image_b64": base64.b64encode(jpeg).decode(), "prompt": PROMPT,
-                                             "tuned": "muse", "threshold": 0.3, "overlay": True}, timeout=30)
+def ask_sam(jpeg, tuned="muse"):
+    body = {"image_b64": base64.b64encode(jpeg).decode(), "prompt": PROMPT, "threshold": 0.3, "overlay": True}
+    if tuned:
+        body["tuned"] = tuned
+    r = requests.post(f"{SAM}/segment", json=body, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -173,6 +175,7 @@ def hunt():
                     continue
                 try:
                     res = ask_sam(jpeg)
+                    base = ask_sam(jpeg, tuned=None)  # Meta's SAM 3.1 on the same frame, for the side-by-side
                 except Exception as exc:  # keep hunting through a slow or restarting SAM
                     with lock:
                         state["note"] = f"SAM: {type(exc).__name__}"
@@ -183,6 +186,10 @@ def hunt():
                 with lock:
                     if ov:
                         overlay["jpeg"] = ov
+                    overlay["frame"] = jpeg
+                    overlay["base"] = base64.b64decode(base.get("overlay_jpeg_b64") or b"")
+                    state["last_base"] = {"objects": [{"box": o.get("box"), "score": o.get("score", 0.0)} for o in base.get("objects", [])],
+                                          "size": base.get("image_size") or [640, 480], "ms": base.get("ms")}
                     objects = [{"box": o.get("box"), "score": o.get("score", 0.0)} for o in res.get("objects", [])]
                     state.update(pan=pan, last={"score": score, "count": res.get("count", 0), "ms": res.get("ms"),
                                                 "weights": res.get("weights", "base"), "objects": objects,
@@ -197,7 +204,9 @@ def hunt():
                     bridge("look", pan, 0)
                     name = save_snapshot(jpeg, ov, score, "found")
                     with lock:
-                        state.update(mode="found", found={"score": score, "pan": pan, "snapshot": name},
+                        top = max(res.get("objects", []), key=lambda o: o.get("score", 0), default={})
+                    state.update(mode="found", found={"score": score, "pan": pan, "snapshot": name, "box": top.get("box"),
+                                                      "size": res.get("image_size") or [640, 480]},
                                      note=f"Found the real Muse at {score:.3f}. Stopped.")
                     run_event.clear()
                     break
@@ -215,89 +224,143 @@ def hunt():
                 state.update(mode="idle", note="Stopped")
 
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Muse hunt: SAM 3.1 on a Jetson</title>
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Find the real Muse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
-:root{--bg:#0d1117;--panel:#161b22;--ink:#e6edf3;--muted:#8b949e;--ok:#3fb950;--accent:#58a6ff;--warn:#d29922}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,Segoe UI,sans-serif}
-header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid #30363d}
-h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:14px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 22px}
-.pane{background:var(--panel);border:1px solid #30363d;border-radius:10px;overflow:hidden}
-.pane h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px}
-.shot{position:relative}.labels{position:absolute;inset:0;pointer-events:none}
-.tag{position:absolute;transform:translateY(-100%);background:rgba(13,17,23,.85);color:#fff;font:700 13px/1 ui-monospace,Menlo,monospace;padding:4px 7px;border-radius:5px;white-space:nowrap;border:1px solid rgba(255,255,255,.35)}
-.tag.top{border-color:var(--accent)}.tag.goal{background:var(--ok);color:#06210f;border-color:var(--ok)}
-.pane img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;filter:contrast(var(--contrast,100%))}
-.ctl{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}.ctl input{width:140px}.ctl output{min-width:3.5em;color:var(--ink);font-variant-numeric:tabular-nums}
-.bar{display:flex;gap:14px;align-items:center;padding:4px 22px 0}
-.score{font:700 42px/1 ui-monospace,Menlo,monospace}.goal{color:var(--muted)}
-.meter{flex:1;height:14px;background:#21262d;border-radius:7px;position:relative;overflow:hidden}
-.fill{height:100%;background:var(--accent);width:0;transition:width .3s}.mark{position:absolute;top:0;bottom:0;width:2px;background:var(--warn)}
-.found .fill{background:var(--ok)}.found .score{color:var(--ok)}
-.banner{display:none;margin:12px 22px 0;padding:14px 18px;border-radius:10px;background:#12361f;border:1px solid var(--ok);font-size:22px;font-weight:700}
-.found .banner{display:block}
-button{font:600 15px inherit;padding:9px 18px;border-radius:8px;border:1px solid #30363d;background:#21262d;color:var(--ink);cursor:pointer}
-button.go{background:#1f6feb;border-color:#1f6feb}
-.controls{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:0 22px 8px}
-.card{background:var(--panel);border:1px solid #30363d;border-radius:10px;padding:12px 14px}
-.card h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
-.pad{display:grid;grid-template-columns:repeat(3,58px);grid-template-rows:repeat(3,52px);gap:6px}
-.pad button{font-size:20px;padding:0;user-select:none;touch-action:none}.pad button.stop{background:#da3633;border-color:#da3633}
-.pad button.held{background:#1f6feb;border-color:#1f6feb}
-.row{display:flex;align-items:center;gap:10px;margin:8px 0 0;color:var(--muted);font-size:14px}.row input[type=range]{flex:1}
-.row output{min-width:3.2em;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
-.camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px 18px}
-.hint{color:var(--muted);font-size:12px;margin-top:8px}
-.snaps{display:flex;gap:10px;padding:8px 22px 22px;overflow-x:auto}.snaps figure{margin:0;width:180px;flex:none}
-.snaps img{width:180px;border-radius:6px;display:block}.snaps figcaption{font-size:12px;color:var(--muted)}
+:root{
+  /* The Meta AI app's light look (muse-muse template/targets/muse-app/files/app/muse-app.css). */
+  --bg:#ffffff;--surface:#ffffff;--surface-2:#f3f4f5;--line:rgba(0,0,0,.1);--fg:#111112;--fg-2:rgba(0,4,9,.59);
+  --accent:#0064d4;--on-accent:#fff;--tinted-bg:#e8f1fb;--tinted-fg:#0064d4;--secondary-bg:rgba(0,0,0,.05);--hover:rgba(0,0,0,.05);
+  --press:rgba(0,0,0,.1);--focus:#0064d4;--progress-track:rgba(0,100,212,.2);--positive:#008200;--positive-soft:rgba(34,197,94,.15);
+  --negative:#c01f37;--ai-start:#6547f5;--ai-end:#9b45f0;--ai-gradient:linear-gradient(90deg,var(--ai-start),var(--ai-end));
+  --scrim:rgba(0,0,0,.6);--shadow-card:inset 0 1px 0 rgba(255,255,255,.64),0 0 2px rgba(0,0,0,.02),0 0 6px rgba(0,0,0,.03),0 6px 30px rgba(0,0,0,.07);
+  --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--radius-lg:16px;--radius:12px;--radius-sm:8px;--pill:999px;
+}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.45 var(--font)}
+button{font:600 15px var(--font);border:0;border-radius:var(--pill);padding:9px 18px;cursor:pointer;background:var(--secondary-bg);color:var(--fg)}
+button:hover{background:var(--press)}button:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--on-accent)}button.primary:hover{filter:brightness(.94)}
+button.tinted{background:var(--tinted-bg);color:var(--tinted-fg)}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;padding:12px 24px;background:rgba(255,255,255,.86);backdrop-filter:blur(24px);border-bottom:1px solid var(--line)}
+.title{font:600 20px/25px var(--font)}.sub{color:var(--fg-2);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;font:500 13px var(--font);padding:5px 12px;border-radius:var(--pill);border:1.5px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-gradient) border-box}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--ai-gradient)}
+.spacer{flex:1}.ctl{display:flex;align-items:center;gap:8px;color:var(--fg-2);font-size:13px}
+input[type=range]{accent-color:var(--accent)}.ctl input{width:130px}output{font-variant-numeric:tabular-nums;color:var(--fg)}
+main{max-width:1440px;margin:0 auto;padding:18px 24px 40px;display:grid;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-card)}
+.card>h2{font:600 13px var(--font);color:var(--fg-2);margin:0;padding:12px 16px}
+.status{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px 18px;padding:16px 20px}
+.score{font:700 40px/1 var(--font);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.meter{height:10px;border-radius:var(--pill);background:var(--progress-track);position:relative;overflow:hidden}
+.fill{height:100%;width:0;border-radius:var(--pill);background:var(--ai-gradient);transition:width .35s}
+.mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--fg)}
+.goal{color:var(--fg-2);font-size:13px}.note{grid-column:1/-1;color:var(--fg-2);font-size:13px}
+.working i{display:inline-block;width:6px;height:6px;margin-right:3px;border-radius:50%;background:var(--ai-gradient);animation:pulse 1s infinite}
+.working i:nth-child(2){animation-delay:.15s}.working i:nth-child(3){animation-delay:.3s}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}@media (prefers-reduced-motion:reduce){.working i{animation:none}.fill{transition:none}}
+.found{display:none;grid-template-columns:220px 1fr;gap:18px;align-items:center;padding:16px;border-color:rgba(0,130,0,.35);background:linear-gradient(var(--positive-soft),var(--positive-soft)),var(--surface)}
+.is-found .found{display:grid}.is-found .fill{background:var(--positive)}.is-found .score{color:var(--positive)}
+.found canvas{width:220px;height:220px;border-radius:var(--radius);background:var(--surface-2);object-fit:contain}
+.found h3{margin:0 0 4px;font:600 22px/28px var(--font)}.found p{margin:0;color:var(--fg-2)}
+.media{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.shot{position:relative;margin:0 12px 12px;border-radius:var(--radius);overflow:hidden;background:var(--surface-2);aspect-ratio:4/3}
+.shot img{display:block;width:100%;height:100%;object-fit:cover;filter:contrast(var(--contrast,100%))}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--fg-2);text-align:center;padding:20px}
+.labels{position:absolute;inset:0;pointer-events:none}
+.tag{position:absolute;transform:translateY(-100%);background:var(--scrim);color:#fff;font:600 13px/1 var(--font);padding:5px 8px;border-radius:var(--radius-sm);white-space:nowrap}
+.tag.top{box-shadow:0 0 0 2px var(--ai-end)}.tag.goal{background:var(--positive)}
+.best{display:flex;gap:12px;align-items:center;padding:0 16px 14px}.best canvas{width:96px;height:96px;border-radius:var(--radius-sm);background:var(--surface-2)}
+.controls{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px}
+.pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,48px);gap:8px;padding:0 16px}
+.pad button{padding:0;font-size:18px;user-select:none;touch-action:none;border-radius:var(--radius)}
+.pad button.stop{background:var(--negative);color:#fff}.pad button.held{background:var(--accent);color:#fff}
+.rows{display:grid;gap:10px;padding:12px 16px 16px}
+.row{display:grid;grid-template-columns:9.5em 1fr 3.4em;align-items:center;gap:12px;font-size:14px}
+.row output{text-align:right}.row label{color:var(--fg)}.check{display:flex;align-items:center;gap:8px;font-size:14px}
+.camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px 28px;padding:4px 16px 16px}
+.hint{color:var(--fg-2);font-size:12px;padding:0 16px 14px}
+.snaps{display:flex;gap:12px;overflow-x:auto;padding:0 16px 16px}.snaps figure{margin:0;flex:none;width:160px}
+.snaps img{width:160px;border-radius:var(--radius-sm);display:block}.snaps figcaption{font-size:12px;color:var(--fg-2);margin-top:4px}
+@media (max-width:900px){.media,.controls{grid-template-columns:1fr}.found{grid-template-columns:1fr}}
 </style></head><body>
-<header><div><h1>Find the real Muse</h1><div class="sub">Rover camera &rarr; Meta SAM 3.1, tuned for "muse", on a Jetson Orin Nano</div></div>
-<div style="flex:1"></div><label class="ctl" for="contrast">Contrast <input type="range" id="contrast" min="50" max="200" step="5" value="100"><output id="cval">100%</output></label><button onclick="setContrast(100)">Reset</button><button class="go" onclick="post('/start')">Start</button><button onclick="post('/stop')">Stop</button></header>
-<div id="root"><div class="banner" id="banner"></div>
-<div class="bar"><div class="score" id="score">0.000</div><div class="meter"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div>
-<div class="goal" id="goal"></div></div>
-<div class="sub" style="padding:6px 22px" id="note"></div>
-<div class="grid"><div class="pane"><h2>Rover camera, live</h2><img id="cam" alt="rover camera"></div>
-<div class="pane"><h2>SAM 3.1 tuned, latest look</h2><div class="shot"><img id="sam" alt="SAM mask"><div class="labels" id="labels"></div></div></div></div>
+<header><div><div class="title">Find the real Muse</div><div class="sub">The rover's camera, looked at by a tuned SAM 3.1 on a Jetson</div></div>
+<span class="chip"><i></i>Meta SAM 3.1, tuned for "muse"</span><div class="spacer"></div>
+<label class="ctl" for="contrast">Display contrast <input type="range" id="contrast" min="50" max="200" step="5" value="100"><output id="cval">100%</output></label>
+<button onclick="setContrast(100)">Reset</button><button class="primary" onclick="unlock();post('/start')">Start</button><button onclick="post('/stop')">Stop</button></header>
+<main id="root">
+<section class="card status" aria-live="polite"><div class="score" id="score">0.000</div>
+<div class="meter" aria-hidden="true"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div><div class="goal" id="goal"></div>
+<div class="note" id="note">Press Start</div></section>
+<section class="card found" id="found" aria-live="assertive"><canvas id="foundcrop" width="440" height="440" aria-label="The real Muse, cut out of the frame"></canvas>
+<div><h3 id="foundtitle">Found the real Muse</h3><p id="foundtext"></p></div></section>
+<div class="media">
+<section class="card"><h2>Rover camera, live</h2><div class="shot"><img id="cam" alt="Live view from the rover's camera"></div></section>
+<section class="card"><h2>SAM 3.1, Meta's weights</h2><div class="shot"><img id="base" alt="Meta's SAM 3.1 on the same frame" hidden><div class="labels" id="labelsbase"></div>
+<div class="empty" id="baseempty"><strong>No look yet</strong><span>Meta's SAM 3.1 gets the same frame and the same word, "muse".</span></div></div>
+<div class="best"><div><div style="font-weight:600">Untuned</div><div class="sub" id="basetext">None yet</div></div></div></section>
+<section class="card"><h2>SAM 3.1 tuned for "muse"</h2><div class="shot"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
+<div class="empty" id="samempty"><strong>No look yet</strong><span>Press Start. Each look asks both models, about 3 to 4 seconds on the Jetson.</span></div></div>
+<div class="best"><canvas id="bestcrop" width="192" height="192" aria-label="Best match so far"></canvas><div><div style="font-weight:600">Best match this look</div><div class="sub" id="besttext">None yet</div></div></div></section>
+</div>
 <div class="controls">
-<div class="card"><h2>Drive (pauses the hunt)</h2>
+<section class="card"><h2>Drive (pauses the hunt)</h2>
 <div class="pad"><span></span><button data-d="fwd" aria-label="Forward">&#9650;</button><span></span>
 <button data-d="left" aria-label="Turn left">&#9664;</button><button class="stop" onclick="stopDrive()" aria-label="Stop">&#9632;</button><button data-d="right" aria-label="Turn right">&#9654;</button>
 <span></span><button data-d="back" aria-label="Back">&#9660;</button><span></span></div>
-<div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="80" max="200" step="10" value="130"><output id="speedv">130</output></div>
-<div class="row"><label for="pan">Pan</label><input type="range" id="pan" min="-35" max="35" step="5" value="0"><output id="panv">0&deg;</output></div>
-<div class="hint">Hold a button or an arrow key to drive; let go to stop. Nothing stops it when backing up.</div></div>
-<div class="card"><h2>Camera (changes what SAM sees)</h2><div class="camgrid" id="camgrid"></div>
-<div class="row"><button onclick="camReset()">Webcam defaults</button><span class="hint" id="camnote"></span></div></div>
+<div class="rows"><div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="80" max="200" step="10" value="130"><output id="speedv">130</output></div>
+<div class="row"><label for="pan">Camera pan</label><input type="range" id="pan" min="-35" max="35" step="5" value="0"><output id="panv">0°</output></div></div>
+<div class="hint">Hold a button or an arrow key to drive; let go to stop. Space stops. Nothing stops it when backing up.</div></section>
+<section class="card"><h2>Camera (changes what SAM sees)</h2><div class="camgrid" id="camgrid"></div>
+<div class="hint"><button class="tinted" onclick="camReset()">Webcam defaults</button> <span id="camnote"></span></div></section>
 </div>
-<div class="snaps" id="snaps"></div></div>
+<section class="card"><h2>Snapshots</h2><div class="snaps" id="snaps"><span class="hint" style="padding:0">Saved when a new best match passes 50%, and when the real Muse is found.</span></div></section>
+</main>
 <script>
-const GOAL=__GOAL__;document.getElementById('mark').style.left=(GOAL*100)+'%';document.getElementById('goal').textContent='stop at '+GOAL.toFixed(2);
-function post(p){fetch(p,{method:'POST'})}
-// Contrast is display only: a CSS filter on the two panes. The frames sent to SAM and the 0.95 stop never see it.
+const GOAL=__GOAL__;document.getElementById('mark').style.left=(GOAL*100)+'%';document.getElementById('goal').textContent='stops at '+GOAL.toFixed(2);
+function post(p){return fetch(p,{method:'POST'})}
+function jpost(p,b){return fetch(p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)})}
+// Display contrast: a CSS filter on the two pictures only. Frames sent to SAM and the 0.95 stop never see it.
 function setContrast(v){v=Math.max(50,Math.min(200,Number(v)||100));document.documentElement.style.setProperty('--contrast',v+'%');
 document.getElementById('contrast').value=v;document.getElementById('cval').textContent=v+'%';try{localStorage.setItem('musehunt.contrast',String(v))}catch(e){}}
 document.getElementById('contrast').addEventListener('input',e=>setContrast(e.target.value));
 let savedContrast=100;try{savedContrast=localStorage.getItem('musehunt.contrast')||100}catch(e){}setContrast(savedContrast);
+// The ping: Web Audio, unlocked by the first click (browsers block sound until then).
+let audio=null;function unlock(){try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume()}catch(e){}}
+addEventListener('pointerdown',unlock,{once:true});
+function ping(){if(!audio)return;const t=audio.currentTime;[[1318.5,0],[1975.5,.12]].forEach(([f,d])=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=f;
+g.gain.setValueAtTime(0.0001,t+d);g.gain.exponentialRampToValueAtTime(0.35,t+d+.01);g.gain.exponentialRampToValueAtTime(0.0001,t+d+.6);o.connect(g).connect(audio.destination);o.start(t+d);o.stop(t+d+.65)})}
 let camBusy=false;function cam(){if(camBusy)return;camBusy=true;const i=new Image();i.onload=()=>{document.getElementById('cam').src=i.src;camBusy=false};i.onerror=()=>camBusy=false;i.src='/cam.jpg?'+Date.now()}
 setInterval(cam,150);
-let lastLooks=-1;
-async function tick(){try{const s=await (await fetch('/state.json')).json();
-const sc=s.last?s.last.score:0;document.getElementById('score').textContent=(s.found?s.found.score:sc).toFixed(3);
-document.getElementById('fill').style.width=Math.min(100,(s.found?s.found.score:sc)*100)+'%';
-document.getElementById('note').textContent=s.note+(s.last?'  ·  '+s.last.ms+' ms per look on the Jetson  ·  weights: '+s.last.weights:'')+'  ·  looks: '+s.looks;
-document.getElementById('root').className=s.mode==='found'?'found':'';
-document.getElementById('banner').textContent=s.found?('Found the real Muse: '+s.found.score.toFixed(3)+' at pan '+s.found.pan+'°. Rover stopped, snapshot saved.'):'';
-if(s.looks!==lastLooks){lastLooks=s.looks;const img=document.getElementById('sam'),look=s.last;img.onload=()=>drawLabels(look);img.src='/overlay.jpg?'+s.looks}
-document.getElementById('snaps').innerHTML=s.snapshots.map(n=>'<figure><img src="/snap/'+n+'-sam.jpg"><figcaption>'+n+'</figcaption></figure>').join('')}catch(e){}}
-setInterval(tick,300);
-// A label on each detection: "muse 87%", placed at its box's top-left corner (the image keeps the frame's 4:3 shape).
-function drawLabels(look){const el=document.getElementById('labels');el.innerHTML='';if(!look||!look.objects)return;
+// Cut a box out of the frame SAM looked at, into a square canvas.
+function crop(canvas,url,box,size){const img=new Image();img.onload=()=>{const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);if(!box)return;
+const [w,h]=size||[img.width,img.height],sx=img.width/w,sy=img.height/h;let [x0,y0,x1,y1]=box;const pad=0.08*Math.max(x1-x0,y1-y0);
+x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(w,x1+pad);y1=Math.min(h,y1+pad);const bw=(x1-x0)*sx,bh=(y1-y0)*sy,s=Math.min(canvas.width/bw,canvas.height/bh);
+c.drawImage(img,x0*sx,y0*sy,bw,bh,(canvas.width-bw*s)/2,(canvas.height-bh*s)/2,bw*s,bh*s)};img.src=url}
+function drawLabels(look,id){const el=document.getElementById(id||'labels');el.innerHTML='';if(!look||!look.objects)return;
 const [w,h]=look.size||[640,480];const objs=look.objects.slice().sort((a,b)=>b.score-a.score);
 objs.forEach((o,i)=>{if(!o.box)return;const t=document.createElement('div');t.className='tag'+(i===0?' top':'')+(o.score>=GOAL?' goal':'');
-t.textContent='muse '+Math.round(o.score*100)+'%';t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(4,o.box[1]/h*100)+'%';el.appendChild(t)})}
-function jpost(p,b){return fetch(p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)})}
-// Drive: a held button or key sends a 600 ms drive every 400 ms, so it keeps going while held and stops by itself if the page goes away.
+t.textContent='muse '+Math.round(o.score*100)+'%';t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(6,o.box[1]/h*100)+'%';el.appendChild(t)})}
+function topObject(look){return look&&look.objects&&look.objects.length?look.objects.slice().sort((a,b)=>b.score-a.score)[0]:null}
+let lastLooks=-1,wasFound=false;
+async function tick(){try{const s=await (await fetch('/state.json')).json();const root=document.getElementById('root');
+const sc=s.found?s.found.score:(s.last?s.last.score:0);document.getElementById('score').textContent=sc.toFixed(3);
+document.getElementById('fill').style.width=Math.min(100,sc*100)+'%';
+const searching=s.mode==='searching';document.getElementById('note').innerHTML=(searching?'<span class="working"><i></i><i></i><i></i></span> ':'')+
+s.note.replace(/[<>&]/g,'')+(s.last?' · '+s.last.ms+' ms per look on the Jetson':'')+' · looks: '+s.looks;
+root.classList.toggle('is-found',s.mode==='found');
+if(s.looks!==lastLooks&&s.looks>0){lastLooks=s.looks;const img=document.getElementById('sam'),look=s.last;img.onload=()=>{img.hidden=false;document.getElementById('samempty').hidden=true;drawLabels(look)};
+img.src='/overlay.jpg?'+s.looks;const bimg=document.getElementById('base'),blook=s.last_base;if(blook){bimg.onload=()=>{bimg.hidden=false;document.getElementById('baseempty').hidden=true;drawLabels(blook,'labelsbase')};bimg.src='/overlay_base.jpg?'+s.looks;const bt=topObject(blook);document.getElementById('basetext').textContent=bt?('muse '+Math.round(bt.score*100)+'% (stop uses the tuned one)'):'Nothing called "muse"'}const top=topObject(look);crop(document.getElementById('bestcrop'),'/frame.jpg?'+s.looks,top&&top.box,look&&look.size);
+document.getElementById('besttext').textContent=top?('muse '+Math.round(top.score*100)+'% at pan '+(s.pan>0?'+':'')+s.pan+'°'):'Nothing called "muse" in this look'}
+if(s.mode==='found'&&s.found){if(!wasFound){wasFound=true;ping();crop(document.getElementById('foundcrop'),'/frame.jpg?found'+s.looks,s.found.box,s.found.size)}
+document.getElementById('foundtitle').textContent='Found the real Muse · '+Math.round(s.found.score*1000)/10+'%';
+document.getElementById('foundtext').textContent='The rover stopped at pan '+(s.found.pan>0?'+':'')+s.found.pan+'° and saved the snapshot '+s.found.snapshot+'.'}
+else wasFound=false;
+if(s.snapshots.length)document.getElementById('snaps').innerHTML=s.snapshots.map(n=>'<figure><img src="/snap/'+n+'-sam.jpg" alt=""><figcaption>'+n+'</figcaption></figure>').join('')}catch(e){}}
+setInterval(tick,300);
+// Drive: a held button or key sends a 600 ms drive every 400 ms, so the rover stops by itself if the page goes away.
 const speedEl=document.getElementById('speed');speedEl.addEventListener('input',()=>document.getElementById('speedv').textContent=speedEl.value);
 const panEl=document.getElementById('pan');let panTimer=null;
 panEl.addEventListener('input',()=>{document.getElementById('panv').textContent=panEl.value+'°';clearTimeout(panTimer);panTimer=setTimeout(()=>jpost('/look',{pan:+panEl.value}),120)});
@@ -309,20 +372,21 @@ function stopDrive(quiet){clearInterval(driveTimer);driveTimer=null;document.que
 document.querySelectorAll('.pad button[data-d]').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startDrive(b.dataset.d,b)});
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>{if(held===b.dataset.d)stopDrive()}))});
 const keys={ArrowUp:'fwd',ArrowDown:'back',ArrowLeft:'left',ArrowRight:'right'};
-addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'&&e.target.type!=='range')return;const d=keys[e.key];if(d){e.preventDefault();startDrive(d,document.querySelector('.pad button[data-d='+d+']'))}else if(e.key===' '){e.preventDefault();stopDrive()}});
+addEventListener('keydown',e=>{const d=keys[e.key];if(d){e.preventDefault();startDrive(d,document.querySelector('.pad button[data-d='+d+']'))}else if(e.key===' '&&e.target.tagName!=='BUTTON'){e.preventDefault();stopDrive()}});
 addEventListener('keyup',e=>{const d=keys[e.key];if(d&&held===d)stopDrive()});
 addEventListener('blur',()=>{if(held)stopDrive()});
-// Camera controls, built from what the webcam reports.
+// Camera settings, built from what the webcam reports.
 const LABELS={auto_exposure:'Auto exposure',exposure_time_absolute:'Exposure time',gain:'Gain',brightness:'Brightness',contrast:'Contrast',gamma:'Gamma',saturation:'Saturation',sharpness:'Sharpness',backlight_compensation:'Backlight compensation'};
 const DEFAULTS={auto_exposure:3,exposure_time_absolute:39,gain:32,brightness:0,contrast:33,gamma:100,saturation:58,sharpness:2,backlight_compensation:0};
 let camTimer=null,camPending={};
 function camSend(ch){Object.assign(camPending,ch);clearTimeout(camTimer);camTimer=setTimeout(async()=>{const b=camPending;camPending={};const r=await (await jpost('/camera',b)).json();renderCam(r.values,r.ranges)},150)}
-function renderCam(values,ranges){const g=document.getElementById('camgrid');g.innerHTML='';for(const n of Object.keys(LABELS)){if(!(n in values))continue;const [lo,hi]=ranges[n];const row=document.createElement('div');row.className='row';
-if(n==='auto_exposure'||n==='backlight_compensation'){const on=n==='auto_exposure'?values[n]===3:values[n]===1;row.innerHTML='<label><input type="checkbox" id="c_'+n+'"'+(on?' checked':'')+'> '+LABELS[n]+'</label>';g.appendChild(row);
-row.querySelector('input').addEventListener('change',e=>camSend({[n]:n==='auto_exposure'?(e.target.checked?3:1):(e.target.checked?1:0)}));continue}
-const off=n==='exposure_time_absolute'&&values.auto_exposure===3;row.innerHTML='<label for="c_'+n+'" style="min-width:8.5em">'+LABELS[n]+'</label><input type="range" id="c_'+n+'" min="'+lo+'" max="'+hi+'" value="'+values[n]+'"'+(off?' disabled':'')+'><output>'+values[n]+'</output>';
+function renderCam(values,ranges){const g=document.getElementById('camgrid');g.innerHTML='';for(const n of Object.keys(LABELS)){if(!(n in values))continue;const [lo,hi]=ranges[n];
+if(n==='auto_exposure'||n==='backlight_compensation'){const on=n==='auto_exposure'?values[n]===3:values[n]===1;const row=document.createElement('label');row.className='check';
+row.innerHTML='<input type="checkbox"'+(on?' checked':'')+'> '+LABELS[n];g.appendChild(row);row.querySelector('input').addEventListener('change',e=>camSend({[n]:n==='auto_exposure'?(e.target.checked?3:1):(e.target.checked?1:0)}));continue}
+const off=n==='exposure_time_absolute'&&values.auto_exposure===3;const row=document.createElement('div');row.className='row';
+row.innerHTML='<label for="c_'+n+'">'+LABELS[n]+'</label><input type="range" id="c_'+n+'" min="'+lo+'" max="'+hi+'" value="'+values[n]+'"'+(off?' disabled':'')+'><output>'+values[n]+'</output>';
 g.appendChild(row);const inp=row.querySelector('input'),o=row.querySelector('output');inp.addEventListener('input',()=>{o.textContent=inp.value;camSend({[n]:+inp.value})})}
-document.getElementById('camnote').textContent=values.auto_exposure===3?'Turn auto exposure off to set the exposure time.':'Saved on the rover; set again at each start.'}
+document.getElementById('camnote').textContent=values.auto_exposure===3?'Turn auto exposure off to set the exposure time.':'Saved on the rover and set again at each start.'}
 function camReset(){camSend(DEFAULTS)}
 fetch('/camera').then(r=>r.json()).then(r=>renderCam(r.values,r.ranges));
 </script></body></html>"""
@@ -356,6 +420,9 @@ class Page(BaseHTTPRequestHandler):
             return self._send(200, latest_frame() or b"", "image/jpeg")
         if p == "/camera":
             return self._send(200, json.dumps({"values": cam_get(), "ranges": CAM_CTRLS}).encode(), "application/json")
+        if p in ("/overlay_base.jpg", "/frame.jpg"):
+            with lock:
+                return self._send(200, overlay["base" if p == "/overlay_base.jpg" else "frame"], "image/jpeg")
         if p == "/overlay.jpg":
             with lock:
                 return self._send(200, overlay["jpeg"], "image/jpeg")
