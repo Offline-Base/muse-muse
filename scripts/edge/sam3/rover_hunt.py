@@ -851,8 +851,9 @@ function stopDrive(quiet){clearInterval(driveTimer);driveTimer=null;document.que
 document.querySelectorAll('.pad button[data-d]').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startDrive(b.dataset.d,b)});
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>{if(held===b.dataset.d)stopDrive()}))});
 const keys={ArrowUp:'fwd',ArrowDown:'back',ArrowLeft:'left',ArrowRight:'right'};
-addEventListener('keydown',e=>{const d=keys[e.key];if(d){e.preventDefault();startDrive(d,document.querySelector('.pad button[data-d='+d+']'))}else if(e.key===' '&&e.target.tagName!=='BUTTON'){e.preventDefault();stopDrive()}});
-addEventListener('keyup',e=>{const d=keys[e.key];if(d&&held===d)stopDrive()});
+function typing(e){const t=e.target;return t&&(t.tagName==='TEXTAREA'||t.isContentEditable||(t.tagName==='INPUT'&&t.type!=='checkbox'))}
+addEventListener('keydown',e=>{if(typing(e))return;const d=keys[e.key];if(d){e.preventDefault();startDrive(d,document.querySelector('.pad button[data-d='+d+']'))}else if(e.key===' '&&e.target.tagName!=='BUTTON'){e.preventDefault();stopDrive()}});
+addEventListener('keyup',e=>{if(typing(e))return;const d=keys[e.key];if(d&&held===d)stopDrive()});
 addEventListener('blur',()=>{if(held)stopDrive()});
 // Camera settings, built from what the webcam reports.
 const LABELS={auto_exposure:'Auto exposure',exposure_time_absolute:'Exposure time',gain:'Gain',brightness:'Brightness',contrast:'Contrast',gamma:'Gamma',saturation:'Saturation',sharpness:'Sharpness',backlight_compensation:'Backlight compensation'};
