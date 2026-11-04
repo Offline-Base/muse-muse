@@ -4646,3 +4646,9 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Not turned on, waiting on keys only Hussam can make: `FLEET_PRODUCTS` (+ `FLEET_PRODUCTS_URL`, a `jik_` key with cloud_daily_limit 0, `FLEET_PRODUCTS_MODEL`), `FLEET_SAM` and `BOARD_LOOP` on the fleet (a dedicated `jpt_` admin token, which runs root on every board), `HARDWARE_BOARD_TOOLS` and `GADGET_CONNECT` (`DEVICE_MCP_URL`, `DEVICE_MCP_TOKEN`, a linked board). `FLEET_ALL_PRODUCTS` and `BOARD_TRY_PUBLIC` follow those. Left off on purpose: `DEVICE_LLAMA_TRAINING` (trains only Llama, breaks the Meta-only rule).
 - Fleet at the time: 7 of 9 boards online, one-bit Glimmer loaded on one, 6 open alerts.
 
+## Nov 3, 2026, night ET: Muse Privacy on jetson-05 (Liquid) behind the Offline Base Modal relay
+
+- The relay moved to the owner's new Offline Base Modal workspace: https://offline-base--muse-privacy-relay.modal.run (`privacy/relay_modal/deploy.sh` with `MODAL_PROFILE=offlinebase`; it pins `MODAL_IMAGE_BUILDER_VERSION=2025.06` for this Modal client). The personal-workspace relay is stopped.
+- Boards, per the owner: jetson-02 Glimmer 1-bit, jetson-04 SAM, jetson-03 fine-tuning, jetson-05 Liquid. jetson-05 now runs Muse Privacy device only on LFM3-VL-2B (GPU, about 31 tokens a second, 5.3 of 7.5 GB with the control plane's d1 model still running), installed through the fleet with `privacy/deploy/jetson/install.sh --liquid --llama-release b11970` (new options: the official llama.cpp CUDA release instead of a build, and Liquid instead of Glimmer). Codex and Muse Code linked to it and a call reached the board. The laptop no longer runs Muse Privacy.
+- Owner to-do: link Claude, ChatGPT and the Muse app on the new address with codes made on jetson-05; approval page https://192.168.12.207:8787 on the office network. Not yet checked: a reboot of jetson-05.
+

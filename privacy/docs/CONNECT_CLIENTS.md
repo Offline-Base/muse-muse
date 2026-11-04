@@ -2,21 +2,31 @@
 
 Every client connects to the same address and links to your device the same way:
 
-- **Connector URL:** `https://theethancastro--muse-privacy-relay.modal.run/mcp`
+- **Connector URL:** `https://offline-base--muse-privacy-relay.modal.run/mcp`
 - **Sign-in:** OAuth. The client opens a "Link your device" page; type a pairing code from the device.
-- **Pairing code:** on the device, `uv run python -m base.connector.relay_client pair` (8 characters, one use, 10 minutes). Make a new code for each client.
-- **Before you add or restart a client, the device must be online.** If the device is off when a client starts, the client marks the connector as failed for that session; restart the client once the device is back. On this laptop the LaunchAgent keeps it up (`docs/UPTIME.md`).
-- Results that need your OK wait on the approval page, http://127.0.0.1:8787, on the device.
+- **Pairing code:** made on the device (see below for jetson-05; on a laptop, `uv run python -m base.connector.relay_client pair`). 8 characters, one use, 10 minutes. Make a new code for each client.
+- **Before you add or restart a client, the device must be online.** If the device is off when a client starts, the client marks the connector as failed for that session; restart the client once the device is back. On jetson-05 three systemd services keep it up and start at boot.
+- Results that need your OK wait on the device's approval page (jetson-05: https://192.168.12.207:8787).
 
-Status on Nov 3, 2026, evening, after the relay moved to Modal (every older link points at a retired address):
+Status on Nov 3, 2026, night. The device is now **jetson-05** (Liquid's LFM3-VL-2B on its GPU, installed with `deploy/jetson/install.sh --liquid --llama-release b11970`); the laptop no longer runs Muse Privacy. The relay is on the offline-base Modal workspace.
+
+Pairing codes now come from the board. Through the fleet (no SSH):
+
+```sh
+cd /opt/muse-privacy/app && sudo -u muse-privacy env BASE_HOME=/var/lib/muse-privacy/home BASE_DEVICE=jetson \
+  GLIMMER_BACKEND=llama_server DEVICE_ONLY=1 PRIMARY_MODEL=lfm RELAY_URL=https://offline-base--muse-privacy-relay.modal.run \
+  /opt/muse-privacy/app/.venv/bin/python -m base.connector.relay_client pair
+```
+
+The approval page is https://192.168.12.207:8787 on the office network (a self-signed certificate; the browser warns once). It asks for a 6-digit code the board prints; get a fresh one with `curl -s -X POST http://127.0.0.1:8787/api/pair-code` on the board.
 
 | Client | State | Checked how |
 |---|---|---|
-| Codex (CLI, IDE extension, desktop app) | Linked on the Modal relay | `codex mcp login` with a pairing code, then real `list_documents` and `get_result` calls; the link survived two relay restarts |
-| Muse Code | Linked on the Modal relay | `muse mcp login` with a pairing code, then a real `list_documents` call |
-| Claude (claude.ai, Desktop, mobile, Claude Code) | Needs linking again | Remove the old Muse Privacy connector in claude.ai, add the new URL, type a pairing code |
-| ChatGPT | Needs linking again | Remove the old app, add the new URL, type a pairing code |
-| Muse app | Needs linking again | Ask Muse to remove the old custom connector and create one with the new URL |
+| Codex (CLI, IDE extension, desktop app) | Linked to jetson-05 | `codex mcp login` with a code from the board; a real `list_documents` and `get_result` reached the board (held for an OK) |
+| Muse Code | Linked to jetson-05 | `muse mcp login` with a code from the board |
+| Claude (claude.ai, Desktop, mobile, Claude Code) | Needs linking | Remove the old Muse Privacy connector in claude.ai, add the new URL, type a code from the board |
+| ChatGPT | Needs linking | Remove the old app, add the new URL, type a code from the board |
+| Muse app | Needs linking | Ask Muse to remove the old custom connector and create one with the new URL |
 
 ## Claude (claude.ai, Desktop, mobile, Claude Code)
 
@@ -27,7 +37,7 @@ To add it on another account: claude.ai, Customize > Connectors > Add custom con
 Claude Code on a machine signed in with a different account:
 
 ```sh
-claude mcp add --transport http --scope user muse-privacy https://theethancastro--muse-privacy-relay.modal.run/mcp
+claude mcp add --transport http --scope user muse-privacy https://offline-base--muse-privacy-relay.modal.run/mcp
 claude mcp login muse-privacy      # or /mcp inside a session
 ```
 
@@ -36,7 +46,7 @@ claude mcp login muse-privacy      # or /mcp inside a session
 Set up on this Mac (`~/.codex/config.toml`, `[mcp_servers.muse-privacy]`). On another machine:
 
 ```sh
-codex mcp add muse-privacy --url https://theethancastro--muse-privacy-relay.modal.run/mcp
+codex mcp add muse-privacy --url https://offline-base--muse-privacy-relay.modal.run/mcp
 codex mcp login muse-privacy
 ```
 
@@ -50,7 +60,7 @@ Set up on this Mac: `~/.config/muse/settings.json` has
 "mcp_servers": {
   "muse-privacy": {
     "transport": "streamable_http",
-    "url": "https://theethancastro--muse-privacy-relay.modal.run/mcp",
+    "url": "https://offline-base--muse-privacy-relay.modal.run/mcp",
     "enabled": true,
     "mode": "optional"
   }
@@ -74,7 +84,7 @@ ChatGPT asks before write tools (run_private_task, save_on_device, run_dreaming)
 
 Paired Oct 28 as a custom connector, on an address now retired. Meta does not review custom connectors, so this works today without the platform listing. To add it again, in a Muse chat:
 
-> Create a custom connector for a remote MCP server, then connect to it. Name: Muse Privacy. Transport: remote streamable HTTP. URL: https://theethancastro--muse-privacy-relay.modal.run/mcp. Auth: OAuth (the server supports dynamic client registration). Do not ask me for an API key or header.
+> Create a custom connector for a remote MCP server, then connect to it. Name: Muse Privacy. Transport: remote streamable HTTP. URL: https://offline-base--muse-privacy-relay.modal.run/mcp. Auth: OAuth (the server supports dynamic client registration). Do not ask me for an API key or header.
 
 Tap Connect, then type a pairing code. The listing on Meta's Connector Platform (docs/CONNECTOR_SUBMISSION.md) is what lets other Muse users find it.
 

@@ -11,7 +11,7 @@ Muse Privacy, the privacy part of Muse Muse (`privacy/`), is the connector Offli
 
 Live as of Nov 3:
 
-- Connector URL: `https://theethancastro--muse-privacy-relay.modal.run/mcp`, on Modal (a hackathon sponsor) since Nov 3 evening: `privacy/relay_modal/`, a Python port of `privacy/relay/` with its own OAuth 2.1 server, one always-on container and SQLite on a Modal Volume. Deploy with `privacy/relay_modal/deploy.sh` only (it stops the old container, or requests hang after a deploy); first-time secret setup is in `privacy/relay_modal/modal_app.py`. The Cloudflare relays (`privacy/relay/`, on the personal and Offline Base accounts) are retired.
+- Connector URL: `https://offline-base--muse-privacy-relay.modal.run/mcp`, on Modal (a hackathon sponsor) since Nov 3 evening: `privacy/relay_modal/`, a Python port of `privacy/relay/` with its own OAuth 2.1 server, one always-on container and SQLite on a Modal Volume. Deploy with `privacy/relay_modal/deploy.sh` only (it stops the old container, or requests hang after a deploy); first-time secret setup is in `privacy/relay_modal/modal_app.py`. The Cloudflare relays (`privacy/relay/`, on the personal and Offline Base accounts) are retired.
 - Support: team@offlinebase.com.
 - Standalone repo: https://github.com/Offline-Base/muse-privacy, public since Nov 3.
 

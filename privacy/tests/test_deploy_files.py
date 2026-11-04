@@ -55,8 +55,9 @@ def parse_unit(path: Path) -> dict[str, dict[str, list[str]]]:
     return sections
 
 
-def test_three_units_exist():
+def test_the_units_exist():
     assert [u.name for u in UNITS] == [
+        "muse-privacy-checker.service",
         "muse-privacy-glimmer.service",
         "muse-privacy-relay.service",
         "muse-privacy.service",
@@ -74,7 +75,7 @@ def test_unit_parses_and_is_hardened(unit):
     assert set(families) <= {"AF_UNIX", "AF_INET", "AF_INET6"}
     assert service["ExecStart"][0].startswith("/opt/muse-privacy/")
     assert sections["Install"]["WantedBy"] == ["multi-user.target"]
-    if unit.name != "muse-privacy-glimmer.service":
+    if unit.name not in ("muse-privacy-glimmer.service", "muse-privacy-checker.service"):
         assert "MemoryMax" in service
 
 
@@ -195,12 +196,40 @@ def test_glimmer_env_takes_the_sites_last_model_line_and_refuses_a_missing_one(t
     assert r.returncode == 1 and "absolute path" in r.stderr
 
 
+def test_checker_unit_matches_the_laptops_liquid_server():
+    sections = parse_unit(DEPLOY / "muse-privacy-checker.service")
+    cmd = sections["Service"]["ExecStart"][0]
+    for flag in ("--host 127.0.0.1", "--port 8083", "-c 16384", "-np 1", "-ngl 99", "--jinja", "--reasoning-budget 0",
+                 "--mmproj /opt/muse-privacy/models/mmproj-LFM3-VL-2B-Q8_0.gguf", "--alias lfm3-vl-2b",
+                 "--api-key-file /var/lib/muse-privacy/home/llama_api_key"):
+        assert f" {flag}" in cmd
+    start = (REPO / "scripts" / "start_checker.sh").read_text()
+    for flag in ("--temp 0.1", "--top-k 50", "--repeat-penalty 1.1", "--cache-ram 0", "--ctx-checkpoints 0"):
+        assert flag in start and f" {flag}" in cmd
+    assert sections["Service"]["IPAddressDeny"] == ["any"] and sections["Service"]["IPAddressAllow"] == ["localhost"]
+    assert any(p.endswith("LFM3-VL-2B-Q4_K_M.gguf") for p in sections["Unit"]["AssertPathExists"])
+
+
+def test_install_liquid_mode():
+    code = code_lines(DEPLOY / "install.sh")
+    assert "set_env DEVICE_ONLY 1" in code and "set_env PRIMARY_MODEL lfm" in code
+    assert "systemctl mask muse-privacy-glimmer.service" in code
+    assert code.index('rm -f "$UNIT_DIR/muse-privacy-glimmer.service"') < code.index("systemctl mask muse-privacy-glimmer.service")
+    for name in ("LFM3-VL-2B-Q4_K_M.gguf", "mmproj-LFM3-VL-2B-Q8_0.gguf"):
+        assert name in code
+    out = subprocess.run(["bash", str(DEPLOY / "install.sh"), "--liquid", "--skip-model"], capture_output=True, text=True)
+    assert out.returncode != 0 and "--liquid downloads its own model" in out.stderr
+    out = subprocess.run(["bash", str(DEPLOY / "install.sh"), "--llama-release", "11970"], capture_output=True, text=True)
+    assert out.returncode != 0 and "a tag like b11970" in out.stderr
+    assert 'sha256sum "$TMP"' in code and "cuda-13.4-arm64.tar.gz" in code
+
+
 def test_install_copies_a_usb_model_with_its_sha_and_builds_the_laptops_llama_cpp():
     text = (DEPLOY / "install.sh").read_text()
     assert 'LLAMA_REF="${LLAMA_REF:-b11972}"' in text
     code = code_lines(DEPLOY / "install.sh")
     # the copy branch comes first, so --model-file never reaches the download
-    assert code.index('if [ -n "$MODEL_FILE" ]; then') < code.index("curl -fL --retry 10")
+    assert code.index('elif [ -n "$MODEL_FILE" ]; then') < code.index('-o "$DEST.part" "$MODEL_URL"')
     assert "GLIMMER_GGUF=" in code and "sha256sum \"$DEST.part\"" in code
     assert "git -C \"$APP_SRC\" status --porcelain" in code and "scripts.make_bundle" in code
     out = subprocess.run(["bash", str(DEPLOY / "install.sh"), "--help"], capture_output=True, text=True, check=True)
@@ -253,30 +282,6 @@ def test_start_needs_gguf(tmp_path):
 
 
 @pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
-def test_start_refuses_lfm_with_the_ruling(tmp_path):
-    """Nov 2 ruling: start.sh loads settings through load_settings, so an LFM checker never starts."""
-    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", CHECKER_BACKEND="lfm")
-    assert r.returncode != 0 and "not a Meta model" in r.stderr
-
-
-def test_the_checker_and_embedder_scripts_refuse_to_start():
-    """Nov 2 ruling: LFM3-VL-2B and EmbeddingGemma 2 are not Meta models; each script stops at once."""
-    for name in ("start_checker.sh", "start_embedder.sh"):
-        r = subprocess.run(["bash", str(REPO / "scripts" / name)], capture_output=True, text=True, timeout=10)
-        assert r.returncode == 1 and "not a Meta model" in r.stderr and "Nov 2, 2026" in r.stderr, name
-
-
-def test_the_side_models_script_starts_glimmer_only():
-    """Nov 2 ruling: the measuring script used to start LFM3-VL-2B beside Glimmer. It starts one
-    llama-server now, and the environment it prints uses Glimmer as the checker."""
-    text = (REPO / "scripts" / "start_side_models.sh").read_text()
-    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
-    assert code.count("--model ") == 1 and '--model "$GGUF"' in code
-    assert "LFM" not in code and "CHECKER_GGUF" not in code
-    assert "CHECKER_BACKEND=glimmer" in code and "CHECKER_BACKEND=lfm" not in code
-
-
-@pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
 def test_start_refuses_lan_bind_on_laptop(tmp_path):
     r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", APPROVAL_HOST="192.0.2.11")
     assert r.returncode != 0 and "127.0.0.1" in r.stderr
@@ -317,7 +322,7 @@ def glimmer_start(tmp_path, **knobs):
     fake.chmod(0o755)
     (tmp_path / "model.gguf").write_bytes(b"GGUF")
     env = {"BASE_DEVICE": "laptop", "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
-           "CHECKER_BACKEND": "glimmer", "LLAMA_SERVER_BIN": str(fake), "GLIMMER_GGUF": str(tmp_path / "model.gguf"),
+           "CHECKER_BACKEND": "lfm", "LLAMA_SERVER_BIN": str(fake), "GLIMMER_GGUF": str(tmp_path / "model.gguf"),
            "ANSWER_URL": "http://127.0.0.1:8081/v1", "ROUTER_URL": "http://127.0.0.1:8081/v1", "ANSWER_CTX": "4096",
            "WORKSPACE_ROOT": str(tmp_path), "SEARCH_EMBEDDINGS": "0", "RELAY_URL": "", "GLIMMER_DRAFT_GGUF": "",
            "GLIMMER_DRAFT_N": "", "GLIMMER_FA": "", "GLIMMER_REASONING_BUDGET": "", **knobs}  # fmt: skip
