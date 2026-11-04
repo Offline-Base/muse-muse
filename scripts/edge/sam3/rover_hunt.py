@@ -162,7 +162,8 @@ h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 22px}
 .pane{background:var(--panel);border:1px solid #30363d;border-radius:10px;overflow:hidden}
 .pane h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px}
-.pane img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#000}
+.pane img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;filter:contrast(var(--contrast,100%))}
+.ctl{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}.ctl input{width:140px}.ctl output{min-width:3.5em;color:var(--ink);font-variant-numeric:tabular-nums}
 .bar{display:flex;gap:14px;align-items:center;padding:4px 22px 0}
 .score{font:700 42px/1 ui-monospace,Menlo,monospace}.goal{color:var(--muted)}
 .meter{flex:1;height:14px;background:#21262d;border-radius:7px;position:relative;overflow:hidden}
@@ -176,7 +177,7 @@ button.go{background:#1f6feb;border-color:#1f6feb}
 .snaps img{width:180px;border-radius:6px;display:block}.snaps figcaption{font-size:12px;color:var(--muted)}
 </style></head><body>
 <header><div><h1>Find the real Muse</h1><div class="sub">Rover camera &rarr; Meta SAM 3.1, tuned for "muse", on a Jetson Orin Nano</div></div>
-<div style="flex:1"></div><button class="go" onclick="post('/start')">Start</button><button onclick="post('/stop')">Stop</button></header>
+<div style="flex:1"></div><label class="ctl" for="contrast">Contrast <input type="range" id="contrast" min="50" max="200" step="5" value="100"><output id="cval">100%</output></label><button onclick="setContrast(100)">Reset</button><button class="go" onclick="post('/start')">Start</button><button onclick="post('/stop')">Stop</button></header>
 <div id="root"><div class="banner" id="banner"></div>
 <div class="bar"><div class="score" id="score">0.000</div><div class="meter"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div>
 <div class="goal" id="goal"></div></div>
@@ -187,6 +188,11 @@ button.go{background:#1f6feb;border-color:#1f6feb}
 <script>
 const GOAL=__GOAL__;document.getElementById('mark').style.left=(GOAL*100)+'%';document.getElementById('goal').textContent='stop at '+GOAL.toFixed(2);
 function post(p){fetch(p,{method:'POST'})}
+// Contrast is display only: a CSS filter on the two panes. The frames sent to SAM and the 0.95 stop never see it.
+function setContrast(v){v=Math.max(50,Math.min(200,Number(v)||100));document.documentElement.style.setProperty('--contrast',v+'%');
+document.getElementById('contrast').value=v;document.getElementById('cval').textContent=v+'%';try{localStorage.setItem('musehunt.contrast',String(v))}catch(e){}}
+document.getElementById('contrast').addEventListener('input',e=>setContrast(e.target.value));
+let savedContrast=100;try{savedContrast=localStorage.getItem('musehunt.contrast')||100}catch(e){}setContrast(savedContrast);
 let camBusy=false;function cam(){if(camBusy)return;camBusy=true;const i=new Image();i.onload=()=>{document.getElementById('cam').src=i.src;camBusy=false};i.onerror=()=>camBusy=false;i.src='/cam.jpg?'+Date.now()}
 setInterval(cam,150);
 let lastLooks=-1;
