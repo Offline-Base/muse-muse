@@ -2,12 +2,15 @@
 """Muse hunt: Muse Code drives the rover to find the Muse mascots, while SAM 3.1 on jetson-04 looks through its camera.
 
 Every camera frame goes to two SAM 3.1 models on jetson-04, back to back, all the time: the one tuned on "muse" and
-Meta's own weights. The page shows four panels: Muse Code's steps, the live camera, the tuned SAM's masks and Meta's.
-A tuned score of 0.95 or more is a match: the wheels stop, a snapshot is saved and the page pings.
+Meta's own weights. The page shows four panels: Muse Code (a Meta AI style chat with its steps), the live camera, the
+tuned SAM's masks and Meta's. A tuned score of 0.95 or more is a match: the wheels stop, a snapshot is saved and the
+page pings.
 
 Muse Code (or any MCP client on the office network) runs the search through the MCP server at /mcp: rover_status,
-rover_look, rover_drive, rover_stop, rover_photo, rover_found and rover_say. The webcam is fixed to the rover's front
-(the pan servo doesn't carry it), so looking around means turning the rover.
+rover_look, rover_drive, rover_stop, rover_photo, rover_camera, rover_found, rover_hints, rover_done and rover_say.
+The webcam is fixed to the rover's front (the pan servo doesn't carry it), so looking around means turning the rover.
+musecode_bridge.py (laptop) runs Muse Code and streams its chat in; muse_listen.py (laptop) sends spoken hints through
+Muse transcribe.
 
 Runs on the rover as user arduino. Page: http://<rover>:8799 (office network only).
 """
@@ -45,6 +48,8 @@ CAM_CTRLS = {
     "contrast": (0, 63), "gamma": (1, 500), "saturation": (0, 128), "sharpness": (0, 31), "backlight_compensation": (0, 1),
 }
 MAX_MANUAL_SPEED = 200
+CAM_DEFAULTS = {"exposure_time_absolute": 39, "gain": 32, "brightness": 0, "contrast": 33, "gamma": 100, "saturation": 58,
+                "sharpness": 2, "backlight_compensation": 0}
 TARGET = int(os.environ.get("TARGET", "2"))  # how many muses Muse Code is asked to find
 FOV = 60.0  # the webcam's rough horizontal view, degrees (for left/right hints only)
 RECENT = 5  # the best-match card looks back this many looks
@@ -52,7 +57,9 @@ os.makedirs(SNAPS, exist_ok=True)
 
 state = {"mode": "watching", "seeing": False, "prompt": PROMPT, "pan": 0, "tilt": 0, "best": 0.0, "last": None, "found": None,
          "looks": 0, "snapshots": [], "note": "Starting", "frame_t": 0.0, "bestmatch": None, "finds": [], "target": TARGET,
-         "agent": [], "agent_seq": 0, "agent_at": 0.0, "moves": 0}
+         "agent": [], "agent_seq": 0, "agent_at": 0.0, "moves": 0,
+         "chat": {"prompt": "", "reply": "", "status": "idle", "ts": 0.0}, "ask": None,
+         "hints": [], "hint_seq": 0, "hint_sent": 0, "done": None}
 overlay = {"jpeg": b"", "base": b"", "frame": b"", "bestframe": b""}
 recent = collections.deque(maxlen=RECENT)
 lock = threading.Lock()
@@ -268,13 +275,19 @@ def hunt():
 MCP_INSTRUCTIONS = (
     "You drive a small rover with a webcam fixed to its front (it does not pan; to look around, turn the whole rover). "
     "Every camera frame goes to two SAM 3.1 models on a Jetson: one tuned to find the Muse mascot, and Meta's own weights "
-    f"for comparison. A tuned score of 0.95 or more is a match. The goal: find the {TARGET} Muse mascots in the room. "
-    "People are watching a page that shows your steps, so call rover_say with one short plain sentence before each move. "
-    "Start with rover_status. To scan, turn in place in short steps (for example left -150, right 150 for 400 ms; opposite "
-    "signs turn), and call rover_look after each turn. The tuned model sometimes scores other plush toys or pictures high, "
-    "so when a look shows a match, check it with rover_photo before calling rover_found. A muse already found can come "
-    "into view again after a turn: compare with your earlier photos and don't record it twice. Drive at most 1500 ms at a "
-    "time; the rover stops by itself 150 mm before an obstacle. Finish with rover_stop and a rover_say summary."
+    "for comparison. A tuned score of 0.95 or more is a match. The goal: find the Muse mascots in the room. There are "
+    f"always at least {TARGET}, maybe more; record every different one you find. People are watching a page that shows "
+    "your steps, so call rover_say with one short plain sentence before each move. Start with rover_status. To scan, turn "
+    "in place in short steps (for example left -150, right 150 for 400 ms; opposite signs turn), and call rover_look after "
+    "each turn. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
+    "with rover_photo before calling rover_found. A muse already found can come into view again after a turn: compare "
+    "with your earlier photos and don't record it twice. If the picture looks too dark, washed out or low in contrast, or "
+    "scores hover just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
+    "again, and put it back if it got worse. The person watching may speak hints (where to go, what to try); new hints "
+    "arrive at the end of any tool result, transcribed from a microphone, so ignore lines that are clearly room chatter "
+    "and follow the ones about the search. Drive at most 1500 ms at a time; the rover stops by itself 150 mm before an "
+    f"obstacle. Once you have found at least {TARGET} and checked the rest of the room for more, call rover_stop, then "
+    "rover_done with a one-line summary."
 )
 
 
@@ -297,6 +310,15 @@ MCP_TOOLS = [
     {"name": "rover_found", "description": "Record a Muse mascot you have checked. Needs a tuned match at 0.95 or more in the latest look. "
      "which: best, left, center or right (which match in the frame). note: a few words on where it is.",
      "inputSchema": _schema({"which": {"type": "string", "enum": ["best", "left", "center", "right"]}, "note": {"type": "string", "maxLength": 120}})},
+    {"name": "rover_camera", "description": "Read or tune the webcam. With no arguments it returns the current values and ranges. "
+     "set: controls to change, from auto_exposure (3 auto, 1 manual), exposure_time_absolute (manual only), gain, brightness, "
+     "contrast, gamma, saturation, sharpness, backlight_compensation. reset: true puts the webcam defaults back. The next "
+     "rover_look sees the change.",
+     "inputSchema": _schema({"set": {"type": "object", "additionalProperties": {"type": "integer"}}, "reset": {"type": "boolean"}})},
+    {"name": "rover_hints", "description": "Every hint the person watching has spoken so far (transcribed). New ones also come with every tool result.",
+     "inputSchema": _schema(), "annotations": {"readOnlyHint": True}},
+    {"name": "rover_done", "description": f"Finish the search after at least {TARGET} finds: the page pings and shows Done. summary: one line.",
+     "inputSchema": _schema({"summary": {"type": "string", "maxLength": 200}})},
     {"name": "rover_say", "description": "Show one short sentence to the people watching: what you are doing and why.",
      "inputSchema": _schema({"message": {"type": "string", "maxLength": 200}}, ["message"])},
 ]
@@ -417,6 +439,37 @@ def call_tool(name, args):
         agent_log("found", f"Found muse {n} of {TARGET} ({o['score'] * 100:.0f}%)" + (f": {note}" if note else ""))
         left_ = TARGET - n
         return [{"type": "text", "text": f"Recorded find {n} of {TARGET}." + (f" {left_} to go." if left_ > 0 else " All found.")}]
+    if name == "rover_camera":
+        if args.get("reset"):
+            cam_set({"auto_exposure": 3})
+            values = cam_set(CAM_DEFAULTS)
+            agent_log("call", "rover_camera: back to webcam defaults")
+        elif isinstance(args.get("set"), dict) and args["set"]:
+            changes = {k: int(v) for k, v in args["set"].items() if k in CAM_CTRLS}
+            if "auto_exposure" in changes:
+                cam_set({"auto_exposure": changes.pop("auto_exposure")})
+            values = cam_set(changes)
+            agent_log("call", "rover_camera: " + ", ".join(f"{k.replace('_absolute', '').replace('_', ' ')} {values.get(k)}" for k in args["set"] if k in values))
+        else:
+            values = cam_get()
+            agent_log("call", "rover_camera: read the settings")
+        return [{"type": "text", "text": json.dumps({"values": values, "ranges": CAM_CTRLS, "defaults": CAM_DEFAULTS})}]
+    if name == "rover_hints":
+        with lock:
+            hs = [h["text"] for h in state["hints"]]
+            state["hint_sent"] = state["hint_seq"]
+        return [{"type": "text", "text": json.dumps({"hints": hs}) if hs else "No hints yet."}]
+    if name == "rover_done":
+        with lock:
+            n = len(state["finds"])
+        if n < TARGET:
+            raise ToolError(f"Only {n} found so far; there are at least {TARGET}. Keep looking.")
+        summary = " ".join(str(args.get("summary") or "").split())[:200]
+        bridge("stop")
+        with lock:
+            state["done"] = {"n": n, "summary": summary, "ts": time.time()}
+        agent_log("found", f"Done: {n} found" + (f". {summary}" if summary else ""))
+        return [{"type": "text", "text": f"Done with {n} found."}]
     if name == "rover_say":
         msg = " ".join(str(args.get("message") or "").split())[:200]
         if msg:
@@ -440,7 +493,13 @@ def mcp_handle(msg):
         result = {"tools": MCP_TOOLS}
     elif method == "tools/call":
         try:
-            result = {"content": call_tool(params.get("name"), params.get("arguments") or {})}
+            content = call_tool(params.get("name"), params.get("arguments") or {})
+            with lock:
+                new = [h["text"] for h in state["hints"] if h["seq"] > state["hint_sent"]]
+                state["hint_sent"] = state["hint_seq"]
+            if new:
+                content.append({"type": "text", "text": "New spoken hints from the person watching: " + json.dumps(new)})
+            result = {"content": content}
         except ToolError as exc:
             result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
         except Exception as exc:  # a broken bridge call shouldn't kill the session
@@ -494,15 +553,32 @@ main{max-width:1440px;margin:0 auto;padding:18px 24px 40px;display:grid;gap:16px
 .agent{display:flex;flex-direction:column}.agenthead{display:flex;align-items:center;gap:10px}
 .mc{font:700 17px var(--font);color:var(--fg)}.count{font:700 15px var(--font);color:var(--fg);font-variant-numeric:tabular-nums}.count.done{color:var(--positive)}
 button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s infinite}
-.finds{display:flex;gap:12px;padding:0 16px 4px}.finds:empty{display:none}.finds figure{margin:0;width:120px}
+.finds{display:flex;gap:12px}.finds figure{margin:0;width:120px}
 .finds canvas{width:120px;height:120px;border-radius:var(--radius);background:var(--surface-2);box-shadow:0 0 0 2px var(--positive)}
 .finds figcaption{font-size:12px;color:var(--fg-2);margin-top:4px}
-.feedwrap{position:relative;flex:1;min-height:240px;margin:8px 0 12px}
-.feed{position:absolute;inset:0;overflow:auto;margin:0;padding:0 16px;list-style:none;display:flex;flex-direction:column;gap:8px}
-.feed li{font-size:14px}.feed .t{color:var(--fg-2);font-size:12px;font-variant-numeric:tabular-nums;margin-right:8px;font-family:var(--font);font-weight:400}
-.feed .call{font:500 13px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fg-2)}
-.feed .say{align-self:flex-start;background:var(--surface-2);border-radius:18px;padding:8px 14px;max-width:92%}
-.feed .got{color:var(--positive);font-weight:600}
+.mcbody{position:relative;flex:1;min-height:340px;border-top:1px solid var(--line)}
+.mcgrid{position:absolute;inset:0;display:grid;grid-template-columns:1.1fr 1fr}.hide-steps .mcgrid{grid-template-columns:1fr}.hide-steps .stepspane{display:none}
+.chat{display:flex;flex-direction:column;min-height:0}.msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.ubub{align-self:flex-end;background:var(--surface-2);border-radius:22px;padding:10px 16px;max-width:85%;white-space:pre-wrap}
+.think{display:flex;align-items:center;gap:8px;background:none;padding:0;color:var(--fg-2);font:400 15px var(--font)}.think:hover{background:none;color:var(--fg)}
+.think svg{width:22px;height:22px}.think .chev{transition:transform .2s}.hide-steps .think .chev{transform:none}.think .chev{transform:rotate(180deg)}
+.reply{white-space:pre-wrap;font-size:15px;line-height:1.55}.reply.pending{color:var(--fg-2)}
+.composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.composer input{flex:1;font:400 15px var(--font);padding:10px 16px;border-radius:var(--pill);border:1px solid var(--line);background:var(--surface-2);color:var(--fg)}
+.composer button{width:40px;height:40px;padding:0;font-size:18px}
+.stepspane{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:12px;padding:4px;border-radius:var(--pill);background:var(--surface-2)}
+.seg button{padding:7px 0;background:none;font-weight:500}.seg button.on{background:var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.08);font-weight:600}
+.tabbody{flex:1;overflow:auto;padding:4px 16px 16px}
+.timeline{list-style:none;margin:0;padding:0}.timeline li{position:relative;padding:0 0 14px 24px}
+.timeline li:before{content:"";position:absolute;left:3px;top:6px;width:9px;height:9px;border-radius:50%;background:#65676b}
+.timeline li:after{content:"";position:absolute;left:7px;top:20px;bottom:2px;width:1px;background:var(--line)}
+.timeline li:last-child:after{display:none}.timeline li.now:before{background:var(--ai-gradient);animation:pulse 1s infinite}
+.timeline li.got:before{background:var(--positive)}.timeline li.hint:before{background:var(--accent)}
+.ubub.hintb{background:var(--tinted-bg);color:var(--fg);font-size:14px}.mic{font-size:13px}.timeline li.done:before{background:none;border:1.5px solid #8a8d91;width:12px;height:12px;left:1px;top:4px}
+.timeline b{display:block;font-weight:600;color:#3d3f42}.timeline li.got b{color:var(--positive)}
+.timeline span{display:block;color:var(--fg-2);font-size:13px;line-height:1.5;margin-top:3px}
+.finds{flex-wrap:wrap}
 .shot{position:relative;margin:0 12px 12px;border-radius:var(--radius);overflow:hidden;background:var(--surface-2);aspect-ratio:4/3}
 .shot img{display:block;width:100%;height:100%;object-fit:cover;filter:contrast(var(--contrast,100%))}
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--fg-2);text-align:center;padding:20px}
@@ -531,10 +607,14 @@ button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s inf
 <button onclick="setContrast(100)">Reset</button></header>
 <main id="root">
 <div class="stage">
-<section class="card agent" style="grid-area:agent"><h2 class="agenthead"><span class="mc">Muse Code</span><span class="chip" id="agentchip"><i></i><span id="agentstate">Waiting for Muse Code</span></span>
+<section class="card agent" id="agentcard" style="grid-area:agent"><h2 class="agenthead"><span class="mc">Muse Code</span><span class="chip" id="agentchip"><i></i><span id="agentstate">Waiting for Muse Code</span></span>
 <span class="spacer"></span><span class="count" id="count"></span><button class="small" onclick="post('/reset')">Clear</button></h2>
-<div class="finds" id="finds"></div>
-<div class="feedwrap"><ol class="feed" id="feed" aria-live="polite"></ol></div></section>
+<div class="mcbody"><div class="mcgrid">
+<div class="chat"><div class="msgs" id="msgs"></div>
+<form class="composer" id="askform" autocomplete="off"><input id="ask" placeholder="Ask Muse Code" aria-label="Ask Muse Code"><button class="primary" type="submit" aria-label="Send">&#8593;</button></form></div>
+<aside class="stepspane"><div class="seg" role="tablist"><button type="button" class="on" data-tab="steps">Steps</button><button type="button" data-tab="finds">Finds</button></div>
+<div class="tabbody" id="tab-steps"><ol class="timeline" id="timeline"></ol></div><div class="tabbody" id="tab-finds" hidden><div class="finds" id="finds"></div></div></aside>
+</div></div></section>
 <section class="card" style="grid-area:cam"><h2>Rover camera, live</h2><div class="shot"><img id="cam" alt="Live view from the rover's camera"></div></section>
 <section class="card" style="grid-area:tuned"><h2 id="tunedtitle">SAM 3.1 tuned for "muse"</h2><div class="shot"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
 <div class="empty" id="samempty"><strong>Starting</strong><span>Each frame goes to both models, about 3 seconds a round on the Jetson.</span></div></div>
@@ -585,16 +665,39 @@ const [w,h]=look.size||[640,480];const objs=look.objects.slice().sort((a,b)=>b.s
 objs.forEach((o,i)=>{if(!o.box)return;const t=document.createElement('div');t.className='tag'+(i===0?' top':'')+(o.score>=GOAL?' goal':'');
 t.textContent=word+' '+Math.round(o.score*100)+'%';t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(6,o.box[1]/h*100)+'%';el.appendChild(t)})}
 function topObject(look){return look&&look.objects&&look.objects.length?look.objects.slice().sort((a,b)=>b.score-a.score)[0]:null}
+let doneShown=null;function chime(){if(!audio)return;const t=audio.currentTime;[[1046.5,0],[1318.5,.14],[1568,.28],[2093,.42]].forEach(([f,d])=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=f;
+g.gain.setValueAtTime(0.0001,t+d);g.gain.exponentialRampToValueAtTime(0.3,t+d+.01);g.gain.exponentialRampToValueAtTime(0.0001,t+d+.7);o.connect(g).connect(audio.destination);o.start(t+d);o.stop(t+d+.75)})}
 let lastLooks=-1,lastSeq=null,shownBest=null,word='muse',agentSeq=-1,findsShown=null;
 function esc(t){return String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
-function renderAgent(s){const live=s.agent_at&&s.now-s.agent_at<30;document.getElementById('agentchip').classList.toggle('live',!!live);
-document.getElementById('agentstate').textContent=live?'Muse Code is searching':(s.agent.length?'Muse Code paused':'Waiting for Muse Code');
-const n=s.finds.length,c=document.getElementById('count');c.textContent=n+' of '+s.target+' found';c.classList.toggle('done',n>=s.target);
-if(s.agent_seq!==agentSeq){agentSeq=s.agent_seq;const f=document.getElementById('feed');
-f.innerHTML=s.agent.length?s.agent.map(a=>'<li class="'+({say:'say',found:'got'}[a.kind]||'call')+'"><span class="t">'+new Date(a.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</span>'+esc(a.text)+'</li>').join(''):'<li class="hint" style="padding:0">Muse Code runs the search through the rover’s MCP tools. Each step it takes shows here.</li>';f.scrollTop=f.scrollHeight}
+const SPARK='<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6547f5"/><stop offset="1" stop-color="#c13df0"/></linearGradient></defs><g fill="url(#sg)"><ellipse cx="12" cy="5" rx="2.6" ry="3.4"/><ellipse cx="12" cy="19" rx="2.6" ry="3.4"/><ellipse cx="5.9" cy="8.5" rx="2.6" ry="3.4" transform="rotate(-60 5.9 8.5)"/><ellipse cx="18.1" cy="15.5" rx="2.6" ry="3.4" transform="rotate(-60 18.1 15.5)"/><ellipse cx="5.9" cy="15.5" rx="2.6" ry="3.4" transform="rotate(60 5.9 15.5)"/><ellipse cx="18.1" cy="8.5" rx="2.6" ry="3.4" transform="rotate(60 18.1 8.5)"/></g></svg>';
+let chatKey='';
+function steps(s){const out=[];let cur=null;for(const a of s.agent){if(a.kind==='hint'){out.push({t:'Heard you',d:['"'+a.text+'"'],hint:true});cur=null}else if(a.kind==='say'){cur={t:a.text,d:[]};out.push(cur)}else if(a.kind==='found'){out.push({t:a.text,d:[],got:true});cur=null}
+else{if(!cur){cur={t:'Checking the rover',d:[]};out.push(cur)}cur.d.push(a.text.replace(/^rover_(\\w+):?\\s*/,(m,n)=>({look:'Looked: ',status:'Status: ',photo:'Photo: ',drive:'Drove ',stop:'Stopped',found:'',say:''}[n]||n+' ')))}}return out}
+function renderAgent(s){const live=s.chat.status==='running'||(s.agent_at&&s.now-s.agent_at<30);document.getElementById('agentchip').classList.toggle('live',!!live);
+document.getElementById('agentstate').textContent=s.chat.status==='running'?'Muse Code is working':live?'Muse Code is connected':(s.chat.status==='done'?'Done':'Waiting for Muse Code');
+const n=s.finds.length,c=document.getElementById('count');c.textContent=s.done?'Done · '+n+' found':n+' found'+(n<s.target?' · at least '+s.target:'');c.classList.toggle('done',!!s.done||n>=s.target);
+if(s.done&&doneShown===false)chime();doneShown=!!s.done;
+const st=steps(s),key=s.agent_seq+'|'+!!s.done+'|'+s.hints.length+'|'+s.chat.status+'|'+s.chat.reply.length+'|'+s.chat.prompt.length;
+if(key!==chatKey){chatKey=key;const tl=document.getElementById('timeline');
+tl.innerHTML=st.map((x,i)=>'<li class="'+(x.got?'got':x.hint?'hint':'')+(s.chat.status==='running'&&i===st.length-1?' now':'')+'"><b>'+esc(x.t)+'</b>'+x.d.slice(-4).map(d=>'<span>'+esc(d)+'</span>').join('')+'</li>').join('')+
+(s.done||s.chat.status==='done'?'<li class="done"><b>Done</b>'+(s.done&&s.done.summary?'<span>'+esc(s.done.summary)+'</span>':'')+'</li>':'')||'<li class="done"><b>No steps yet</b><span>Ask Muse Code below, or run the bridge on the laptop.</span></li>';
+document.getElementById('tab-steps').scrollTop=1e9;
+const m=document.getElementById('msgs');let h='';
+if(s.chat.prompt)h+='<div class="ubub">'+esc(s.chat.prompt)+'</div>';
+s.hints.filter(x=>x.ts>=s.chat.ts).forEach(x=>{h+='<div class="ubub hintb"><span class="mic">&#127908;</span> '+esc(x.text)+'</div>'});
+if(s.chat.prompt||st.length){const last=st.length?st[st.length-1].t:'Thinking';
+h+='<div><button type="button" class="think" onclick="toggleSteps()">'+SPARK+'<span>Show thinking</span><span class="chev">&#8250;</span></button></div>';
+h+=s.chat.reply?'<div class="reply">'+esc(s.chat.reply)+'</div>':'<div class="reply pending"><span class="working"><i></i><i></i><i></i></span> '+esc(last)+'</div>'}
+else h='<div class="reply pending">Muse Code drives the rover through its MCP tools to find the Muse mascots. Ask it below.</div>';
+m.innerHTML=h;m.scrollTop=1e9}
 if(findsShown!==null&&n>findsShown)ping();
-if(n!==findsShown){findsShown=n;const g=document.getElementById('finds');g.innerHTML=s.finds.map(x=>'<figure><canvas width="240" height="240"></canvas><figcaption>Muse '+x.n+' · '+Math.round(x.score*100)+'%'+(x.note?' · '+esc(x.note):'')+'</figcaption></figure>').join('');
+if(n!==findsShown){findsShown=n;const g=document.getElementById('finds');g.innerHTML=s.finds.length?s.finds.map(x=>'<figure><canvas width="240" height="240"></canvas><figcaption>Muse '+x.n+' · '+Math.round(x.score*100)+'%'+(x.note?' · '+esc(x.note):'')+'</figcaption></figure>').join(''):'<span class="hint" style="padding:0">Nothing found yet.</span>';
 g.querySelectorAll('canvas').forEach((cv,i)=>{const x=s.finds[i];crop(cv,'/snap/'+x.snapshot+'-camera.jpg',x.box,x.size)})}}
+function toggleSteps(){document.getElementById('agentcard').classList.toggle('hide-steps')}
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.toggle('on',x===b));
+document.getElementById('tab-steps').hidden=b.dataset.tab!=='steps';document.getElementById('tab-finds').hidden=b.dataset.tab!=='finds'}));
+document.getElementById('askform').addEventListener('submit',async e=>{e.preventDefault();unlock();const i=document.getElementById('ask'),v=i.value.trim();if(!v)return;
+const r=await jpost('/ask',{prompt:v});if(r.ok){i.value='';i.placeholder='Sent. The laptop bridge starts Muse Code.'}else i.placeholder=r.status===409?'Muse Code is still working':'Type a request'})
 document.getElementById('wordform').addEventListener('submit',async e=>{e.preventDefault();unlock();const v=document.getElementById('word').value.trim();if(!v)return;
 const r=await jpost('/prompt',{prompt:v});if(r.ok){word=(await r.json()).prompt;document.getElementById('word').blur()}});
 async function tick(){try{const s=await (await fetch('/state.json')).json();word=s.prompt||'muse';const wi=document.getElementById('word');if(document.activeElement!==wi&&wi.value!==word)wi.value=word;const root=document.getElementById('root');
@@ -671,6 +774,10 @@ class Page(BaseHTTPRequestHandler):
                 return self._send(200, overlay["bestframe"], "image/jpeg")
         if p == "/mcp":
             return self._send(405, b"", "text/plain")
+        if p == "/ask/next":  # the laptop bridge picks up a prompt typed on the page
+            with lock:
+                ask, state["ask"] = state["ask"], None
+            return self._send(200, json.dumps({"prompt": ask} if ask else {}).encode(), "application/json")
         if p == "/cam.jpg":
             return self._send(200, latest_frame() or b"", "image/jpeg")
         if p == "/camera":
@@ -691,7 +798,7 @@ class Page(BaseHTTPRequestHandler):
 
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if not 0 < n <= 4096:
+        if not 0 < n <= 16384:
             return {}
         try:
             data = json.loads(self.rfile.read(n))
@@ -714,9 +821,44 @@ class Page(BaseHTTPRequestHandler):
             if not replies:
                 return self._send(202, b"", "text/plain")
             return self._send(200, json.dumps(replies).encode(), "application/json")
+        if self.path == "/ask":
+            prompt = " ".join(str(self._body().get("prompt", "")).split())[:2000]
+            with lock:
+                busy = state["chat"]["status"] == "running"
+                if prompt and not busy:
+                    state["ask"] = prompt
+            if not prompt or busy:
+                return self._send(409 if busy else 400, b"", "text/plain")
+            return self._send(204, b"", "text/plain")
+        if self.path == "/hint":  # spoken hints, transcribed on the laptop by Muse transcribe
+            text = " ".join(str(self._body().get("text", "")).split())[:300]
+            if text:
+                with lock:
+                    state["hint_seq"] += 1
+                    state["hints"].append({"seq": state["hint_seq"], "text": text, "ts": time.time()})
+                    del state["hints"][:-30]
+                agent_log("hint", text)
+            return self._send(204, b"", "text/plain")
+        if self.path == "/chat":  # Muse Code's conversation, streamed in by the laptop bridge
+            body = self._body()
+            ev, text = body.get("event"), str(body.get("text") or "")
+            with lock:
+                chat = state["chat"]
+                if ev == "user":
+                    state["chat"] = {"prompt": text[:2000], "reply": "", "status": "running", "ts": time.time()}
+                    state["agent"], state["done"] = [], None
+                    state["agent_seq"] += 1
+                elif ev == "delta":
+                    chat["reply"] = (chat["reply"] + text)[-6000:]
+                elif ev in ("done", "error"):
+                    chat["reply"] = text[-6000:] or chat["reply"]
+                    chat["status"] = ev
+            return self._send(204, b"", "text/plain")
         if self.path == "/reset":
             with lock:
                 state["finds"], state["agent"], state["found"] = [], [], None
+                state["chat"] = {"prompt": "", "reply": "", "status": "idle", "ts": 0.0}
+                state["hints"], state["done"], state["hint_sent"] = [], None, state["hint_seq"]
                 state["agent_seq"] += 1
             return self._send(204, b"", "text/plain")
         if self.path == "/drive":
