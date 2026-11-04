@@ -311,8 +311,8 @@ MCP_INSTRUCTIONS = (
     "reference and skip anything that isn't the same character. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
     "with rover_photo against the reference before calling rover_found. A muse already found can come into view again after a turn: compare "
     "with your earlier photos and don't record it twice. Only if the picture is clearly too dark or washed out, or a likely "
-    "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
-    "again, and put it back if it got worse. The person watching talks to you by voice: a microphone is "
+    "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), then "
+    "look again. You may change the camera only once per run, so make that one change count. The person watching talks to you by voice: a microphone is "
     "transcribed the whole time, and anything that sounds like a command arrives at the top of your next tool result as "
     "VOICE COMMAND. The owner drives spoken moves (left, right, forward, back) "
     "themselves with the page's pad, so don't repeat them: rover_say \"Heard you: ...\", then rover_look and keep "
@@ -354,7 +354,7 @@ MCP_TOOLS = [
     {"name": "rover_found", "description": "Record a Muse mascot you have checked. Needs a tuned match at 0.95 or more in the latest look. "
      "which: best, left, center or right (which match in the frame). note: a few words on where it is.",
      "inputSchema": _schema({"which": {"type": "string", "enum": ["best", "left", "center", "right"]}, "note": {"type": "string", "maxLength": 120}})},
-    {"name": "rover_camera", "description": "Read or tune the webcam. With no arguments it returns the current values and ranges. "
+    {"name": "rover_camera", "description": "Read or tune the webcam (at most one change per run). With no arguments it returns the current values and ranges. "
      "set: controls to change, from auto_exposure (3 auto, 1 manual), exposure_time_absolute (manual only), gain, brightness, "
      "contrast, gamma, saturation, sharpness, backlight_compensation. reset: true puts the webcam defaults back. The next "
      "rover_look sees the change.",
@@ -430,9 +430,17 @@ def manual_log(left, right):
         state["manual_last"] = {"kind": kind, "ts": now}
         state["moves"] += 1
         heard = next((h["text"] for h in reversed(state["hints"]) if now - h["ts"] < 25), None)
-    words = {"forward": "driving forward", "back": "backing up", "left": "turning left", "right": "turning right"}[kind]
-    if heard:  # clicks alone are not mentioned; only a move that answers something said
-        agent_log("did", f"Heard you (\u201c{heard[:70]}\u201d): {words}")
+    with lock:
+        n = state["moves"]
+    lines = {
+        "forward": ["Driving forward to get a closer look.", "Moving ahead to a new spot.", "Heading forward to check that area."],
+        "back": ["Backing up to see more of the room.", "Reversing for a wider view.", "Backing off to get everything in frame."],
+        "left": ["Turning left to check that side of the room.", "Swinging left to look over there.", "Turning left toward the next spot."],
+        "right": ["Turning right to check that side of the room.", "Swinging right to look over there.", "Turning right toward the next spot."],
+    }[kind]
+    line = lines[n % len(lines)]
+    # Shown as Muse Code's own step, like any rover_say line.
+    agent_log("say", ("Heard you. " + line) if heard else line)
 
 
 def warmup():
@@ -575,6 +583,15 @@ def call_tool(name, args):
         left_ = TARGET - n
         return [{"type": "text", "text": f"Recorded find {n} of {TARGET}." + (f" {left_} to go." if left_ > 0 else " All found.")}]
     if name == "rover_camera":
+        changing = bool(args.get("reset")) or (isinstance(args.get("set"), dict) and bool(args["set"]))
+        if changing:
+            with lock:
+                used = state.get("cam_changes", 0)
+                if used < 1:
+                    state["cam_changes"] = used + 1
+            if used >= 1:
+                agent_log("call", "rover_camera refused: the camera was already tuned once this run")
+                raise ToolError("Not changed: the camera may be tuned only once per run, and it already was. Keep searching.")
         if args.get("reset"):
             cam_set({"auto_exposure": 3})
             values = cam_set(CAM_DEFAULTS)
@@ -1051,7 +1068,7 @@ class Page(BaseHTTPRequestHandler):
                 chat = state["chat"]
                 if ev == "user":
                     state["chat"] = {"prompt": text[:2000], "reply": "", "status": "running", "ts": time.time()}
-                    state["agent"], state["done"] = [], None
+                    state["agent"], state["done"], state["cam_changes"] = [], None, 0
                     state["agent_seq"] += 1
                     threading.Thread(target=warmup, daemon=True).start()
                 elif ev == "delta":
@@ -1064,7 +1081,7 @@ class Page(BaseHTTPRequestHandler):
             with lock:
                 state["finds"], state["agent"], state["found"] = [], [], None
                 state["chat"] = {"prompt": "", "reply": "", "status": "idle", "ts": 0.0}
-                state["hints"], state["done"], state["hint_sent"] = [], None, state["hint_seq"]
+                state["hints"], state["done"], state["hint_sent"], state["cam_changes"] = [], None, state["hint_seq"], 0
                 state["agent_seq"] += 1
             return self._send(204, b"", "text/plain")
         if self.path == "/drive":
