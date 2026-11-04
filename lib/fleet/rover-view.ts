@@ -55,7 +55,12 @@ export async function roverFrame(deps: RoverDeps, prompt: string): Promise<Rover
   try {
     const result = await deps.capture(camera, { width: ROVER_VIEW.width, height: ROVER_VIEW.height });
     const image = result.content.find((c): c is { type: "image"; data: string } => (c as { type?: unknown })?.type === "image");
-    if (result.isError || !image || !isJpeg(image.data)) return none("The rover's camera didn't send a photo.");
+    if (result.isError || !image || !isJpeg(image.data)) {
+      // The board's own words help here ("no camera found"); kept short and plain, never an address or a token.
+      const said = result.content.map((c) => (c as { type?: unknown; text?: unknown })).find((c) => c.type === "text" && typeof c.text === "string")?.text as string | undefined;
+      const plainWords = said?.replace(/https?:\S+|\b(jpt|jik|sk)_\S+/g, "").replace(/[^\p{L}\p{N} .,:'()/-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 90);
+      return none(`The rover's camera didn't send a photo${plainWords ? `: ${plainWords}` : "."}`);
+    }
     photo = image.data;
   } catch {
     return none("The rover didn't answer.");
@@ -92,7 +97,7 @@ export function roverSvg(frame: RoverFrame, prompt: string, at: Date, timeZone =
   const W = ROVER_VIEW.width;
   const H = ROVER_VIEW.height;
   const time = at.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
-  const what = frame.outlined
+  const what = !frame.jpegB64 ? "" : frame.outlined
     ? `${frame.count === null ? "" : `${frame.count} “${prompt}” `}outlined by Meta SAM 3.1 on a Jetson${frame.seconds === null ? "" : ` in ${frame.seconds} s`}`
     : frame.note;
   const picture = frame.jpegB64
@@ -100,6 +105,6 @@ export function roverSvg(frame: RoverFrame, prompt: string, at: Date, timeZone =
     : `<rect x="0" y="0" width="${W}" height="${H}" fill="#f3f4f5"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="22" fill="#111112">${esc(frame.note)}</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H + 44}" width="${W}" height="${H + 44}" font-family="Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif">
 <rect width="100%" height="100%" fill="#ffffff"/>${picture}
-<text x="0" y="${H + 30}" font-size="18" fill="#111112">${esc(what)}</text><text x="${W}" y="${H + 30}" font-size="18" fill="rgba(0,4,9,.59)" text-anchor="end">Photo at ${esc(time)}</text>
+<text x="0" y="${H + 30}" font-size="18" fill="#111112">${esc(what)}</text><text x="${W}" y="${H + 30}" font-size="18" fill="rgba(0,4,9,.59)" text-anchor="end">${frame.jpegB64 ? "Photo" : "Checked"} at ${esc(time)}</text>
 </svg>`;
 }

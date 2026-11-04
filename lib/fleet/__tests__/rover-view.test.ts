@@ -73,6 +73,10 @@ describe("rover view", () => {
     const notJpeg = await roverFrame(deps({ capture: async () => ({ isError: false, content: [{ type: "image", data: "iVBORw0KGgo", mimeType: "image/png" }] }) }).d, "box");
     assert.match(notJpeg.note, /didn't send a photo/);
     assert.match(roverSvg(notJpeg, "box", new Date()), /<rect/);
+    assert.match(roverSvg(notJpeg, "box", new Date()), /Checked at/);
+    const said = await roverFrame(deps({ capture: async () => ({ isError: true, content: [{ type: "text", text: "No camera found at https://10.0.0.5:8790 (token jpt_secret)" }] }) }).d, "box");
+    assert.match(said.note, /No camera found/);
+    assert.ok(!said.note.includes("10.0.0.5") && !said.note.includes("jpt_"), said.note);
   });
 
   it("puts the rover's view below the display only when asked", () => {
