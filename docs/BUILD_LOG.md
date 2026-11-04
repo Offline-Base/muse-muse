@@ -4703,3 +4703,8 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Caching, for ngrok's budget: the rover frame stays on Vercel's CDN for 3 minutes (1 minute after a failure, stale for up to 10 while it renews), and /fleet/display itself for 50 s (it was no-store). However many screens are open, the fleet sees about one display read a minute and one look every 3 minutes.
 - Settings in Production (none secret): BOARD_FLEET_URL https://www.offlinebase.com/admin, FLEET_SAM_NODE nd_fe300e68e976228c (jetson-04, online), FLEET_DISPLAY_ROVER 1, FLEET_ROVER_PROMPT unset (default "box"). The photo is of a real room: with no FLEET_DISPLAY_CODE, anyone with the link sees it, which the owner is told.
 - Tests: lib/fleet/__tests__/rover-view.test.ts 4 of 4 (fake camera and board) and display 5 of 5; lib/caps/fleet tests unchanged (108 pass; the 1 failure, the platform chip in app/p/[slug]/page.tsx, was already failing on main). Typecheck clean for touched files.
+
+## Nov 3, 2026, night ET: the rover moved on the owner's ask
+
+- Owner asked to see the rover move, watching it. Through the fleet's run_command on ArduinoQ-01 (online), as user arduino, with the kit's own `rover/bridge_client.py` (PR #80's board side; ROVER_ENABLED and the site path stay off): `status` first (not driving, front and right sensors answering, left missing as Hussam said, nothing in range ahead), confirmed the built sketch has `ROVER_LEFT_INVERT 1`, then `drive 130 130 1500`. Answer `{"ok":true,"left":130,"right":130,"ms":1500}`; status after: `last_stop` "the drive's 1500 ms were up", not driving. Did the owner see it go straight? Not recorded here.
+
