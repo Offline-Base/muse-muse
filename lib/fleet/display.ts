@@ -58,6 +58,7 @@ export const DEFAULT_ROLES: Record<string, string[]> = {
   "jetson-02": ["Muse Glimmer, 1-bit"],
 };
 
+const sub = (o: Record<string, unknown>, key: string) => ((o[key] && typeof o[key] === "object" ? o[key] : {}) as Record<string, unknown>);
 const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /** What runs on a board: its `role` label (or DEFAULT_ROLES), its loaded models, and live serving. */
@@ -67,7 +68,7 @@ export function runningOn(summary: Record<string, unknown>): string[] {
   const role = typeof labels.role === "string" && labels.role.trim() ? [labels.role.trim()] : (DEFAULT_ROLES[name] ?? []);
   const models = Array.isArray(summary.loaded_models) ? (summary.loaded_models as unknown[]).filter((m): m is string => typeof m === "string").map(shortModel) : [];
   const m = (summary.metrics ?? {}) as Record<string, unknown>;
-  const tps = n(m.llm_tokens_per_s) ?? n(m.llm_tps);
+  const tps = n(m.llm_tokens_per_s) ?? n(m.llm_tps) ?? n(sub(m, "llm").tokens_per_s);
   return [...new Set([...role, ...models, ...(tps && tps > 0 ? [`Serving ${tps.toFixed(1)} tokens/s`] : [])])];
 }
 
@@ -85,12 +86,13 @@ export function boardFrom(summary: Record<string, unknown>): DisplayBoard {
     name: String(summary.name ?? summary.id ?? "board"),
     status,
     running: runningOn(summary),
-    powerW: n(m.power_w),
+    // The control plane passes the agent's frame through: cpu.percent, power_mw.total, mem.used_mb and so on.
+    powerW: n(m.power_w) ?? (n(sub(m, "power_mw").total) === null ? null : n(sub(m, "power_mw").total)! / 1000),
     tempC: n(temps.tj) ?? n(m.temp_tj) ?? n(temps.gpu) ?? n(m.temp_gpu) ?? n(temps.cpu) ?? n(m.temp_cpu),
-    cpuPct: n(m.cpu_pct),
-    gpuPct: n(m.gpu_pct),
-    memUsedMb: n(m.mem_used_mb),
-    memTotalMb: n(m.mem_total_mb),
+    cpuPct: n(m.cpu_pct) ?? n(sub(m, "cpu").percent),
+    gpuPct: n(m.gpu_pct) ?? n(sub(m, "gpu").percent),
+    memUsedMb: n(m.mem_used_mb) ?? n(sub(m, "mem").used_mb),
+    memTotalMb: n(m.mem_total_mb) ?? n(sub(m, "mem").total_mb),
     series: null,
   };
 }

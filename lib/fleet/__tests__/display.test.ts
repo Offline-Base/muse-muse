@@ -46,6 +46,10 @@ describe("e-ink fleet display", () => {
     assert.deepEqual(runningOn(NODES[1]!), ["Muse Glimmer (1-bit)", "muse-glimmer-2026-iq1s", "Serving 5.2 tokens/s"]);
     assert.equal(boardFrom(NODES[0]!).tempC, 51.4);
     assert.equal(boardFrom(NODES[2]!).status, "offline");
+    // The live control plane's shape: the agent frame, nested.
+    const live = boardFrom({ id: "nd_x", name: "jetson-09", status: "online", metrics: { cpu: { percent: 7 }, gpu: { percent: 31 }, mem: { used_mb: 2048, total_mb: 7620 }, power_mw: { total: 4500 }, temps_c: { cpu: 44, tj: 47 }, llm: { tokens_per_s: 2.5 } } });
+    assert.deepEqual([live.cpuPct, live.gpuPct, live.memUsedMb, live.memTotalMb, live.powerW, live.tempC], [7, 31, 2048, 7620, 4.5, 47]);
+    assert.ok(live.running.includes("Serving 2.5 tokens/s"));
   });
 
   it("reads boards with the viewer token, totals without one, and renders a self-refreshing page", async () => {
