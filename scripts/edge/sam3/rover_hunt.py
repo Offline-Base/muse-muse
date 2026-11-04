@@ -431,7 +431,19 @@ def manual_log(left, right):
         state["moves"] += 1
         heard = next((h["text"] for h in reversed(state["hints"]) if now - h["ts"] < 25), None)
     words = {"forward": "driving forward", "back": "backing up", "left": "turning left", "right": "turning right"}[kind]
-    agent_log("did", (f"Heard you (\u201c{heard[:70]}\u201d): {words}" if heard else f"On your command: {words}"))
+    if heard:  # clicks alone are not mentioned; only a move that answers something said
+        agent_log("did", f"Heard you (\u201c{heard[:70]}\u201d): {words}")
+
+
+def warmup():
+    """At the start of each prompt: a quick forward, left, right, back, so the rover visibly wakes up."""
+    agent_log("say", "Warming up: forward, left, right, back")
+    for left, right in ((170, 170), (-170, 170), (170, -170), (-170, -170)):
+        bridge("drive", left, right, 400)
+        time.sleep(0.55)
+    bridge("stop")
+    with lock:
+        state["moves"] += 1
 
 
 def box_saturation(jpeg, box, size):
@@ -1041,6 +1053,7 @@ class Page(BaseHTTPRequestHandler):
                     state["chat"] = {"prompt": text[:2000], "reply": "", "status": "running", "ts": time.time()}
                     state["agent"], state["done"] = [], None
                     state["agent_seq"] += 1
+                    threading.Thread(target=warmup, daemon=True).start()
                 elif ev == "delta":
                     chat["reply"] = (chat["reply"] + text)[-6000:]
                 elif ev in ("done", "error"):
