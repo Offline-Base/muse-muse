@@ -68,7 +68,7 @@ Source: the event page; README.md.
 
 ### 4. Which problem statement did you build towards?  [owner] [after the board take]
 
-Two versions. The owner picks one tonight, and the opening problem line ("The problem", below) and the video's shot 2 follow the same pick.
+**Picked Nov 4 by the owner: Build for Your World (version 2).** Two versions. The owner picks one tonight, and the opening problem line ("The problem", below) and the video's shot 2 follow the same pick.
 
 **Version 1, Push the Frontier.** Use it if tonight's board take works (the app keeps answering on jetson-04 with the uplink out, or the backup: the app on the laptop with Wi-Fi off and SAM 3.1 on the board).
 

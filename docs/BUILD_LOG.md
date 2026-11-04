@@ -4826,3 +4826,12 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
   - jetson-03: idle, GPU 0%, 432 MB disk free.
   - E-ink display: /fleet/display returns 200 with 5 board cards and the memory squares. /fleet/display/rover returns an image that says "No camera is attached to this board".
 - **Not checked:** ArduinoQ-01 is offline (last seen about 11 hours ago). When it's back, its hunt script still points at SAM on 192.168.12.144 and needs 192.168.1.208. coral-01 and coral-02 are offline (they need the Mac's USB sharing).
+
+## Nov 4, 2026, about 1:30 PM ET: README and repo pages brought up to date for judges
+
+- Why: an outside tracker of the event's public repos (artifacts.watt-mind.com, run by a rival team, a heuristic and not the judges) read this repo as Push the Frontier, with no tests, no Hugging Face weights and muse-muse.vercel.app as the live site. Each came from what the README and repo settings said.
+- README: the opening now leads with the Build for Your World problem line (SUBMISSION.md's version 2, the owner's Nov 4 pick); a Theme row and a Built row (Oct 26 to Nov 4, pointing to "Before the event"); "Proven, Nov 1 to 4" gains the rover (Muse Code driving, tuned SAM 3.1 on jetson-04, spoken hints, both finds from the first live run including the screen picture and the look-alike) and the public Hugging Face repos (2026-knowledge Glimmer, its GGUF and LoRA, and sam3.1-muse); the mascot is named Jolly once beside the word "muse"; the drill count reads 8 of the build's own and 11 in `npm run drill`; the stale "take is planned for Nov 3, night" is now "not filmed"; Muse Privacy's board run is stated as jetson-05 on LFM3-VL-2B, outside the submission.
+- Theme set to Build for Your World in CLAUDE.md, privacy/README.md and privacy/CLAUDE.md; SUBMISSION.md field 4 records the pick.
+- package.json gets a `test` script running the README's three test commands. One run here, against the main checkout's older node_modules (it lacks `marked`): 6,935 passed, 22 failed, 20 cancelled. The failures were not traced further and none touch the files changed here.
+- Repo homepage set to https://www.musemuse.dev (was muse-muse.vercel.app). Offline-Base/muse-privacy: README team, theme and model note (848b404), homepage set to its landing page.
+- privacy/tests/test_claims.py passes on the edited privacy/README.md. Docs and settings only; nothing deployed changed.

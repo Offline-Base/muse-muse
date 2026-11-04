@@ -2,7 +2,7 @@
 
 # Muse Muse
 
-Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, theme Push the Frontier, by Ethan and Hussam. Due Nov 4, 2026, 9 PM ET; Ethan submits by noon ET.
+Offline Base's entry in the Meta Global AI Developer Hackathon: startup track, theme Build for Your World (owner, Nov 4), by Ethan and Hussam. Due Nov 4, 2026, 9 PM ET; Ethan submits by noon ET.
 
 ## Read first
 

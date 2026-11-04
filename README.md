@@ -1,20 +1,23 @@
 # Muse Muse
 
-**Your own AI, on your own hardware, ready for any scenario.** Muse Muse turns one sentence into a working app on Meta's models, checks it before it ships, and is built so the app keeps answering on a Jetson when the cloud is cut.
+**People know their jobs, but getting custom software built takes engineering they often don't have.** Muse Muse turns one sentence into a working app on Meta's models, checks it before it ships, and puts it live at its own link. It is built so an app can keep answering on a Jetson when the cloud is cut.
 
 **Video:** [the 3-minute demo, link added at submission]. **Live:** https://www.musemuse.dev, open to browse with no sign-in. Not an official Meta product.
 
-### Proven on Nov 3
+### Proven, Nov 1 to 4
 
 Each line is logged in [docs/BUILD_LOG.md](docs/BUILD_LOG.md) under the entry named.
 
 - **Meta's SAM 3.1 on a Jetson Orin Nano 8GB: 1.42 s a look** once warm, on Meta's sample photo ("Nov 3, 2026, 2:15 to 4 AM ET: the boards, checked for real").
-- **SAM 3.1 tuned on a board:** its detector learned a new word, "muse" (our mascot), on jetson-03, from 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy (same entry).
-- **An edge build passed all 8 simulated outage drills** (cloud refused, cloud hung, both down, tampered reply, for its text answer and its SAM look) in its own build sandbox, against a simulated board ("Nov 3, 2026, about noon ET: claim fixes").
+- **SAM 3.1 tuned on a board:** its detector learned a new word, "muse" (our mascot, Jolly), on jetson-03, from 0 to 38 of 38 held-out made-up images. Meta's SAM 3.1 already finds the same mascot as "plush toy", so the tune adds a name, not accuracy (same entry).
+- **An edge build passed all 8 of its simulated outage drills** (cloud refused, cloud hung, both down, tampered reply, for its text answer and its SAM look; `npm run drill` below runs 11, adding board status checks) in its own build sandbox, against a simulated board ("Nov 3, 2026, about noon ET: claim fixes").
 - **18 apps built overnight** on Muse Spark 1.3 Contributor with made-up data, at $0.17 to $0.40 each for the 17 whose cost is logged. A hands-on audit found 7 that work, 9 with gaps and 2 broken, though 17 had passed our judge; the 18th, the legal case agent, shipped as partial, with its memo error listed as a known issue ("Nov 3, 2026, 2 to 3 AM ET" and "Nov 3, 2026, 5:30 AM ET: target audit").
 - **Glimmer weights, separate from the app:** a one-bit Muse Glimmer file we publish on Hugging Face ran on a Galaxy S25 at 1.94 tokens a second on Nov 1, and runs on a Jetson at about 5 tokens a second with weak answers ("Nov 3, 2026, 10:05 to 10:30 AM ET"). No app calls them.
 
-Not proven yet: an app answering on a board with its uplink pulled (the take is planned for Nov 3, night), and the whole chain from a sentence to an app answering with its own tuned model.
+- **Muse Code drives a rover:** on an Arduino UNO Q rover, Muse Code (Meta's coding agent) plans each move with its own tools, looks through the tuned SAM 3.1 on jetson-04 to find Jolly among other plush toys, and takes spoken hints through Muse Voice Transcribe. Only SAM runs on the board; Muse Code runs in the cloud. First live run: 2 finds, one a picture of Jolly on a laptop screen and one a look-alike plush, which led to a reference photo and a color check; a later run passed over a Stitch plush twice ("Nov 4, 2026, ~12:30 AM ET" and "~1:15 AM ET"). Code: [scripts/edge/sam3/](scripts/edge/sam3/).
+- **Public weights on Hugging Face:** the 2026-knowledge Muse Glimmer (https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge, with its GGUF files at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-GGUF and its LoRA at https://huggingface.co/OfflineBase/Muse-Glimmer-30B-2026-Knowledge-LoRA), trained Oct 30 to Nov 1 ([docs/KNOWLEDGE_RUN_LOG.md](docs/KNOWLEDGE_RUN_LOG.md)), and the tuned SAM 3.1 detector at https://huggingface.co/OfflineBase/sam3.1-muse.
+
+Not proven yet: an app answering on a board with its uplink pulled (not filmed), and the whole chain from a sentence to an app answering with its own tuned model.
 
 ### Three commands, no keys
 
@@ -28,10 +31,12 @@ npm run drill-bench           # remakes and scores the simulated cold-room set, 
 |---|---|
 | **Domain** | Agents |
 | **Event** | Meta Global AI Developer Hackathon, Startup track |
+| **Theme** | Build for Your World |
+| **Built** | Oct 26 to Nov 4, 2026. Before the event, Offline Base had its Jetson fleet software and Base Drive; see "Before the event, and not in this repo" below |
 | **Entrant** | Offline Base |
 | **Team** | Ethan and Hussam |
 
-The opening line is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
+The opening's last sentence is the aim, not yet the record. Each step below has run on its own, and the diagram marks how. The whole chain has not run as one, and no tuned model from this flow has run on anyone's own hardware. Every number we quote, failures first, is in [eval/](eval/README.md).
 
 ```mermaid
 flowchart LR
@@ -61,7 +66,7 @@ flowchart LR
 
 **What's simulated.** The board in the outage drills, which run in each build's sandbox against a fake board and a blocked cloud. Every cold-room reading. Every teacher and record in Muse Privacy, which has no real users. The fine-tuning results that say harness had a real GPU and judge, on an invented topic, without going through the site's launch path.
 
-Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. Meta's SAM 3.1 runs on one of them (jetson-04) and was tuned on another (jetson-03), and on Nov 2 a product Muse Muse built counted with SAM 3.1 on jetson-04 from a laptop (docs/BUILD_LOG.md, "Nov 2, 2026, 9 PM ET"). No app has kept answering on a board with its uplink pulled yet, and Muse Privacy's Jetson version is designed but has not run on a board. Muse Privacy lives in [privacy/](privacy/README.md).
+Offline Base also makes Base Drive, an offline AI kit on a flash drive, and runs a fleet of Jetson boards. Meta's SAM 3.1 runs on one of them (jetson-04) and was tuned on another (jetson-03), and on Nov 2 a product Muse Muse built counted with SAM 3.1 on jetson-04 from a laptop (docs/BUILD_LOG.md, "Nov 2, 2026, 9 PM ET"). No app has kept answering on a board with its uplink pulled yet. Muse Privacy has run on a board (jetson-05, Nov 3) only on Liquid's LFM3-VL-2B, which is not a Meta model, so that run is outside the submission; Muse Glimmer on a board has not run for Muse Privacy. Muse Privacy lives in [privacy/](privacy/README.md).
 
 ## Quickstart
 

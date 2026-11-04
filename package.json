@@ -11,6 +11,7 @@
     "build": "tsx scripts/migrate.ts && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test --experimental-test-module-mocks $(find lib components -name '*.test.ts') && tsx --test --experimental-test-module-mocks components/train/__tests__/*.test.tsx && tsx --test template/scripts/__tests__/*.test.mjs",
     "drill": "node scripts/drill/run.mjs",
     "drill:all": "node scripts/drill/run.mjs --all",
     "drill-bench": "node scripts/drill/bench.mjs",
