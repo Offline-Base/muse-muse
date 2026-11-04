@@ -4675,3 +4675,9 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 
 - Owner set `FLEET_VIEWER_TOKEN` in Production; I redeployed (muse-muse-8vopd31rs, aliased to www.musemuse.dev). /fleet/display now cycles four graphs, one a minute: tokens served, then memory, heat and power with one line per board. First live readings: memory jetson-04 (SAM 3.1 vision) 76%, jetson-05 71%, ArduinoQ-01 49%, decision-tree 17%, jetson-02 (Glimmer) 10%, jetson-03 (SAM 3.1 tuning) 9%; heat 36 to 47 °C; power 3.2 to 4.5 W. Offline: coral-01, coral-02, jetson-01.
 - Bug found on the live page: the board cards showed "?" for CPU, GPU, memory and power, because `/api/nodes` passes the agent's frame through nested (`cpu.percent`, `power_mw.total`, `mem.used_mb`, `llm.tokens_per_s`), not flat. `boardFrom` reads both shapes now; a test covers the nested one (5 of 5).
+
+## Nov 3, about 10:05 PM ET: "musemuse.dev is not up" was this Mac's network, not the site
+
+- Chrome 156 on the owner's Mac fails www.musemuse.dev with `ERR_ECH_FALLBACK_CERTIFICATE_INVALID`. Vercel DNS publishes an HTTPS record with an ECH config (public name vercel-ech.com) for musemuse.dev; something on the path from this Mac (Sophos network extension is active; the Wi-Fi network is the other suspect) breaks the ECH handshake. curl, and Chrome with ECH disabled, load the site.
+- From outside: Chrome 140 on a Modal machine loaded / and /fleet/display fine, so judges are not affected. The site and the 6 most recent production deploys are Ready.
+- Workarounds on an affected network: https://muse-muse.vercel.app (no ECH record; loads in the same local Chrome, Jolly page included), or chrome://flags/#encrypted-client-hello set to Disabled.
