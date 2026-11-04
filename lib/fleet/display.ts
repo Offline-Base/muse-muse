@@ -369,7 +369,7 @@ export function renderDisplay(
 .graph{display:flex;flex-direction:column;justify-content:center;padding:6vmin 2vmin 2vmin}
 .graph svg{width:100%;height:58vh;overflow:visible}.graph path{fill:none;stroke:#2a8a9a;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linecap:round}
 .ends{display:flex;justify-content:space-between;color:#777;font-size:2vmin;margin-top:1vmin}
-.multi polyline{fill:none;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}.multi circle{stroke:none}
+.graph svg.multi{height:42vh}.multi polyline{fill:none;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}.multi circle{stroke:none}
 .legend{list-style:none;padding:0;margin-top:2vmin;display:grid;grid-template-columns:1fr;gap:.6vmin;font-size:2.1vmin;color:#333}
 .legend li{display:flex;align-items:baseline;gap:1vmin;white-space:nowrap;min-width:0}.legend i{flex:none;width:3vmin;height:.8vmin;border-radius:.4vmin;align-self:center}.legend span{color:#777;font-size:1.9vmin;overflow:hidden;text-overflow:ellipsis;min-width:0}.legend b{margin-left:auto;font-weight:600}
 .cap{color:#555;font-size:3.4vmin;text-align:center;margin-top:3vmin}.cap b{color:#333;font-weight:500}
