@@ -4892,3 +4892,13 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 
 - Owner ask: the README GIF should click the Add a folder button. Re-recorded with Playwright: the opening, a click into the Make box, the ethan-docs sentence typed, then a click on "Add a folder of data for a model", which opens the "Or train from a folder" panel (components/make/MakeChat.tsx, FolderDrop). No folder was picked, since picking one posts its files to /api/train/folder, and nothing was sent, so no build and no spend. A drawn pointer and click ripple were injected into the page, because a scripted recording has no system cursor; the caption says so. Cut 0.8 s to 15.8 s, 800 px, 10 fps, 5.40 MB.
 
+
+## Nov 4, 2026, 4:17 PM ET: a hint tutor tune for the demo video (run 7609846e)
+
+- Owner ask: replace the video's fine-tuning example with "the don't cheat example", the Make page's Tune a model card "A tutor that gives hints", then run the tuned model in a chat app with math visuals and record it working.
+- Started on the live site through the automation key, the Make chat's own routes (POST /api/train/plan, then /api/train/runs), with the card's exact note: "Tune a model that tutors math with one hint at a time and never gives the final answer, using made-up problems." Run 7609846e-cca7-4a70-b81d-30c2bda844a1, title "a patient math hint tutor", autoPublish false, nothing uploaded to Hugging Face.
+- Plan: glimmer-lora on r30b (the 2026-knowledge Glimmer, 4-bit), 200 examples, 120 steps, rank 16, lr 2e-4, short student prompt; examples $0.03 to $0.08, GPU at most $40 (the site's per-job limit), about 69 minutes. The script's own GPU guard defaults to $20, so it ran with --max-gpu-usd=40 on purpose; the overnight tune on the same recipe spent $1.75.
+- Examples: written by Spark 1.3 Contributor (the test model, as the repo rule says), 180 train and 20 held out, $0.04 est., 8 m 46 s (21:17 to 21:26 UTC). Public at /fine-tuning/datasets/7609846e-cca7-4a70-b81d-30c2bda844a1.
+- Training waited: POST /start answered 202 gpu_busy at 21:26 UTC (Lambda had no A100 or H100 free; only an A10, which glimmer-lora can't use). An A100 SXM4 freed up at 21:35; a second POST /start launched job 89283b65-45fb-43d4-a7f0-13f708a4f7d9 on gpu_1x_a100_sxm4 in us-east-1 ($1.99 an hour, cap 90 minutes).
+- A fallback that would have trained the same rows on Modal was started and stopped before it created anything: $0.
+- Scripts used (local, not committed): a copy of scripts/demo-tunes.ts with this one note, plus small status and start callers for /api/train/runs/{id} and /start.
