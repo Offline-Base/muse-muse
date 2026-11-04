@@ -53,8 +53,10 @@ MAX_MANUAL_SPEED = 200
 CAM_DEFAULTS = {"exposure_time_absolute": 39, "gain": 32, "brightness": 0, "contrast": 33, "gamma": 100, "saturation": 58,
                 "sharpness": 2, "backlight_compensation": 0}
 STATS_URL = os.environ.get("STATS_URL", "http://192.168.12.144:8791/stats")  # jetson-04's read-only memory stats
-TUNED_URL = os.environ.get("TUNED_URL", "")  # where the tuned weights are published, once they are
+TUNED_URL = os.environ.get("TUNED_URL", "https://huggingface.co/OfflineBase/sam3.1-muse")  # where the tuned weights are published, once they are
 META_URL = "https://huggingface.co/facebook/sam3.1"
+REFERENCE = os.path.join(HERE, "muse_reference.jpg")  # a photo of the real Muse mascot, for Muse Code to compare against
+MAX_SATURATION = float(os.environ.get("MAX_SATURATION", "0.40"))  # the cream Muse measures about 0.2; a blue Stitch 0.6
 TARGET = int(os.environ.get("TARGET", "2"))  # how many muses Muse Code is asked to find
 FOV = 60.0  # the webcam's rough horizontal view, degrees (for left/right hints only)
 RECENT = 5  # the best-match card looks back this many looks
@@ -284,12 +286,16 @@ MCP_INSTRUCTIONS = (
     f"always at least {TARGET}, maybe more; record every different one you find. People are watching a page that shows "
     "your steps, so narrate everything clearly with rover_say: before every action, say what you are about to do and why "
     "(\"Turning right a little to check the corner by the couch\"); after every look, say what both models saw and what "
-    "you will do next (\"The tuned model sees a muse at 97% on the left; checking it with a photo\"). Be proactive and keep moving: don't stop to think "
-    "between steps. Start with rover_status, then scan by turning in place in steps of about 30 to 45 degrees (for "
-    "example left -170, right 170 for 500 ms; opposite signs turn) with a rover_look after each turn. After a full "
-    "circle, drive forward 1 to 1.5 seconds to a new part of the room and scan again; go toward anything that looks like "
-    "a plush toy and get closer to check it. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
-    "with rover_photo before calling rover_found. A muse already found can come into view again after a turn: compare "
+    "you will do next (\"The tuned model sees a muse at 97% on the left; checking it with a photo\"). Drive actively, like you are exploring: never look twice in a row "
+    "without moving, and don't stop to think between steps. Use rover_turn (small, medium, big) and rover_forward "
+    "(short, medium, long); rover_drive is for anything else. Pattern: rover_turn medium, rover_look, repeat; after every "
+    "two or three turns, rover_forward medium to a new spot; when the front is blocked, rover_turn big and go another "
+    "way. Head toward anything that looks like a plush toy and get close to check it. What counts as a Muse: the Muse "
+    "mascot character, cream and fuzzy with a round face in a hood and stubby arms; a plush, a figure or a picture of it "
+    "on a screen all count. rover_photo shows a reference photo of it next to the camera's true colors. The tuned model "
+    "also scores other plush toys (a blue Stitch, a squishy round plush with a bow, animals) above 0.95: compare with the "
+    "reference and skip anything that isn't the same character. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
+    "with rover_photo against the reference before calling rover_found. A muse already found can come into view again after a turn: compare "
     "with your earlier photos and don't record it twice. Only if the picture is clearly too dark or washed out, or a likely "
     "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
     "again, and put it back if it got worse. The person watching talks to you by voice: a microphone is "
@@ -321,6 +327,12 @@ MCP_TOOLS = [
      "(both positive: forward; both negative: back; opposite signs: turn in place). ms: 100 to 1500. Returns the sensors after.",
      "inputSchema": _schema({"left": {"type": "integer", "minimum": -200, "maximum": 200}, "right": {"type": "integer", "minimum": -200, "maximum": 200},
                              "ms": {"type": "integer", "minimum": 100, "maximum": 1500}}, ["left", "right", "ms"])},
+    {"name": "rover_turn", "description": "Turn in place, then stop. direction: left or right. size: small (about 20 degrees), medium "
+     "(about 45) or big (about 90). Rough angles; check with rover_look.",
+     "inputSchema": _schema({"direction": {"type": "string", "enum": ["left", "right"]}, "size": {"type": "string", "enum": ["small", "medium", "big"]}}, ["direction"])},
+    {"name": "rover_forward", "description": "Drive straight, then stop. distance: short, medium or long (about 0.6, 1 and 1.5 seconds). "
+     "back: true to reverse instead. Stops by itself 150 mm before an obstacle going forward.",
+     "inputSchema": _schema({"distance": {"type": "string", "enum": ["short", "medium", "long"]}, "back": {"type": "boolean"}})},
     {"name": "rover_stop", "description": "Stop the wheels now.", "inputSchema": _schema()},
     {"name": "rover_photo", "description": "The latest frame with the tuned SAM 3.1 masks drawn on it, as an image, to check a match with your own eyes.",
      "inputSchema": _schema(), "annotations": {"readOnlyHint": True}},
@@ -388,6 +400,32 @@ def wait_fresh(t0, timeout=15):
     return False
 
 
+def box_saturation(jpeg, box, size):
+    """Median color saturation (0 grey to 1 vivid) of the middle of a box, decoded with gstreamer (no image libraries here)."""
+    src, raw = os.path.join(CAM_DIR, "check.jpg"), os.path.join(CAM_DIR, "check.rgb")
+    with open(src, "wb") as fh:
+        fh.write(jpeg)
+    subprocess.run(["gst-launch-1.0", "-q", "filesrc", f"location={src}", "!", "jpegdec", "!", "videoconvert", "!",
+                    "video/x-raw,format=RGB", "!", "filesink", f"location={raw}"], capture_output=True, timeout=10)
+    with open(raw, "rb") as fh:
+        data = fh.read()
+    w, h = size
+    if len(data) < w * h * 3:
+        return None
+    x0, y0, x1, y1 = box
+    bw, bh = x1 - x0, y1 - y0
+    xs = range(int(max(0, x0 + bw / 4)), int(min(w, x1 - bw / 4)), 3)
+    ys = range(int(max(0, y0 + bh / 4)), int(min(h, y1 - bh / 4)), 3)
+    sats = []
+    for y in ys:
+        for x in xs:
+            i = (y * w + x) * 3
+            r, g, b = data[i], data[i + 1], data[i + 2]
+            mx = max(r, g, b)
+            sats.append(0 if mx == 0 else (mx - min(r, g, b)) / mx)
+    return sorted(sats)[len(sats) // 2] if sats else None
+
+
 def call_tool(name, args):
     if name == "rover_status":
         v = view()
@@ -400,11 +438,22 @@ def call_tool(name, args):
         v = view()
         agent_log("call", f"rover_look: tuned {short(v['tuned'])}; Meta {short(v['meta_weights'])}")
         return [{"type": "text", "text": json.dumps(v)}]
+    if name == "rover_turn":
+        ms = {"small": 350, "medium": 650, "big": 1100}.get(str(args.get("size") or "medium"), 650)
+        sp = 170 if str(args.get("direction")) == "right" else -170
+        return call_tool("rover_drive", {"left": sp, "right": -sp, "ms": ms})
+    if name == "rover_forward":
+        ms = {"short": 600, "medium": 1000, "long": 1500}.get(str(args.get("distance") or "medium"), 1000)
+        sp = -170 if args.get("back") else 170
+        return call_tool("rover_drive", {"left": sp, "right": sp, "ms": ms})
     if name == "rover_drive":
         run_event.clear()
         left = int(max(-MAX_MANUAL_SPEED, min(MAX_MANUAL_SPEED, int(args.get("left", 0)))))
         right = int(max(-MAX_MANUAL_SPEED, min(MAX_MANUAL_SPEED, int(args.get("right", 0)))))
-        ms = int(max(100, min(1500, int(args.get("ms", 500)))))
+        ms = int(max(400, min(1500, int(args.get("ms", 500)))))
+        # Slow wheels barely move this rover on the tile floor: lift any nonzero speed to at least 140.
+        left = (1 if left > 0 else -1) * max(140, abs(left)) if left else 0
+        right = (1 if right > 0 else -1) * max(140, abs(right)) if right else 0
         answer = bridge("drive", left, right, ms) if (left or right) else bridge("stop")
         time.sleep(ms / 1000 + 0.2)
         status = bridge("status")
@@ -421,11 +470,21 @@ def call_tool(name, args):
         return [{"type": "text", "text": "Stopped."}]
     if name == "rover_photo":
         with lock:
-            img = overlay["jpeg"]
+            frame = overlay["frame"]
         v = view()
         agent_log("call", f"rover_photo: tuned {short(v['tuned'])}")
-        return [{"type": "image", "data": base64.b64encode(img).decode(), "mimeType": "image/jpeg"},
-                {"type": "text", "text": json.dumps(v)}]
+        out = []
+        try:
+            with open(REFERENCE, "rb") as fh:
+                out += [{"type": "text", "text": "1. REFERENCE: this is the real Muse mascot (cream, fuzzy, a round face in a hood, stubby arms):"},
+                        {"type": "image", "data": base64.b64encode(fh.read()).decode(), "mimeType": "image/jpeg"}]
+        except OSError:
+            pass
+        out += [{"type": "text", "text": "2. CAMERA NOW (true colors). The tuned model's matches, with where they sit: " + json.dumps(v["tuned"])},
+                {"type": "image", "data": base64.b64encode(frame).decode(), "mimeType": "image/jpeg"},
+                {"type": "text", "text": "Record a match only if it is the same character as the reference (a plush, a figure or a "
+                 "picture of it all count). Other plush toys and characters do not, whatever their score."}]
+        return out
     if name == "rover_found":
         which = str(args.get("which") or "best")
         note = " ".join(str(args.get("note") or "").split())[:120]
@@ -443,6 +502,11 @@ def call_tool(name, args):
         if not pick:
             raise ToolError(f"No match at 0.95 or more on the {which} of the latest look. Matches: " + ", ".join(side(o) for o in good))
         o = max(pick, key=lambda o: o["score"])
+        sat = box_saturation(frame, o["box"], (last or {}).get("size", [640, 480]))
+        if sat is not None and sat > MAX_SATURATION:
+            agent_log("call", f"rover_found refused: too colorful for the cream Muse (saturation {sat:.2f})")
+            raise ToolError(f"Not recorded: that match is too colorful to be the Muse (color saturation {sat:.2f}; the cream "
+                            f"Muse is about 0.2). It is some other toy. Keep looking.")
         bearing = round(((o["box"][0] + o["box"][2]) / 2 / w - 0.5) * FOV, 1)  # degrees off the rover's nose
         for f in finds:
             if f["moves"] == moves and abs(f["bearing"] - bearing) < 10:
