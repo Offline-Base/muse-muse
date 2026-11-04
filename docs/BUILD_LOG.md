@@ -4653,3 +4653,12 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Owner to-do: link Claude, ChatGPT and the Muse app on the new address with codes made on jetson-05; approval page https://192.168.12.207:8787 on the office network. Not yet checked: a reboot of jetson-05.
 
 - A slip in that push: copying the standalone repo's `test_deploy_files.py` over this repo's dropped its start.sh tests, and 4 privacy tests failed on main for about five minutes (the push did not wait on the test result). Fixed in 8fa95f0e (157 privacy tests pass); nothing deployed was affected.
+
+## Nov 3, 2026, night ET: jetson-02 through Muse Muse (Hussam's DEVICE_MCP_URL and token)
+
+- Redeployed Production so Hussam's `DEVICE_MCP_URL` (jetson-02's muse-device through the fleet's ngrok route) and `DEVICE_MCP_TOKEN` took effect. Then turned on `HARDWARE_BOARD_TOOLS=1` and `GADGET_CONNECT=1` (owner: "turn it all on"; Hussam left GADGET_CONNECT to us) and redeployed again (www.musemuse.dev ready in 3 min).
+- `/api/device` as admin (automation bearer): 200 with jetson-02's 12 tools (describe_device, capture_image, record_audio, list_models, install_model, start_model, ask_model, stop_model, save_dataset, train_model, training_status, stop_training).
+- Real calls through `/api/device`: describe_device answered (Orin Nano Super, Ubuntu 24.04.4, 7.31 GiB memory, **0.1 GiB disk free of 27**). capture_image: "No camera is attached to this board." record_audio: "No microphone is attached to this board." So the photo and recording test cannot pass on jetson-02 until a USB camera and microphone are plugged in.
+- The gadget product for the end-to-end test: Sprout Squad Journal (build 3fea463b, skill-muse-gadget from the Nov 3 skills batch, status partial, live at https://musemuse-sprout-squad-journal.vercel.app). With `HARDWARE_GADGET_OWNER_CHECK` on, a live product reaches only a board its owner linked in the registry, and registering a board needs that board's muse-device token, so an admin with the token registers jetson-02 on /device and links it to the product. Not done yet; nothing taken through the product; the unplug test (503 gadget_offline) not run.
+- Not touched: Hussam's PRs #71 and #80, jetson-05 (its ngrok inspector keeps raw requests in memory; Hussam's fix is `inspect_db_size: -1` and a tunnel restart).
+
