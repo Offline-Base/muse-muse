@@ -228,14 +228,27 @@ def hunt():
         objects = [{"box": o.get("box"), "score": o.get("score", 0.0)} for o in res.get("objects", [])]
         score = max((o["score"] for o in objects), default=0.0)
         size = res.get("image_size") or [640, 480]
-        top_obj = max(objects, key=lambda o: o["score"]) if objects else None
+        # A match at GOAL counts as a muse only if it is plain-colored like the cream Muse (a blue Stitch scores 1.0 too).
+        for o in objects:
+            if o["score"] >= GOAL and o.get("box"):
+                try:
+                    sat = box_saturation(jpeg, o["box"], size)
+                except Exception:
+                    sat = None
+                o["sat"] = None if sat is None else round(sat, 2)
+                o["plain"] = sat is None or sat <= MAX_SATURATION
+        musey = [o for o in objects if o["score"] >= GOAL and o.get("plain")]
+        match_score = max((o["score"] for o in musey), default=0.0)
+        top_obj = (max(musey, key=lambda o: o["score"]) if musey else
+                   max(objects, key=lambda o: o["score"]) if objects else None)
         with lock:
             # Best match: the latest look's if it reached GOAL, else the best at GOAL or more in the last few looks,
             # else whatever the latest look had (shown as under the line).
             look_no = state["looks"] + 1
-            recent.append({"look": look_no, "obj": top_obj, "frame": jpeg, "pan": pan, "size": size})
-            good = [r for r in recent if r["obj"] and r["obj"]["score"] >= GOAL]
-            if top_obj and top_obj["score"] >= GOAL:
+            recent.append({"look": look_no, "obj": top_obj, "frame": jpeg, "pan": pan, "size": size, "objs": objects,
+                           "ov": ov, "moves": state["moves"]})
+            good = [r for r in recent if r["obj"] and r["obj"]["score"] >= GOAL and r["obj"].get("plain")]
+            if musey:
                 pick = recent[-1]
             elif good:
                 pick = max(good, key=lambda r: r["obj"]["score"])
@@ -244,7 +257,8 @@ def hunt():
             if pick:
                 overlay["bestframe"] = pick["frame"]
                 state["bestmatch"] = {"look": pick["look"], "ago": look_no - pick["look"], "score": pick["obj"]["score"],
-                                      "box": pick["obj"]["box"], "size": pick["size"], "pan": pick["pan"]}
+                                      "box": pick["obj"]["box"], "size": pick["size"], "pan": pick["pan"],
+                                      "plain": bool(pick["obj"].get("plain")), "sat": pick["obj"].get("sat")}
             else:
                 state["bestmatch"] = None
             state["frame_t"] = t
@@ -259,17 +273,17 @@ def hunt():
                          best=max(state["best"], score),
                          last={"score": score, "count": len(objects), "ms": res.get("ms"), "weights": res.get("weights", "base"),
                                "objects": objects, "size": res.get("image_size") or [640, 480]})
-        if score >= GOAL and not seeing:
+        if match_score >= GOAL and not seeing:
             seeing = True
             bridge("stop")  # if it was driving, it stops on the find
             run_event.clear()
             name = save_snapshot(jpeg, ov, score, "found")
-            top = max(objects, key=lambda o: o["score"])
+            top = max(musey, key=lambda o: o["score"])
             with lock:
                 seq = (state["found"] or {}).get("seq", 0) + 1
                 state["found"] = {"word": word, "score": score, "pan": pan, "snapshot": name, "box": top["box"],
                                   "size": res.get("image_size") or [640, 480], "seq": seq, "at": time.strftime("%H:%M:%S")}
-        elif score < GOAL - 0.05:
+        elif match_score < GOAL - 0.05:
             seeing = False  # a little below the line before it counts as gone, so one muse pings once
         with lock:
             state["seeing"] = seeing
@@ -300,9 +314,10 @@ MCP_INSTRUCTIONS = (
     "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), look "
     "again, and put it back if it got worse. The person watching talks to you by voice: a microphone is "
     "transcribed the whole time, and anything that sounds like a command arrives at the top of your next tool result as "
-    "VOICE COMMAND. Treat those as the owner's orders: rover_say \"Heard you: ...\", work out what they mean (\"move back "
-    "for two seconds\" is rover_drive -150/-150 for 1500 ms then 500 ms; \"turn left a bit\" is a short left turn; "
-    "\"lower the exposure\" is rover_camera), do it right away, then carry on with the search. Transcripts can be rough, so "
+    "VOICE COMMAND. The owner drives spoken moves (left, right, forward, back) "
+    "themselves with the page's pad, so don't repeat them: rover_say \"Heard you: ...\", then rover_look and keep "
+    "searching on your own from the new view. Camera requests (\"lower the exposure\") are yours, with rover_camera. "
+    "Between commands, keep searching on your own. Transcripts can be rough, so "
     "take the most likely meaning. Other room talk is labelled as such; ignore it unless it is about the search. Drive at most 1500 ms at a time; the rover stops by itself 150 mm before an "
     f"obstacle. Once you have found at least {TARGET} and checked the rest of the room for more, call rover_stop, then "
     "rover_done with a one-line summary."
@@ -368,7 +383,8 @@ def describe(look):
             continue
         x0, y0, x1, y1 = o["box"]
         cx = (x0 + x1) / 2 / w
-        out.append({"score": round(o["score"], 3), "match": o["score"] >= GOAL,
+        out.append({"score": round(o["score"], 3), "match": o["score"] >= GOAL and o.get("plain") is not False,
+                    **({"too_colorful_to_be_muse": True} if o.get("plain") is False else {}),
                     "side": "left" if cx < 0.36 else "right" if cx > 0.64 else "center",
                     "offset_deg": round((cx - 0.5) * FOV, 1), "size_pct": round((x1 - x0) * (y1 - y0) / (w * h) * 100, 1)})
     return out
@@ -400,9 +416,28 @@ def wait_fresh(t0, timeout=15):
     return False
 
 
+def manual_log(left, right):
+    """A drive from the page's pad, logged as the answer to what was just said (the owner clicks for voice commands)."""
+    if not (left or right):
+        return
+    kind = ("forward" if left > 0 and right > 0 else "back" if left < 0 and right < 0 else "left" if left < right else "right")
+    now = time.time()
+    with lock:
+        lm = state.get("manual_last") or {}
+        if lm.get("kind") == kind and now - lm.get("ts", 0) < 2.0:  # one line per press, not per repeat
+            lm["ts"] = now
+            return
+        state["manual_last"] = {"kind": kind, "ts": now}
+        state["moves"] += 1
+        heard = next((h["text"] for h in reversed(state["hints"]) if now - h["ts"] < 25), None)
+    words = {"forward": "driving forward", "back": "backing up", "left": "turning left", "right": "turning right"}[kind]
+    agent_log("did", (f"Heard you (\u201c{heard[:70]}\u201d): {words}" if heard else f"On your command: {words}"))
+
+
 def box_saturation(jpeg, box, size):
     """Median color saturation (0 grey to 1 vivid) of the middle of a box, decoded with gstreamer (no image libraries here)."""
-    src, raw = os.path.join(CAM_DIR, "check.jpg"), os.path.join(CAM_DIR, "check.rgb")
+    tid = threading.get_ident()  # the look loop and a find can check at the same time
+    src, raw = os.path.join(CAM_DIR, f"check-{tid}.jpg"), os.path.join(CAM_DIR, f"check-{tid}.rgb")
     with open(src, "wb") as fh:
         fh.write(jpeg)
     subprocess.run(["gst-launch-1.0", "-q", "filesrc", f"location={src}", "!", "jpegdec", "!", "videoconvert", "!",
@@ -489,20 +524,27 @@ def call_tool(name, args):
         which = str(args.get("which") or "best")
         note = " ".join(str(args.get("note") or "").split())[:120]
         with lock:
-            last, pan, frame, ov, moves = state["last"], state["pan"], overlay["frame"], overlay["jpeg"], state["moves"]
+            moves = state["moves"]
             finds = list(state["finds"])
-        w = (last or {}).get("size", [640, 480])[0]
-        good = [o for o in (last or {}).get("objects", []) if o.get("box") and o["score"] >= GOAL]
-        if not good:
-            raise ToolError("No tuned match at 0.95 or more in the latest look. Use rover_look first.")
+            # SAM's score flickers a little from look to look: take matches from the last 3 looks since the last move.
+            looks = [r for r in list(recent)[-3:] if r.get("moves") == moves]
+        cands = [(r, o) for r in looks for o in r.get("objs") or [] if o.get("box") and o["score"] >= GOAL]
+        if not cands:
+            agent_log("call", "rover_found refused: no match at 95% or more in the last 3 looks")
+            raise ToolError("No tuned match at 0.95 or more in the last 3 looks since the rover last moved. Call rover_look and try again.")
+        w = cands[0][0]["size"][0]
+        good = [o for _, o in cands]
         def side(o):
             cx = (o["box"][0] + o["box"][2]) / 2 / w
             return "left" if cx < 0.36 else "right" if cx > 0.64 else "center"
         pick = [o for o in good if which == "best" or side(o) == which]
         if not pick:
-            raise ToolError(f"No match at 0.95 or more on the {which} of the latest look. Matches: " + ", ".join(side(o) for o in good))
+            agent_log("call", f"rover_found refused: no match on the {which}")
+            raise ToolError(f"No match at 0.95 or more on the {which} in the last 3 looks. Matches: " + ", ".join(side(o) for o in good))
         o = max(pick, key=lambda o: o["score"])
-        sat = box_saturation(frame, o["box"], (last or {}).get("size", [640, 480]))
+        r = next(r for r, oo in cands if oo is o)
+        last, frame, ov, pan = {"size": r["size"]}, r["frame"], r["ov"], r["pan"]
+        sat = box_saturation(frame, o["box"], r["size"])
         if sat is not None and sat > MAX_SATURATION:
             agent_log("call", f"rover_found refused: too colorful for the cream Muse (saturation {sat:.2f})")
             raise ToolError(f"Not recorded: that match is too colorful to be the Muse (color saturation {sat:.2f}; the cream "
@@ -581,8 +623,10 @@ def mcp_handle(msg):
             cmds = [h for h in new if COMMAND_WORDS.search(h)]
             talk = [h for h in new if h not in cmds]
             if cmds:
-                content.insert(0, {"type": "text", "text": "VOICE COMMAND from the person watching (spoken, transcribed; do this "
-                                   "next, before your own plan, and rover_say that you heard it): " + json.dumps(cmds)})
+                content.insert(0, {"type": "text", "text": "VOICE COMMAND from the person watching (spoken, transcribed). They "
+                                   "drive spoken moves themselves with the page's pad, so do not repeat a move: rover_say "
+                                   "'Heard you: ...', then rover_look and keep searching from the new view. Camera requests "
+                                   "(exposure, brighter, contrast) you do with rover_camera. Command: " + json.dumps(cmds)})
             if talk:
                 content.append({"type": "text", "text": "Room talk heard by the mic (probably not for you; use it only if it is "
                                 "about the search): " + json.dumps(talk)})
@@ -662,7 +706,7 @@ button.small{padding:5px 12px;font-size:13px}.chip.live i{animation:pulse 1s inf
 .timeline li:before{content:"";position:absolute;left:3px;top:6px;width:9px;height:9px;border-radius:50%;background:#65676b}
 .timeline li:after{content:"";position:absolute;left:7px;top:20px;bottom:2px;width:1px;background:var(--line)}
 .timeline li:last-child:after{display:none}.timeline li.now:before{background:var(--ai-gradient);animation:pulse 1s infinite}
-.timeline li.got:before{background:var(--positive)}.timeline li.hint:before{background:var(--accent)}
+.timeline li.got:before{background:var(--positive)}.timeline li.hint:before{background:var(--accent)}.timeline li.did:before{background:var(--ai-gradient)}.timeline li.did b{color:var(--ai-start)}
 .ubub.hintb{background:var(--tinted-bg);color:var(--fg);font-size:14px}.mic{font-size:13px}.timeline li.done:before{background:none;border:1.5px solid #8a8d91;width:12px;height:12px;left:1px;top:4px}
 .timeline b{display:block;font-weight:600;color:#3d3f42}.timeline li.got b{color:var(--positive)}
 .timeline span{display:block;color:var(--fg-2);font-size:13px;line-height:1.5;margin-top:3px}
@@ -689,6 +733,9 @@ button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;
 .stack{display:flex;height:12px;border-radius:var(--pill);overflow:hidden;margin-top:6px;background:var(--secondary-bg)}.stack i{display:block;height:100%;transition:width .4s}
 .w1{background:#0064d4}.w2{background:#9b45f0}.w3{background:#9fc3ee}.legend{list-style:none;padding:0;margin:6px 0 0}.legend li{display:flex;align-items:center;gap:6px;margin-top:3px}
 .legend li i{width:10px;height:10px;border-radius:3px;flex:none}.legend b{margin-left:auto;font-variant-numeric:tabular-nums}
+.minipad{position:absolute;right:10px;bottom:10px;display:grid;grid-template-columns:repeat(3,42px);grid-template-rows:repeat(2,38px);gap:6px}
+.minipad button{padding:0;font-size:16px;border-radius:var(--radius-sm);background:rgba(255,255,255,.85);box-shadow:0 1px 6px rgba(0,0,0,.2);user-select:none;touch-action:none}
+.minipad button.held{background:var(--accent);color:#fff}
 .tilebody{flex:1;min-height:0;display:flex}.tilebody .shot{flex:1}
 .tilebody .best{width:32%;flex:none;flex-direction:column;align-items:flex-start;justify-content:center;margin:0 10px 10px 0}
 .tilebody .best canvas{width:min(100%,130px);height:auto;aspect-ratio:1}.tilebody .base-row{width:32%;flex:none;flex-direction:column;align-items:flex-start;justify-content:center;margin:0 10px 10px 0}
@@ -723,7 +770,7 @@ button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;
 <aside class="stepspane"><div class="seg" role="tablist"><button type="button" class="on" data-tab="steps">Steps</button><button type="button" data-tab="finds">Finds</button></div>
 <div class="tabbody" id="tab-steps"><ol class="timeline" id="timeline"></ol></div><div class="tabbody" id="tab-finds" hidden><div class="finds" id="finds"></div></div></aside>
 </div></div></section>
-<section class="card" id="camcard" style="grid-area:cam"><h2>Rover camera, live</h2><div class="camsplit"><div class="shot"><div class="frame"><img id="cam" alt="Live view from the rover's camera"></div></div>
+<section class="card" id="camcard" style="grid-area:cam"><h2>Rover camera, live</h2><div class="camsplit"><div class="shot"><div class="frame"><img id="cam" alt="Live view from the rover's camera"><div class="minipad" aria-label="Drive"><span></span><button data-d="fwd" aria-label="Forward">&#9650;</button><span></span><button data-d="left" aria-label="Turn left">&#9664;</button><button data-d="back" aria-label="Back">&#9660;</button><button data-d="right" aria-label="Turn right">&#9654;</button></div></div></div>
 <aside class="mem" id="mem" hidden><div class="memh">jetson-04 memory <span class="sub">Orin Nano, CPU and GPU share it</span></div>
 <div class="mrow"><span>Board</span><b id="m_board">-</b></div><div class="mbar"><i id="mb_board"></i></div>
 <div class="mrow"><span>SAM 3.1 service (both models)</span><b id="m_sam">-</b></div><div class="mbar"><i id="mb_sam" class="ai"></i></div>
@@ -778,8 +825,8 @@ x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(w,x1+pad);y1=Math.min(h,
 c.drawImage(img,x0*sx,y0*sy,bw,bh,(canvas.width-bw*s)/2,(canvas.height-bh*s)/2,bw*s,bh*s)};img.src=url}
 function drawLabels(look,id){const el=document.getElementById(id||'labels');el.innerHTML='';if(!look||!look.objects)return;
 const [w,h]=look.size||[640,480];const objs=look.objects.slice().sort((a,b)=>b.score-a.score);
-objs.forEach((o,i)=>{if(!o.box)return;const t=document.createElement('div');t.className='tag'+(i===0?' top':'')+(o.score>=GOAL?' goal':'');
-t.textContent=word+' '+Math.round(o.score*100)+'%';t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(6,o.box[1]/h*100)+'%';el.appendChild(t)})}
+objs.forEach((o,i)=>{if(!o.box)return;const t=document.createElement('div');t.className='tag'+(i===0?' top':'')+(o.score>=GOAL&&o.plain!==false?' goal':'');
+t.textContent=word+' '+Math.round(o.score*100)+'%'+(o.plain===false?' · not Muse (too colorful)':'');t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(6,o.box[1]/h*100)+'%';el.appendChild(t)})}
 function topObject(look){return look&&look.objects&&look.objects.length?look.objects.slice().sort((a,b)=>b.score-a.score)[0]:null}
 let doneShown=null;function chime(){if(!audio)return;const t=audio.currentTime;[[1046.5,0],[1318.5,.14],[1568,.28],[2093,.42]].forEach(([f,d])=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=f;
 g.gain.setValueAtTime(0.0001,t+d);g.gain.exponentialRampToValueAtTime(0.3,t+d+.01);g.gain.exponentialRampToValueAtTime(0.0001,t+d+.7);o.connect(g).connect(audio.destination);o.start(t+d);o.stop(t+d+.75)})}
@@ -787,7 +834,7 @@ let lastLooks=-1,lastSeq=null,shownBest=null,word='muse',agentSeq=-1,findsShown=
 function esc(t){return String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
 const SPARK='<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6547f5"/><stop offset="1" stop-color="#c13df0"/></linearGradient></defs><g fill="url(#sg)"><ellipse cx="12" cy="5" rx="2.6" ry="3.4"/><ellipse cx="12" cy="19" rx="2.6" ry="3.4"/><ellipse cx="5.9" cy="8.5" rx="2.6" ry="3.4" transform="rotate(-60 5.9 8.5)"/><ellipse cx="18.1" cy="15.5" rx="2.6" ry="3.4" transform="rotate(-60 18.1 15.5)"/><ellipse cx="5.9" cy="15.5" rx="2.6" ry="3.4" transform="rotate(60 5.9 15.5)"/><ellipse cx="18.1" cy="8.5" rx="2.6" ry="3.4" transform="rotate(60 18.1 8.5)"/></g></svg>';
 let chatKey='';
-function steps(s){const out=[];let cur=null;for(const a of s.agent){if(a.kind==='hint'){out.push({t:'Heard you',d:['"'+a.text+'"'],hint:true});cur=null}else if(a.kind==='say'){cur={t:a.text,d:[]};out.push(cur)}else if(a.kind==='found'){out.push({t:a.text,d:[],got:true});cur=null}
+function steps(s){const out=[];let cur=null;for(const a of s.agent){if(a.kind==='did'){out.push({t:a.text,d:[],did:true});cur=null}else if(a.kind==='hint'){out.push({t:'Heard you',d:['"'+a.text+'"'],hint:true});cur=null}else if(a.kind==='say'){cur={t:a.text,d:[]};out.push(cur)}else if(a.kind==='found'){out.push({t:a.text,d:[],got:true});cur=null}
 else{if(!cur){cur={t:'Checking the rover',d:[]};out.push(cur)}cur.d.push(a.text.replace(/^rover_(\\w+):?\\s*/,(m,n)=>({look:'Looked: ',status:'Status: ',photo:'Photo: ',drive:'Drove ',stop:'Stopped',found:'',say:''}[n]||n+' ')))}}return out}
 function renderAgent(s){if(s.mic!==micOn)showMic(!!s.mic);const live=s.chat.status==='running'||(s.agent_at&&s.now-s.agent_at<30);document.getElementById('agentchip').classList.toggle('live',!!live);
 document.getElementById('agentstate').textContent=s.chat.status==='running'?'Muse Code is working':live?'Muse Code is connected':(s.chat.status==='done'?'Done':'Waiting for Muse Code');
@@ -795,7 +842,7 @@ const n=s.finds.length,c=document.getElementById('count');c.textContent=s.done?'
 if(s.done&&doneShown===false)chime();doneShown=!!s.done;
 const st=steps(s),key=s.agent_seq+'|'+!!s.done+'|'+s.hints.length+'|'+s.chat.status+'|'+s.chat.reply.length+'|'+s.chat.prompt.length;
 if(key!==chatKey){chatKey=key;const tl=document.getElementById('timeline');
-tl.innerHTML=st.map((x,i)=>'<li class="'+(x.got?'got':x.hint?'hint':'')+(s.chat.status==='running'&&i===st.length-1?' now':'')+'"><b>'+esc(x.t)+'</b>'+x.d.map(d=>'<span>'+esc(d)+'</span>').join('')+'</li>').join('')+
+tl.innerHTML=st.map((x,i)=>'<li class="'+(x.got?'got':x.hint?'hint':x.did?'did':'')+(s.chat.status==='running'&&i===st.length-1?' now':'')+'"><b>'+esc(x.t)+'</b>'+x.d.map(d=>'<span>'+esc(d)+'</span>').join('')+'</li>').join('')+
 (s.done||s.chat.status==='done'?'<li class="done"><b>Done</b>'+(s.done&&s.done.summary?'<span>'+esc(s.done.summary)+'</span>':'')+'</li>':'')||'<li class="done"><b>No steps yet</b><span>Ask Muse Code below, or run the bridge on the laptop.</span></li>';
 document.getElementById('tab-steps').scrollTop=1e9;
 const m=document.getElementById('msgs');let h='';
@@ -835,10 +882,10 @@ root.classList.toggle('is-found',!!s.found);
 if(s.looks!==lastLooks&&s.looks>0){lastLooks=s.looks;const img=document.getElementById('sam'),look=s.last;img.onload=()=>{img.hidden=false;document.getElementById('samempty').hidden=true;drawLabels(look)};
 img.src='/overlay.jpg?'+s.looks;const bimg=document.getElementById('base'),blook=s.last_base;if(blook){bimg.onload=()=>{bimg.hidden=false;document.getElementById('baseempty').hidden=true;drawLabels(blook,'labelsbase')};bimg.src='/overlay_base.jpg?'+s.looks;const bt=topObject(blook);document.getElementById('basetext').textContent=bt?(word+' '+Math.round(bt.score*100)+'% (stop uses the tuned one)'):'Nothing called "'+word+'"'}}
 const bm=s.bestmatch,bc=document.getElementById('bestcrop');if(!bm){shownBest=null;bc.getContext('2d').clearRect(0,0,bc.width,bc.height)}else if(bm.look!==shownBest){shownBest=bm.look;crop(bc,'/bestframe.jpg?'+bm.look,bm.box,bm.size)}
-{const hit=!!(bm&&bm.score>=GOAL),card=document.getElementById('bestcard');card.classList.toggle('hit',hit);
+{const hit=!!(bm&&bm.score>=GOAL&&bm.plain),colorful=!!(bm&&bm.score>=GOAL&&!bm.plain),card=document.getElementById('bestcard');card.classList.toggle('hit',hit);
 document.getElementById('besttitle').textContent=hit?'Muse found':'Best match, last 5 looks';
 document.getElementById('bestscore').textContent=bm?(hit?'':'')+Math.round(bm.score*100)+'% '+word:'Nothing yet';
-document.getElementById('besttext').textContent=bm?((bm.ago===0?'In this look':bm.ago===1?'1 look ago':bm.ago+' looks ago')+(hit?' · at or over '+Math.round(GOAL*100)+'%':' · under '+Math.round(GOAL*100)+'%, not a match')):'Nothing called "'+word+'" in the last 5 looks'}
+document.getElementById('besttext').textContent=bm?((bm.ago===0?'In this look':bm.ago===1?'1 look ago':bm.ago+' looks ago')+(hit?' · at or over '+Math.round(GOAL*100)+'%':colorful?' · too colorful: some other toy, not the Muse':' · under '+Math.round(GOAL*100)+'%, not a match')):'Nothing called "'+word+'" in the last 5 looks'}
 document.getElementById('tunedtitle').textContent='SAM 3.1 tuned for "'+word+'"';
 renderAgent(s)
 if(s.found){if(lastSeq===null)lastSeq=s.found.seq;else if(s.found.seq!==lastSeq){lastSeq=s.found.seq;ping()}}else if(lastSeq===null)lastSeq=0;
@@ -850,8 +897,8 @@ function wheels(d){const s=+speedEl.value,t=Math.round(s*0.8);return {fwd:[s,s],
 let held=null,driveTimer=null;
 function drive(d){const w=wheels(d);jpost('/drive',{left:w[0],right:w[1],ms:600})}
 function startDrive(d,btn){if(held===d)return;stopDrive(true);held=d;if(btn)btn.classList.add('held');drive(d);driveTimer=setInterval(()=>drive(d),400)}
-function stopDrive(quiet){clearInterval(driveTimer);driveTimer=null;document.querySelectorAll('.pad .held').forEach(b=>b.classList.remove('held'));const was=held;held=null;if(was||!quiet)jpost('/drive',{left:0,right:0})}
-document.querySelectorAll('.pad button[data-d]').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startDrive(b.dataset.d,b)});
+function stopDrive(quiet){clearInterval(driveTimer);driveTimer=null;document.querySelectorAll('.pad .held,.minipad .held').forEach(b=>b.classList.remove('held'));const was=held;held=null;if(was||!quiet)jpost('/drive',{left:0,right:0})}
+document.querySelectorAll('.pad button[data-d],.minipad button[data-d]').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startDrive(b.dataset.d,b)});
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>{if(held===b.dataset.d)stopDrive()}))});
 const keys={ArrowUp:'fwd',ArrowDown:'back',ArrowLeft:'left',ArrowRight:'right'};
 function typing(e){const t=e.target;return t&&(t.tagName==='TEXTAREA'||t.isContentEditable||(t.tagName==='INPUT'&&t.type!=='checkbox'))}
@@ -1014,6 +1061,7 @@ class Page(BaseHTTPRequestHandler):
             right = max(-MAX_MANUAL_SPEED, min(MAX_MANUAL_SPEED, int(body.get("right", 0))))
             ms = max(100, min(800, int(body.get("ms", 600))))
             answer = bridge("drive", left, right, ms) if (left or right) else bridge("stop")
+            manual_log(left, right)
             return self._send(200, json.dumps(answer).encode(), "application/json")
         if self.path == "/look":
             body = self._body()
