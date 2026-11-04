@@ -296,7 +296,7 @@ def hunt():
 MCP_INSTRUCTIONS = (
     "You drive a small rover with a webcam fixed to its front (it does not pan; to look around, turn the whole rover). "
     "Every camera frame goes to two SAM 3.1 models on a Jetson: one tuned to find the Muse mascot, and Meta's own weights "
-    "for comparison. A tuned score of 0.95 or more is a match. The goal: find the Muse mascots in the room. There are "
+    f"for comparison. A tuned score of {GOAL:.2f} or more is a match. The goal: find the Muse mascots in the room. There are "
     f"always at least {TARGET}, maybe more; record every different one you find. People are watching a page that shows "
     "your steps, so narrate everything clearly with rover_say: before every action, say what you are about to do and why "
     "(\"Turning right a little to check the corner by the couch\"); after every look, say what both models saw and what "
@@ -307,11 +307,11 @@ MCP_INSTRUCTIONS = (
     "way. Head toward anything that looks like a plush toy and get close to check it. What counts as a Muse: the Muse "
     "mascot character, cream and fuzzy with a round face in a hood and stubby arms; a plush, a figure or a picture of it "
     "on a screen all count. rover_photo shows a reference photo of it next to the camera's true colors. The tuned model "
-    "also scores other plush toys (a blue Stitch, a squishy round plush with a bow, animals) above 0.95: compare with the "
+    f"also scores other plush toys (a blue Stitch, a squishy round plush with a bow, animals) above {GOAL:.2f}: compare with the "
     "reference and skip anything that isn't the same character. The tuned model sometimes scores other plush toys or pictures high, so when a look shows a match, check it "
     "with rover_photo against the reference before calling rover_found. A muse already found can come into view again after a turn: compare "
     "with your earlier photos and don't record it twice. Only if the picture is clearly too dark or washed out, or a likely "
-    "muse scores just under 0.95, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), then "
+    f"muse scores just under {GOAL:.2f}, tune the webcam with rover_camera (exposure, gain, contrast, gamma, brightness), then "
     "look again. You may change the camera only once per run, so make that one change count. The person watching talks to you by voice: a microphone is "
     "transcribed the whole time, and anything that sounds like a command arrives at the top of your next tool result as "
     "VOICE COMMAND. The owner drives spoken moves (left, right, forward, back) "
@@ -351,7 +351,7 @@ MCP_TOOLS = [
     {"name": "rover_stop", "description": "Stop the wheels now.", "inputSchema": _schema()},
     {"name": "rover_photo", "description": "The latest frame with the tuned SAM 3.1 masks drawn on it, as an image, to check a match with your own eyes.",
      "inputSchema": _schema(), "annotations": {"readOnlyHint": True}},
-    {"name": "rover_found", "description": "Record a Muse mascot you have checked. Needs a tuned match at 0.95 or more in the latest look. "
+    {"name": "rover_found", "description": f"Record a Muse mascot you have checked. Needs a tuned match at {GOAL:.2f} or more in the last 3 looks. "
      "which: best, left, center or right (which match in the frame). note: a few words on where it is.",
      "inputSchema": _schema({"which": {"type": "string", "enum": ["best", "left", "center", "right"]}, "note": {"type": "string", "maxLength": 120}})},
     {"name": "rover_camera", "description": "Read or tune the webcam (at most one change per run). With no arguments it returns the current values and ranges. "
@@ -550,8 +550,8 @@ def call_tool(name, args):
             looks = [r for r in list(recent)[-3:] if r.get("moves") == moves]
         cands = [(r, o) for r in looks for o in r.get("objs") or [] if o.get("box") and o["score"] >= GOAL]
         if not cands:
-            agent_log("call", "rover_found refused: no match at 95% or more in the last 3 looks")
-            raise ToolError("No tuned match at 0.95 or more in the last 3 looks since the rover last moved. Call rover_look and try again.")
+            agent_log("call", f"rover_found refused: no match at {GOAL * 100:.0f}% or more in the last 3 looks")
+            raise ToolError(f"No tuned match at {GOAL:.2f} or more in the last 3 looks since the rover last moved. Call rover_look and try again.")
         w = cands[0][0]["size"][0]
         good = [o for _, o in cands]
         def side(o):
@@ -560,7 +560,7 @@ def call_tool(name, args):
         pick = [o for o in good if which == "best" or side(o) == which]
         if not pick:
             agent_log("call", f"rover_found refused: no match on the {which}")
-            raise ToolError(f"No match at 0.95 or more on the {which} in the last 3 looks. Matches: " + ", ".join(side(o) for o in good))
+            raise ToolError(f"No match at {GOAL:.2f} or more on the {which} in the last 3 looks. Matches: " + ", ".join(side(o) for o in good))
         o = max(pick, key=lambda o: o["score"])
         r = next(r for r, oo in cands if oo is o)
         last, frame, ov, pan = {"size": r["size"]}, r["frame"], r["ov"], r["pan"]
