@@ -636,7 +636,7 @@ main{margin:0 auto;padding:12px 16px 40px;display:grid;gap:16px}
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}@media (prefers-reduced-motion:reduce){.working i{animation:none}.fill{transition:none}}
 [hidden]{display:none!important}
 .is-found .fill{background:var(--positive)}.is-found .score{color:var(--positive)}
-.stage{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"agent tuned" "cam base";gap:12px;height:calc(100vh - 92px);min-height:560px}
+.stage{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);grid-template-rows:repeat(3,minmax(0,1fr));grid-template-areas:"agent cam" "agent tuned" "agent base";gap:12px;height:calc(100vh - 92px);min-height:560px}
 .stage>.card{display:flex;flex-direction:column;min-height:0;overflow:hidden}.stage>.card>h2{padding:9px 14px}
 .agent{display:flex;flex-direction:column}.agenthead{display:flex;align-items:center;gap:10px}
 .mc{font:700 17px var(--font);color:var(--fg)}.count{font:700 15px var(--font);color:var(--fg);font-variant-numeric:tabular-nums}.count.done{color:var(--positive)}
@@ -689,6 +689,9 @@ button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;
 .stack{display:flex;height:12px;border-radius:var(--pill);overflow:hidden;margin-top:6px;background:var(--secondary-bg)}.stack i{display:block;height:100%;transition:width .4s}
 .w1{background:#0064d4}.w2{background:#9b45f0}.w3{background:#9fc3ee}.legend{list-style:none;padding:0;margin:6px 0 0}.legend li{display:flex;align-items:center;gap:6px;margin-top:3px}
 .legend li i{width:10px;height:10px;border-radius:3px;flex:none}.legend b{margin-left:auto;font-variant-numeric:tabular-nums}
+.tilebody{flex:1;min-height:0;display:flex}.tilebody .shot{flex:1}
+.tilebody .best{width:32%;flex:none;flex-direction:column;align-items:flex-start;justify-content:center;margin:0 10px 10px 0}
+.tilebody .best canvas{width:min(100%,130px);height:auto;aspect-ratio:1}.tilebody .base-row{width:32%;flex:none;flex-direction:column;align-items:flex-start;justify-content:center;margin:0 10px 10px 0}
 .base-row{display:flex;align-items:baseline;gap:10px;margin:0 10px 10px;padding:6px 12px}
 .controls{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px}
 .pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,48px);gap:8px;padding:0 16px}
@@ -701,7 +704,7 @@ button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;
 .hint{color:var(--fg-2);font-size:12px;padding:0 16px 14px}
 .snaps{display:flex;gap:12px;overflow-x:auto;padding:0 16px 16px}.snaps figure{margin:0;flex:none;width:160px}
 .snaps img{width:160px;border-radius:var(--radius-sm);display:block}.snaps figcaption{font-size:12px;color:var(--fg-2);margin-top:4px}
-@media (max-width:900px){.controls{grid-template-columns:1fr}.stage{grid-template-columns:1fr;grid-template-areas:"agent" "cam" "tuned" "base"}}
+@media (max-width:900px){.controls{grid-template-columns:1fr}.stage{grid-template-columns:1fr;grid-template-rows:none;height:auto;grid-template-areas:"agent" "cam" "tuned" "base"}.stage>.card{min-height:420px}}
 </style></head><body>
 <header><div><div class="title">Muse Code finds the Muse</div><div class="sub">Muse Code drives the rover; SAM 3.1 on a Jetson looks through its camera</div></div>
 <span class="chip"><i></i>Meta SAM 3.1, tuned for "muse"</span>
@@ -729,12 +732,12 @@ button{white-space:nowrap}#micbtn.miclive{background:var(--negative);color:#fff;
 <ul class="legend"><li><i class="w1"></i>Meta SAM 3.1 weights <b id="m_w1">-</b></li><li><i class="w2"></i>Tuned "muse" detector, loaded beside them <b id="m_w2">-</b></li><li><i class="w3"></i>Working memory for each look <b id="m_w3">-</b></li></ul>
 <div class="mrow"><span>GPU busy</span><b id="m_load">-</b></div><div class="mrow"><span>Swap</span><b id="m_swap">-</b></div>
 <div class="sub" id="m_note">Both SAM 3.1 versions run in one service; the tuned one adds only its detector.</div></aside></div></section>
-<section class="card" style="grid-area:tuned"><h2 id="tunedtitle">SAM 3.1 tuned for "muse"</h2><div class="shot"><div class="frame"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
+<section class="card" style="grid-area:tuned"><h2 id="tunedtitle">SAM 3.1 tuned for "muse"</h2><div class="tilebody"><div class="shot"><div class="frame"><img id="sam" alt="The tuned SAM's masks on the latest frame" hidden><div class="labels" id="labels"></div>
 <div class="empty" id="samempty"><strong>Starting</strong><span>Each frame goes to both models, about 3 seconds a round on the Jetson.</span></div></div></div>
-<div class="best" id="bestcard"><canvas id="bestcrop" width="168" height="168" aria-label="Best match in the last few looks"></canvas><div><div class="bt" id="besttitle">Best match, last 5 looks</div><div class="bs" id="bestscore">-</div><div class="bw" id="besttext">None yet</div></div></div></section>
-<section class="card" style="grid-area:base"><h2>SAM 3.1, Meta's weights</h2><div class="shot"><div class="frame"><img id="base" alt="Meta's SAM 3.1 on the same frame" hidden><div class="labels" id="labelsbase"></div>
+<div class="best" id="bestcard"><canvas id="bestcrop" width="168" height="168" aria-label="Best match in the last few looks"></canvas><div><div class="bt" id="besttitle">Best match, last 5 looks</div><div class="bs" id="bestscore">-</div><div class="bw" id="besttext">None yet</div></div></div></div></section>
+<section class="card" style="grid-area:base"><h2>SAM 3.1, Meta's weights</h2><div class="tilebody"><div class="shot"><div class="frame"><img id="base" alt="Meta's SAM 3.1 on the same frame" hidden><div class="labels" id="labelsbase"></div>
 <div class="empty" id="baseempty"><strong>Starting</strong><span>Meta's SAM 3.1 gets the same frame and the same word.</span></div></div></div>
-<div class="base-row"><div style="font-weight:600">Untuned</div><div class="sub" id="basetext">None yet</div></div></section>
+<div class="base-row"><div style="font-weight:600">Untuned</div><div class="sub" id="basetext">None yet</div></div></div></section>
 </div>
 <section class="card status" aria-live="polite"><div class="score" id="score">0.000</div>
 <div class="meter" aria-hidden="true"><div class="fill" id="fill"></div><div class="mark" id="mark"></div></div><div class="goal" id="goal"></div>

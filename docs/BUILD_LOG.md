@@ -4796,3 +4796,4 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - On the rover: backups `hunt.py.bak-before-active` and `hunt.py.bak-before-check`, installed with sha256 checked (fe1df1cf...), restarted. Two runs were stopped by hand at the owner's request; the first stop missed (it signaled the `muse` wrapper, not the `muse-bin` process).
 
 - Nov 4, ~1 AM ET: owner could not type spaces in the page text boxes. Space (stop) and the arrow keys (drive) were caught page-wide; they are now ignored while typing in a text box. Deployed (sha256 cb7b5151...), restarted between runs.
+- Nov 4, ~1:10 AM ET: layout changed to the owner's second sketch: Muse Code full height on the left; live camera, tuned SAM 3.1 and Meta's SAM 3.1 stacked on the right, each picture 4:3 with its best-match card or "Untuned" line beside it. Deployed (sha256 50a0d887...) between runs.
