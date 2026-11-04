@@ -4706,5 +4706,5 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 
 ## Nov 3, 2026, night ET: the rover moved on the owner's ask
 
-- Owner asked to see the rover move, watching it. Through the fleet's run_command on ArduinoQ-01 (online), as user arduino, with the kit's own `rover/bridge_client.py` (PR #80's board side; ROVER_ENABLED and the site path stay off): `status` first (not driving, front and right sensors answering, left missing as Hussam said, nothing in range ahead), confirmed the built sketch has `ROVER_LEFT_INVERT 1`, then `drive 130 130 1500`. Answer `{"ok":true,"left":130,"right":130,"ms":1500}`; status after: `last_stop` "the drive's 1500 ms were up", not driving. Did the owner see it go straight? Not recorded here.
+- Owner asked to see the rover move, watching it. Through the fleet's run_command on ArduinoQ-01 (online), as user arduino, with the kit's own `rover/bridge_client.py` (PR #80's board side; ROVER_ENABLED and the site path stay off): `status` first (not driving, front and right sensors answering, left missing as Hussam said, nothing in range ahead), confirmed the built sketch has `ROVER_LEFT_INVERT 1`, then `drive 130 130 1500`. Answer `{"ok":true,"left":130,"right":130,"ms":1500}`; status after: `last_stop` "the drive's 1500 ms were up", not driving. The owner watched it: it went straight.
 
