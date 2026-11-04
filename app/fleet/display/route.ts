@@ -20,7 +20,8 @@ export async function GET(req: Request): Promise<Response> {
       mood: MOODS.find((m) => m === params.get("jolly")),
       graph: params.get("g"),
       keep: Object.fromEntries(["k", "jolly"].flatMap((name) => (params.get(name) ? [[name, params.get(name)!]] : []))),
+      roverSrc: env.fleetDisplayRover ? `/fleet/display/rover${code ? `?k=${encodeURIComponent(code)}` : ""}` : null,
     }), {
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=50, stale-while-revalidate=60", "x-robots-tag": "noindex" },
   });
 }

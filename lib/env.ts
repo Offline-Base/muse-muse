@@ -1849,4 +1849,16 @@ export const env = {
   get fleetDisplayCode(): string | null {
     return optional("FLEET_DISPLAY_CODE");
   },
+  /**
+   * FLEET_DISPLAY_ROVER: the rover's camera, outlined by SAM 3.1, below the display (lib/fleet/rover-view.ts). Needs the board
+   * server (DEVICE_MCP_URL, DEVICE_MCP_TOKEN) and the SAM board (BOARD_FLEET_URL, BOARD_FLEET_TOKEN, FLEET_SAM_NODE). Off by
+   * default: the photo is of a real room, and with no FLEET_DISPLAY_CODE anyone with the link sees it.
+   */
+  get fleetDisplayRover(): boolean {
+    return flag("FLEET_DISPLAY_ROVER");
+  },
+  /** FLEET_ROVER_PROMPT: what SAM outlines in the rover's photo. Default "box", the rover demo's obstacle. */
+  get fleetRoverPrompt(): string {
+    return optional("FLEET_ROVER_PROMPT") ?? "box";
+  },
 };

@@ -367,7 +367,7 @@ function graph(data: DisplayData, kind: GraphKind | undefined): string {
 export function renderDisplay(
   data: DisplayData,
   now: Date,
-  opts: { refreshS?: number; timeZone?: string; mood?: JollyMood; graph?: string | null; keep?: Record<string, string> } = {},
+  opts: { refreshS?: number; timeZone?: string; mood?: JollyMood; graph?: string | null; keep?: Record<string, string>; roverSrc?: string | null } = {},
 ): string {
   const time = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: opts.timeZone ?? "America/New_York" });
   const t = data.totals;
@@ -415,6 +415,7 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue
 .mem{display:flex;align-items:center;gap:1.4vmin;margin-top:1.4vmin;padding-top:1.2vmin;border-top:1px solid var(--line);font-size:2vmin;color:var(--fg-2);white-space:nowrap}.mem .sq{flex:1;min-width:0;display:grid;grid-template-columns:repeat(10,1fr);gap:.5vmin}.mem .sq i{display:block;aspect-ratio:1;max-height:2.8vmin;border:1.5px solid var(--fg);border-radius:4px}.mem .sq i.on{background:var(--fg)}.mem b{font-size:2.3vmin;font-weight:500;color:var(--fg)}
 .span{font-size:1.7vmin;color:var(--fg-2);text-align:right;margin-top:.6vmin}.offline{margin-top:2vmin;font-size:2.3vmin;color:var(--fg-2);background:var(--surface-2);border-radius:12px;padding:1.4vmin 2.4vmin}
 .foot{margin-top:2vmin;font-size:1.8vmin;color:var(--fg-2);display:flex;justify-content:space-between;gap:2vmin}
+.rover{margin-top:4vmin;border-top:1px solid var(--line);padding-top:3vmin}.rover .sub{color:var(--fg-2);font-size:2.2vmin;margin:.6vmin 0 2vmin}.rover img{display:block;width:100%;max-height:88vh;object-fit:contain;border-radius:16px}
 @media (orientation:portrait){.hero{grid-template-columns:1fr;gap:2vmin;min-height:0}.jolly video{max-height:40vh}.graph{padding-top:1vmin}.graph svg{height:30vh}.graph svg.multi{height:26vh}.legend{grid-template-columns:1fr 1fr;column-gap:4vmin}}
 </style></head><body>
 <div class="hero"><div class="left">
@@ -422,6 +423,7 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue
 <div class="stats"><div><b>${t.online}/${t.total}</b> boards online</div><div><b>${watts(t.powerW)}</b> power</div>${tokens}</div>
 <div class="jolly"><video src="/fleet/jolly/${mood}.mp4" poster="/fleet/jolly/${mood}.jpg" autoplay loop muted playsinline aria-label="Jolly, the Muse mascot"></video></div>
 </div>${graph(data, shown)}</div>
+${opts.roverSrc ? `<section class="rover"><h2>Rover camera</h2><p class="sub">The rover's webcam, and what Meta SAM 3.1 on a Jetson finds in it. A new photo every few minutes.</p><img src="${esc(opts.roverSrc)}" alt="The rover's camera, outlined by SAM 3.1"></section>` : ""}
 ${boards}
 <div class="foot"><span>Offline Base fleet. Updated ${esc(time)}.${data.note ? ` ${esc(data.note)}` : ""}</span><span>${graphs.length > 1 ? `Graph ${at + 1} of ${graphs.length}, next in a minute` : "Refreshes every minute"}</span></div>
 </body></html>`;

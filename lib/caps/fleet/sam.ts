@@ -92,7 +92,7 @@ export interface FleetSamDeps {
   id?(): string;
 }
 
-interface Look {
+export interface Look {
   b64: string;
   prompt: string;
   threshold: number;
@@ -232,6 +232,18 @@ function boardReply(output: string, look: Look): Record<string, unknown> {
   return reply;
 }
 
+/**
+ * One look on the SAM board: the photo goes up in pieces, then ask.py answers. The reply in the service's shape. Throws
+ * SamFailure. Callers hold the in-flight slot and check limits first. Shared with the e-ink rover view (lib/fleet/rover-view.ts).
+ */
+export async function samLook(settings: FleetSamSettings, deps: Pick<FleetSamDeps, "fetch" | "sleep" | "id">, look: Look, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const id = deps.id?.() ?? randomBytes(6).toString("hex");
+  const commands = lookCommands(look, id);
+  let output = "";
+  for (const [n, command] of commands.entries()) output = await runOnBoard(settings, deps as FleetSamDeps, command, n === commands.length - 1 ? ASK_JOB_S : PIECE_JOB_S, signal);
+  return boardReply(output, look);
+}
+
 async function overLimits(req: Request, token: CapToken, deps: FleetSamDeps, now: Date): Promise<Response | null> {
   const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
   if (ip) {
@@ -302,11 +314,7 @@ export async function handleFleetSegment(req: Request, deps: FleetSamDeps): Prom
     if (!slot) return gatewayError(409, "rate_limit_error", "busy", "The office board is looking at another photo. Try again in a moment.", { headers: { "retry-after": "20" }, retry: false });
     try {
       const signal = AbortSignal.any([req.signal, AbortSignal.timeout(FLEET_SAM_TIMEOUT_MS)]);
-      const id = deps.id?.() ?? randomBytes(6).toString("hex");
-      const commands = lookCommands(look, id);
-      let output = "";
-      for (const [n, command] of commands.entries()) output = await runOnBoard(settings, deps, command, n === commands.length - 1 ? ASK_JOB_S : PIECE_JOB_S, signal);
-      const reply = boardReply(output, look);
+      const reply = await samLook(settings, deps, look, signal);
       const ctx: UsageContext = { source: "fleet", endpoint: FLEET_SAM_ENDPOINT, productId: token.productId, tokenId: token.id, buildId: token.buildId };
       await deps
         .recordUsage(ctx, [{ model: FLEET_SAM_USAGE_MODEL, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd: 0 }])
