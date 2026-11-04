@@ -4729,3 +4729,8 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Fix while testing: the webcam reports auto_exposure as "3 (Aperture Priority Mode)", so values are read from the first word.
 - On the rover: backups `hunt.py.bak-before-controls` and `hunt.py.bak-before-contrast`; installed with its sha256 checked, then the one-line parser fix (7c5ed9a2... in both copies); `musehunt.service` restarted, idle. From the laptop: the page answers 200 with both cards, `/camera` reads all nine controls, and a no-op set (gain 32) wrote and read back. Drive and pan were not exercised: they move the rover, so the owner tries them.
 
+## Nov 3, 2026, night ET: score labels on the SAM pane
+
+- Owner's screenshot: the tuned detector marked three things as "muse" (a large blue plush, a small pink figure, a green figure on a tablet screen) with masks and boxes but no scores. Added labels to `scripts/edge/sam3/rover_hunt.py`: each look's boxes and scores go into the page state, and the page puts "muse NN%" at each box's top-left corner over the SAM picture, the top one outlined, any at or over the 0.95 stop in green. Drawn by the page from SAM's own answer; jetson-04's service is unchanged.
+- On the rover: backup `hunt.py.bak-before-labels`, installed with its sha256 checked (7d3d012b...), restarted, page 200 from the laptop. One look at the scene at that moment, no movement: a single "muse" at 0.977 on the left edge of the frame (1.5 s). The three-object scene from the screenshot was not scored.
+

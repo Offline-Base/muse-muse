@@ -183,8 +183,10 @@ def hunt():
                 with lock:
                     if ov:
                         overlay["jpeg"] = ov
+                    objects = [{"box": o.get("box"), "score": o.get("score", 0.0)} for o in res.get("objects", [])]
                     state.update(pan=pan, last={"score": score, "count": res.get("count", 0), "ms": res.get("ms"),
-                                                "weights": res.get("weights", "base")}, looks=state["looks"] + 1)
+                                                "weights": res.get("weights", "base"), "objects": objects,
+                                                "size": res.get("image_size") or [640, 480]}, looks=state["looks"] + 1)
                     new_best = score > state["best"]
                     state["best"] = max(state["best"], score)
                     state["note"] = f"pan {pan:+d}°: best match {score:.3f}"
@@ -222,6 +224,9 @@ h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 22px}
 .pane{background:var(--panel);border:1px solid #30363d;border-radius:10px;overflow:hidden}
 .pane h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px}
+.shot{position:relative}.labels{position:absolute;inset:0;pointer-events:none}
+.tag{position:absolute;transform:translateY(-100%);background:rgba(13,17,23,.85);color:#fff;font:700 13px/1 ui-monospace,Menlo,monospace;padding:4px 7px;border-radius:5px;white-space:nowrap;border:1px solid rgba(255,255,255,.35)}
+.tag.top{border-color:var(--accent)}.tag.goal{background:var(--ok);color:#06210f;border-color:var(--ok)}
 .pane img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;filter:contrast(var(--contrast,100%))}
 .ctl{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}.ctl input{width:140px}.ctl output{min-width:3.5em;color:var(--ink);font-variant-numeric:tabular-nums}
 .bar{display:flex;gap:14px;align-items:center;padding:4px 22px 0}
@@ -253,7 +258,7 @@ button.go{background:#1f6feb;border-color:#1f6feb}
 <div class="goal" id="goal"></div></div>
 <div class="sub" style="padding:6px 22px" id="note"></div>
 <div class="grid"><div class="pane"><h2>Rover camera, live</h2><img id="cam" alt="rover camera"></div>
-<div class="pane"><h2>SAM 3.1 tuned, latest look</h2><img id="sam" alt="SAM mask"></div></div>
+<div class="pane"><h2>SAM 3.1 tuned, latest look</h2><div class="shot"><img id="sam" alt="SAM mask"><div class="labels" id="labels"></div></div></div></div>
 <div class="controls">
 <div class="card"><h2>Drive (pauses the hunt)</h2>
 <div class="pad"><span></span><button data-d="fwd" aria-label="Forward">&#9650;</button><span></span>
@@ -283,9 +288,14 @@ document.getElementById('fill').style.width=Math.min(100,(s.found?s.found.score:
 document.getElementById('note').textContent=s.note+(s.last?'  ·  '+s.last.ms+' ms per look on the Jetson  ·  weights: '+s.last.weights:'')+'  ·  looks: '+s.looks;
 document.getElementById('root').className=s.mode==='found'?'found':'';
 document.getElementById('banner').textContent=s.found?('Found the real Muse: '+s.found.score.toFixed(3)+' at pan '+s.found.pan+'°. Rover stopped, snapshot saved.'):'';
-if(s.looks!==lastLooks){lastLooks=s.looks;document.getElementById('sam').src='/overlay.jpg?'+s.looks}
+if(s.looks!==lastLooks){lastLooks=s.looks;const img=document.getElementById('sam'),look=s.last;img.onload=()=>drawLabels(look);img.src='/overlay.jpg?'+s.looks}
 document.getElementById('snaps').innerHTML=s.snapshots.map(n=>'<figure><img src="/snap/'+n+'-sam.jpg"><figcaption>'+n+'</figcaption></figure>').join('')}catch(e){}}
 setInterval(tick,300);
+// A label on each detection: "muse 87%", placed at its box's top-left corner (the image keeps the frame's 4:3 shape).
+function drawLabels(look){const el=document.getElementById('labels');el.innerHTML='';if(!look||!look.objects)return;
+const [w,h]=look.size||[640,480];const objs=look.objects.slice().sort((a,b)=>b.score-a.score);
+objs.forEach((o,i)=>{if(!o.box)return;const t=document.createElement('div');t.className='tag'+(i===0?' top':'')+(o.score>=GOAL?' goal':'');
+t.textContent='muse '+Math.round(o.score*100)+'%';t.style.left=Math.max(0,o.box[0]/w*100)+'%';t.style.top=Math.max(4,o.box[1]/h*100)+'%';el.appendChild(t)})}
 function jpost(p,b){return fetch(p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)})}
 // Drive: a held button or key sends a 600 ms drive every 400 ms, so it keeps going while held and stops by itself if the page goes away.
 const speedEl=document.getElementById('speed');speedEl.addEventListener('input',()=>document.getElementById('speedv').textContent=speedEl.value);
