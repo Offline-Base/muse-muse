@@ -291,7 +291,8 @@ const BOARD_GRAPHS: Record<Exclude<GraphKind, "tokens">, { key: keyof BoardSerie
   heat: { key: "tempC", lo: 30, hi: 70, title: "Heat on each board (hottest sensor), last hour", show: (v) => `${Math.round(v)}°C` },
   power: { key: "powerW", lo: 0, hi: 10, title: "Power on each board, last hour", show: (v) => watts(v) },
 };
-const COLORS = ["#2a8a9a", "#222222", "#c0612b", "#6b5bd2", "#3d8b3d", "#8a8a8a", "#b8325a", "#1f5fa8", "#a07a00"];
+// The muse-app series hues (template/app/globals.css), the action blue first.
+const COLORS = ["#0064d4", "#fb3c44", "#7d74ff", "#3fbb46", "#14b898", "#111112", "#f9cf00", "#8a8d91", "#9b45f0"];
 
 /** The graphs this data can draw, in the order the page cycles through them. */
 export function availableGraphs(data: DisplayData): GraphKind[] {
@@ -360,34 +361,43 @@ export function renderDisplay(
     ? `<div class="grid">${on.map(card).join("")}</div>${off.length ? `<p class="offline">Offline: ${off.map((b) => esc(b.name)).join(", ")}</p>` : ""}`
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="${refresh}"><title>Offline Base fleet</title><style>
-*{box-sizing:border-box;margin:0}html,body{background:#fff;color:#111}body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;padding:3vmin 4vmin}
+@font-face{font-family:Inter;src:url(/fleet/inter.woff2) format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+:root{--fg:#111112;--fg-2:rgba(0,4,9,.59);--line:rgba(0,0,0,.1);--surface-2:#f3f4f5;--signature:#0064d4;--ai-start:#6547f5;--ai-end:#9b45f0;--positive:#008200;--negative:#c01f37}
+*{box-sizing:border-box;margin:0}html,body{background:#fff;color:var(--fg)}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-optical-sizing:auto;font-weight:400;letter-spacing:-.01em;padding:3vmin 4vmin}
 .hero{display:grid;grid-template-columns:minmax(0,46fr) minmax(0,54fr);gap:4vmin;align-items:stretch;min-height:calc(100vh - 11vmin)}
 .left{display:flex;flex-direction:column;align-items:center}
-.stats{display:flex;gap:4vmin;justify-content:center;color:#555;font-size:2.6vmin;white-space:nowrap;text-align:center;margin-top:2vmin}.stats b{display:block;font-size:6vmin;font-weight:500;line-height:1.05;color:#333;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:1vmin;font-size:2vmin;font-weight:500;padding:.7vmin 1.8vmin;border-radius:999px;border:2px solid transparent;background:linear-gradient(#fff,#fff) padding-box,linear-gradient(90deg,var(--ai-start),var(--ai-end)) border-box;color:var(--fg)}
+.chip i{width:1.2vmin;height:1.2vmin;border-radius:50%;background:linear-gradient(90deg,var(--ai-start),var(--ai-end))}
+.stats{display:flex;flex-wrap:wrap;gap:2vmin 4.5vmin;justify-content:center;color:var(--fg-2);font-size:2.4vmin;font-weight:500;white-space:nowrap;text-align:center;margin-top:2.2vmin}
+.stats b{display:block;font-size:6.4vmin;font-weight:400;line-height:1.05;color:var(--fg);letter-spacing:-.02em}
 .jolly{flex:1;display:flex;align-items:flex-end;justify-content:center;width:100%;min-height:0}
-.jolly video{width:100%;max-height:72vh;object-fit:contain;display:block}
-.graph{display:flex;flex-direction:column;justify-content:center;padding:6vmin 2vmin 2vmin}
-.graph svg{width:100%;height:58vh;overflow:visible}.graph path{fill:none;stroke:#2a8a9a;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linecap:round}
-.ends{display:flex;justify-content:space-between;color:#777;font-size:2vmin;margin-top:1vmin}
-.graph svg.multi{height:42vh}.multi polyline{fill:none;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}.multi circle{stroke:none}
-.legend{list-style:none;padding:0;margin-top:2vmin;display:grid;grid-template-columns:1fr;gap:.6vmin;font-size:2.1vmin;color:#333}
-.legend li{display:flex;align-items:baseline;gap:1vmin;white-space:nowrap;min-width:0}.legend i{flex:none;width:3vmin;height:.8vmin;border-radius:.4vmin;align-self:center}.legend span{color:#777;font-size:1.9vmin;overflow:hidden;text-overflow:ellipsis;min-width:0}.legend b{margin-left:auto;font-weight:600}
-.cap{color:#555;font-size:3.4vmin;text-align:center;margin-top:3vmin}.cap b{color:#333;font-weight:500}
+.jolly video{width:100%;max-height:70vh;object-fit:contain;display:block}
+.graph{display:flex;flex-direction:column;justify-content:center;padding:4vmin 1vmin 2vmin}
+.graph svg{width:100%;height:56vh;overflow:visible}.graph path{fill:none;stroke:var(--signature);stroke-width:3;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.graph svg.multi{height:42vh}.multi polyline{fill:none;stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}.multi circle{stroke:none}
+.ends{display:flex;justify-content:space-between;color:var(--fg-2);font-size:1.9vmin;margin-top:1vmin;padding-top:1vmin;border-top:1px solid var(--line)}
+.cap{color:var(--fg-2);font-size:3vmin;text-align:center;margin-top:2.6vmin}.cap b{color:var(--fg);font-weight:400;font-size:4.4vmin;letter-spacing:-.02em}
+.legend{list-style:none;padding:0;margin-top:2vmin;display:grid;grid-template-columns:1fr;gap:.2vmin;font-size:2.1vmin;color:var(--fg)}
+.legend li{display:flex;align-items:baseline;gap:1.2vmin;white-space:nowrap;min-width:0;padding:.5vmin 0;border-bottom:1px solid var(--line)}.legend li:last-child{border-bottom:0}
+.legend i{flex:none;width:1.6vmin;height:1.6vmin;border-radius:50%;align-self:center}.legend span{color:var(--fg-2);font-size:1.9vmin;overflow:hidden;text-overflow:ellipsis;min-width:0}.legend b{margin-left:auto;font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42vmin,1fr));gap:2vmin;margin-top:3vmin}
-.board{border:2px solid #000;border-radius:1.6vmin;padding:2vmin 2.4vmin}
-.board header{display:flex;justify-content:space-between;align-items:baseline}h2{font-size:3.6vmin;font-weight:700}.power{font-size:4.6vmin;font-weight:700}
-.running{font-size:2.9vmin;line-height:1.3;margin:1.2vmin 0 1.4vmin;min-height:3.8vmin}
-.board .stats{justify-content:flex-start;gap:2.6vmin;font-size:2.3vmin;color:#000;border-top:1px solid #000;padding-top:1.2vmin;margin:0;text-align:left}.board .stats b{display:inline;font-size:2.7vmin;color:#000;font-weight:700}
-.lab{display:flex;justify-content:space-between;align-items:baseline}.axis{stroke:#000;stroke-width:1;vector-effect:non-scaling-stroke}.ln polyline{fill:none;stroke:#000;stroke-width:2.4;stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.minis{display:grid;grid-template-columns:1fr 1fr;gap:1.4vmin 2.4vmin;margin-top:1.4vmin}.mini .lab{font-size:2vmin}.mini .lab b{font-size:2.4vmin}.mini svg{display:block;width:100%;height:5vmin;margin-top:.4vmin}
-.span{font-size:1.7vmin;text-align:right;margin-top:.6vmin}.offline{margin-top:2vmin;font-size:2.5vmin;border:2px dashed #000;border-radius:1.6vmin;padding:1.4vmin 2.4vmin}
-.foot{margin-top:2vmin;font-size:1.8vmin;color:#777;display:flex;justify-content:space-between}
+.board{border:1px solid var(--line);border-radius:16px;padding:2.2vmin 2.6vmin}
+.board header{display:flex;justify-content:space-between;align-items:baseline}h2{font-size:3.2vmin;font-weight:600}.power{font-size:4.2vmin;font-weight:400;letter-spacing:-.02em}
+.running{font-size:2.5vmin;color:var(--fg-2);line-height:1.35;margin:1vmin 0 1.4vmin;min-height:3.4vmin}
+.board .stats{justify-content:flex-start;gap:2.6vmin;font-size:2vmin;font-weight:400;color:var(--fg-2);border-top:1px solid var(--line);padding-top:1.2vmin;margin:0;text-align:left}.board .stats b{display:inline;font-size:2.5vmin;color:var(--fg);font-weight:500;letter-spacing:-.01em}
+.lab{display:flex;justify-content:space-between;align-items:baseline}.axis{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}.ln polyline{fill:none;stroke:var(--signature);stroke-width:2.2;stroke-linejoin:round;vector-effect:non-scaling-stroke}.ln circle{fill:var(--signature)}
+.minis{display:grid;grid-template-columns:1fr 1fr;gap:1.4vmin 2.4vmin;margin-top:1.4vmin}.mini .lab{font-size:1.9vmin;color:var(--fg-2)}.mini .lab b{font-size:2.3vmin;font-weight:500;color:var(--fg)}.mini svg{display:block;width:100%;height:5vmin;margin-top:.4vmin}
+.span{font-size:1.7vmin;color:var(--fg-2);text-align:right;margin-top:.6vmin}.offline{margin-top:2vmin;font-size:2.3vmin;color:var(--fg-2);background:var(--surface-2);border-radius:12px;padding:1.4vmin 2.4vmin}
+.foot{margin-top:2vmin;font-size:1.8vmin;color:var(--fg-2);display:flex;justify-content:space-between;gap:2vmin}
+@media (orientation:portrait){.hero{grid-template-columns:1fr;gap:2vmin;min-height:0}.jolly video{max-height:36vh}.graph{padding-top:1vmin}.graph svg{height:30vh}.graph svg.multi{height:26vh}.legend{grid-template-columns:1fr 1fr;column-gap:4vmin}}
 </style></head><body>
 <div class="hero"><div class="left">
+<span class="chip"><i></i>Meta models on Jetson Orin Nanos</span>
 <div class="stats"><div><b>${t.online}/${t.total}</b> boards online</div><div><b>${watts(t.powerW)}</b> power</div>${tokens}</div>
 <div class="jolly"><video src="/fleet/jolly/${mood}.mp4" poster="/fleet/jolly/${mood}.jpg" autoplay loop muted playsinline aria-label="Jolly, the Muse mascot"></video></div>
 </div>${graph(data, shown)}</div>
 ${boards}
-<div class="foot"><span>Offline Base fleet, Meta models on Jetson Orin Nanos. Updated ${esc(time)}.${data.note ? ` ${esc(data.note)}` : ""}</span><span>${graphs.length > 1 ? `Graph ${at + 1} of ${graphs.length}, next in a minute` : "Refreshes every minute"}</span></div>
+<div class="foot"><span>Offline Base fleet. Updated ${esc(time)}.${data.note ? ` ${esc(data.note)}` : ""}</span><span>${graphs.length > 1 ? `Graph ${at + 1} of ${graphs.length}, next in a minute` : "Refreshes every minute"}</span></div>
 </body></html>`;
 }
