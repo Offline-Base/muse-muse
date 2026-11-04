@@ -232,6 +232,19 @@ function mini(label: string, values: Array<number | null>, lo: number, hi: numbe
   return `<div class="mini"><div class="lab"><span>${label}</span><b>${now === null ? "?" : show(now)}</b></div>${lineSvg(values, lo, hi)}</div>`;
 }
 
+/**
+ * Memory as 10 small squares at the bottom of a board card (owner, Nov 3: the heat showed as text but memory was easy
+ * to miss): each square is a tenth of the board's memory, filled when used, so a glance across the boards compares them.
+ */
+export function memSquares(usedMb: number | null, totalMb: number | null): string {
+  const known = usedMb !== null && totalMb !== null && totalMb > 0;
+  const filled = known ? Math.min(10, Math.max(0, Math.round((usedMb! / totalMb!) * 10))) : 0;
+  const squares = Array.from({ length: 10 }, (_, i) => (i < filled ? '<i class="on"></i>' : "<i></i>")).join("");
+  const label = known ? `${gb(usedMb)} of ${gb(totalMb)} GB` : "unknown";
+  const share = known ? `${Math.round((usedMb! / totalMb!) * 100)}%` : "?";
+  return `<div class="mem" role="img" aria-label="Memory used: ${label}"><span>Memory</span><span class="sq">${squares}</span><b>${share}</b></div>`;
+}
+
 function card(b: DisplayBoard): string {
   const running = b.running.length ? b.running.map(esc).join("<br>") : "Idle";
   const stats = `<div class="stats"><span><b>${pct(b.cpuPct)}</b> CPU</span><span><b>${pct(b.gpuPct)}</b> GPU</span><span><b>${b.tempC === null ? "?" : Math.round(b.tempC)}°C</b></span><span><b>${gb(b.memUsedMb)}/${gb(b.memTotalMb)}</b> GB</span></div>`;
@@ -239,7 +252,7 @@ function card(b: DisplayBoard): string {
   const graphs = s
     ? `<div class="minis">${mini("Heat", s.tempC, 30, 70, (v) => `${Math.round(v)}°C`)}${mini("Memory", s.memPct, 0, 100, (v) => `${Math.round(v)}%`)}${mini("Power", s.powerW, 0, 10, (v) => watts(v))}${mini("Tokens/s", s.tps, 0, 5, (v) => v.toFixed(1))}</div><div class="span">Last hour</div>`
     : "";
-  return `<section class="board"><header><h2>${esc(b.name)}</h2><div class="power">${watts(b.powerW)}</div></header><p class="running">${running}</p>${stats}${graphs}</section>`;
+  return `<section class="board"><header><h2>${esc(b.name)}</h2><div class="power">${watts(b.powerW)}</div></header><p class="running">${running}</p>${stats}${graphs}${memSquares(b.memUsedMb, b.memTotalMb)}</section>`;
 }
 
 /** Running total of tokens served at the end of each day in the window, ending at the all-time total. */
@@ -399,6 +412,7 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue
 .board .stats{justify-content:flex-start;gap:2.6vmin;font-size:2vmin;font-weight:400;color:var(--fg-2);border-top:1px solid var(--line);padding-top:1.2vmin;margin:0;text-align:left}.board .stats b{display:inline;font-size:2.5vmin;color:var(--fg);font-weight:500;letter-spacing:-.01em}
 .lab{display:flex;justify-content:space-between;align-items:baseline}.axis{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}.ln polyline{fill:none;stroke:var(--signature);stroke-width:3.5;stroke-linejoin:round;vector-effect:non-scaling-stroke}.ln circle{fill:var(--signature)}
 .minis{display:grid;grid-template-columns:1fr 1fr;gap:1.4vmin 2.4vmin;margin-top:1.4vmin}.mini .lab{font-size:1.9vmin;color:var(--fg-2)}.mini .lab b{font-size:2.3vmin;font-weight:500;color:var(--fg)}.mini svg{display:block;width:100%;height:5vmin;margin-top:.4vmin}
+.mem{display:flex;align-items:center;gap:1.4vmin;margin-top:1.4vmin;padding-top:1.2vmin;border-top:1px solid var(--line);font-size:2vmin;color:var(--fg-2);white-space:nowrap}.mem .sq{flex:1;min-width:0;display:grid;grid-template-columns:repeat(10,1fr);gap:.5vmin}.mem .sq i{display:block;aspect-ratio:1;max-height:2.8vmin;border:1.5px solid var(--fg);border-radius:4px}.mem .sq i.on{background:var(--fg)}.mem b{font-size:2.3vmin;font-weight:500;color:var(--fg)}
 .span{font-size:1.7vmin;color:var(--fg-2);text-align:right;margin-top:.6vmin}.offline{margin-top:2vmin;font-size:2.3vmin;color:var(--fg-2);background:var(--surface-2);border-radius:12px;padding:1.4vmin 2.4vmin}
 .foot{margin-top:2vmin;font-size:1.8vmin;color:var(--fg-2);display:flex;justify-content:space-between;gap:2vmin}
 @media (orientation:portrait){.hero{grid-template-columns:1fr;gap:2vmin;min-height:0}.jolly video{max-height:40vh}.graph{padding-top:1vmin}.graph svg{height:30vh}.graph svg.multi{height:26vh}.legend{grid-template-columns:1fr 1fr;column-gap:4vmin}}

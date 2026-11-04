@@ -1,7 +1,7 @@
 /** The e-ink fleet display with made-up boards and a fake control plane. npx tsx --test lib/fleet/__tests__/display.test.ts */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { availableGraphs, boardFrom, cumulative, downsample, historyFrom, jollyMood, lineSvg, smoothPath, loadDisplay, renderDisplay, runningOn, seriesFrom } from "@/lib/fleet/display";
+import { availableGraphs, boardFrom, memSquares, cumulative, downsample, historyFrom, jollyMood, lineSvg, smoothPath, loadDisplay, renderDisplay, runningOn, seriesFrom } from "@/lib/fleet/display";
 
 const NODES = [
   { id: "nd_a", name: "jetson-04", status: "online", loaded_models: [], metrics: { power_w: 6.2, cpu_pct: 12, gpu_pct: 40, temps_c: { tj: 51.4 }, mem_used_mb: 5200, mem_total_mb: 7620 } },
@@ -41,6 +41,18 @@ function fakeFetch(seen: Array<{ url: string; auth: string | null }>) {
 }
 
 describe("e-ink fleet display", () => {
+  it("draws memory as 10 squares, filled for the share in use", () => {
+    const html = memSquares(5317, 7485); // made-up numbers: 71% used
+    assert.equal((html.match(/<i class="on"><\/i>/g) ?? []).length, 7);
+    assert.equal((html.match(/<i><\/i>/g) ?? []).length, 3);
+    assert.match(html, /<b>71%<\/b>/);
+    assert.match(html, /5\.2 of 7\.3 GB/);
+    const unknown = memSquares(null, 7485);
+    assert.equal((unknown.match(/class="on"/g) ?? []).length, 0);
+    assert.match(unknown, /<b>\?<\/b>/);
+    assert.equal((memSquares(9000, 7485).match(/class="on"/g) ?? []).length, 10);
+  });
+
   it("names what runs on each board from its role label (or the defaults), loaded models and live serving", () => {
     assert.deepEqual(runningOn(NODES[0]!), ["SAM 3.1 vision", "Meta weights + tuned \u201cmuse\u201d"]);
     assert.deepEqual(runningOn(NODES[1]!), ["Muse Glimmer (1-bit)", "muse-glimmer-2026-iq1s", "Serving 5.2 tokens/s"]);
