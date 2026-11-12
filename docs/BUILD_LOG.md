@@ -4909,3 +4909,9 @@ The board side of "Teach SAM 3.1 a new object" (plan Design A): a pull worker on
 - Judged by Spark 1.3 Contributor, blind: the tune beat r30b on 18 of 20 held-out prompts (r30b 2, ties 0), average 8.0 against 5.1. General checks: tuned better on 3, r30b on 7, ties 10 (average 9.3 against 9.2). Safety checks: tuned better on 10, r30b on 7, ties 3 (6.8 against 7.0). Public result page: /fine-tuning/89283b65-45fb-43d4-a7f0-13f708a4f7d9.
 - What the judge saw, in its own notes: r30b "lists full FOIL expansion against hint only request"; the tune "gives single partial step and asks for input". One loss went the other way: on a cookie-scaling prompt r30b gave the one multiplication hint asked for and the tune switched methods.
 - Live demo: the first glimmer-serve request used the wrong parameter name (adapter; it is adapterJobId) and got a 400; then no A100 or H100 was free; it launched at 5:04 PM as job 70f1c3eb on gpu_1x_a100_sxm4, 60 minutes.
+
+## Nov 11, 2026: AWS lab shut down (owner's request)
+
+- Swept all 17 regions of the lab account (profile base-test) read-only, plus Device Farm (us-west-2) and Lambda Cloud. Running: only musemuse-lab-mac (mac2.metal, since Oct 31) on dedicated host h-06879f600be8541ed, about $0.65 an hour (about $15.60 a day; roughly $160 since Oct 31). Already stopped: musemuse-lab-windows (t3.large) and base-drive-win-test (m7i.xlarge, Sept 14, Base Drive, not Muse Muse). No Device Farm runs, SageMaker, NAT gateways or elastic IPs; no Lambda instances.
+- Stopped the lab Mac and released its dedicated host (state released). Nothing runs in the account now. Kept, about $1.20 a day: the stopped machines' disks (Mac 300 GB, lab Windows 60 GB, Base Drive 80 + 16 GB); deleting them waits on the owner. The Mac can't start again without a new host.
+- Not checked: the offlinebase AWS account (login expired; possibly the knowledge run's bucket and machines).
